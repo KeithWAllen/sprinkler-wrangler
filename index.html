@@ -260,6 +260,8 @@ body.training .bar{color:#fff}
 .hints{display:grid;gap:6px}.hint{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem;border-left:3px solid var(--warn);padding-left:8px}.hint span{flex:1;min-width:160px}
 .chip.zc-yes{border-color:var(--good)}.chip.zc-no{border-color:var(--bad)}
 .guide{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
+.gprog{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}.gprog span{display:block;height:100%;background:var(--accent);border-radius:999px}
+.tabok{color:var(--good);font-weight:800;margin-right:4px}
 .gsteps{display:flex;gap:4px;flex-wrap:wrap}
 .gstep{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
 .gstep.done{background:var(--accent-soft);color:var(--good)}.gstep.now{background:var(--water);color:#fff}
@@ -594,10 +596,10 @@ function render(){
   hydratePhotos(app);
 }
 function banner(){
-  if(S.training)return `<div class="trainbar"><b>Training mode.</b> Practice jobs stay on this phone only. They never reach the team or customers. <span class="row" style="gap:6px;margin-top:6px"><button class="btn sm" data-exittrain="1">Exit training</button>${delBtn("trainreset","Reset practice jobs")}</span></div>`;
+  if(S.training)return `<div class="trainbar"><b>Training mode.</b> Practice jobs stay on this device only. They never reach the team or customers. <span class="row" style="gap:6px;margin-top:6px"><button class="btn sm" data-exittrain="1">Exit training</button>${delBtn("trainreset","Reset practice jobs")}</span></div>`;
   if(S.mode==="local")return `<div class="banner">Jobs are saved on this device only. Open this page from the Claude app to keep jobs synced across devices.</div>`;
   if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. ${sb?"Your account doesn't have technician access.":"Ask the owner to share this page with you as an Editor."}</div>`;
-  if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This phone has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Review them to choose which, if any, go to the server.</span><button class="btn sm" data-home="import">Review</button></div>`;
+  if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This device has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Review them to choose which, if any, go to the server.</span><button class="btn sm" data-home="import">Review</button></div>`;
   return "";
 }
 function homeView(){
@@ -606,7 +608,7 @@ function homeView(){
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
   else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
   const side=S.home==="team"||S.home==="import";
-  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review phone jobs":"Jobs"}</h1></div>
+  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
     ${side?"":`<button class="iconbtn" data-new="1">+ New job</button>`}${acctChip()}</div></header>
   ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
@@ -667,7 +669,7 @@ function jobView(){
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
-  <nav class="tabs"><div class="inner">${tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")}</div></nav></div>
+  <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${dn[k]?'<span class="tabok" aria-label="done">✓</span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")})()}</div></nav></div>
   <div class="wrap"><main>${banner()}${guideBar(j)}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
@@ -1492,10 +1494,10 @@ function jobSteps(j){
     {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the report."}];
 }
-function guideBar(j){const st=jobSteps(j);const nx=st.find(s=>!s.done);
-  const dots=st.map(s=>`<span class="gstep ${s.done?"done":s===nx?"now":""}">${s.done?"✓":""}${esc(s.label)}</span>`).join("");
-  return `<div class="guide"><div class="gsteps">${dots}</div>${nx?`<div class="row"><span class="spacer small"><b>Next:</b> ${esc(nx.todo)}</span>${S.tab===nx.k&&nx.k!=="zones"?"":`<button class="btn sm" data-gonext="${nx.k}">Go</button>`}</div>`
-    :`<div class="row"><span class="spacer small"><b>All steps done.</b> Report Rev ${revNo(currentRev(j).n)} is ready to send.</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
+function guideBar(j){const st=jobSteps(j);const nx=st.find(s=>!s.done);const done=st.filter(s=>s.done).length;
+  return `<div class="guide"><div class="gprog" role="progressbar" aria-valuemin="0" aria-valuemax="${st.length}" aria-valuenow="${done}"><span style="width:${Math.round(done/st.length*100)}%"></span></div>
+  ${nx?`<div class="row"><span class="spacer small"><b>${done} of ${st.length} steps done.</b> Next: ${esc(nx.todo)}</span>${S.tab===nx.k&&nx.k!=="zones"?"":`<button class="btn sm" data-gonext="${nx.k}">Go</button>`}</div>`
+    :`<div class="row"><span class="spacer small"><b>All ${st.length} steps done.</b> Report Rev ${revNo(currentRev(j).n)} is ready to send.</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
 
 /* ---------------- trouble photos ---------------- */
 const BADCOND=["Poor","Failed"];
@@ -1812,8 +1814,8 @@ function checkLocalImport(){const n=Object.keys(localJobs()).length;S.localCount
 function importView(){
   const loc=localJobs();const ids=Object.keys(loc).sort((a,b)=>(loc[b].updatedAt||0)-(loc[a].updatedAt||0));
   const sel=S.impSel||{};const nSel=ids.filter(id=>sel[id]&&!S.jobs[id]).length;
-  return `<div class="card"><div class="cardhead"><h2>Jobs saved on this phone</h2><span class="pill neutral">${ids.length}</span></div>
-    <p class="small" style="margin:0">These were saved on this phone before sign-in, so the team can't see them. Tick only real jobs you want on the server. Anything already on the server is skipped, so nothing gets overwritten.</p></div>
+  return `<div class="card"><div class="cardhead"><h2>Jobs saved on this device</h2><span class="pill neutral">${ids.length}</span></div>
+    <p class="small" style="margin:0">These were saved on this device before sign-in, so the team can't see them. Tick only real jobs you want on the server. Anything already on the server is skipped, so nothing gets overwritten.</p></div>
   ${ids.map(id=>{const j=loc[id];const on=!!S.jobs[id];const d=j.info&&j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date";
     const zones=(j.zones||[]).length,photos=(JSON.stringify(j).match(/"ph[a-z0-9]{6,}"/g)||[]).length,revs=(j.revs||[]).length;
     return `<label class="card imp ${on?"dim":""}" style="cursor:${on?"default":"pointer"}"><div class="row" style="align-items:flex-start;gap:12px">
@@ -1821,8 +1823,8 @@ function importView(){
       <div style="flex:1;min-width:0"><b>${esc((j.info||{}).customer||"No customer name")}</b>${on?' <span class="pill ok">Already on server</span>':""}
       <div class="small muted">${esc([(j.info||{}).address,(j.info||{}).city].filter(Boolean).join(", ")||"No address")}</div>
       <div class="small muted">${esc(d)} · ${zones} zone${zones===1?"":"s"} · ${photos} photo${photos===1?"":"s"}${revs?` · report Rev ${revNo(j.revs[revs-1].n)}`:""} · last edited ${esc(j.updatedAt?new Date(j.updatedAt).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"unknown")}</div></div></div></label>`}).join("")}
-  <div class="card"><div class="row"><button class="btn" data-impgo="1" ${nSel?"":"disabled"}>Upload ${nSel||""} selected</button><span class="spacer"></span>${delBtn("impdiscard","Remove all from this phone")}</div>
-    <p class="small muted" style="margin:0">Removing deletes only the copies on this phone. Jobs already on the server aren't touched.</p>
+  <div class="card"><div class="row"><button class="btn" data-impgo="1" ${nSel?"":"disabled"}>Upload ${nSel||""} selected</button><span class="spacer"></span>${delBtn("impdiscard","Remove all from this device")}</div>
+    <p class="small muted" style="margin:0">Removing deletes only the copies on this device. Jobs already on the server aren't touched.</p>
     <div><button class="btn quiet sm" data-home="jobs">Decide later</button></div></div>`;
 }
 async function importSelected(){
@@ -1848,7 +1850,7 @@ async function discardLocal(){
     JSON.stringify(j).replace(/"(ph[a-z0-9]{6,})"/g,(m,p)=>{IDB.del("irr.ph."+p)});IDB.del("irr.bg."+id);
     (j.revs||[]).forEach(r=>IDB.del("irr.rev."+id+"_"+revNo(r.n)));}
   try{localStorage.removeItem("irr.jobs");localStorage.removeItem("irr.pricing")}catch(e){}
-  LS.set("irr.imported",true);S.localCount=0;S.home="jobs";render();toast("Removed from this phone");
+  LS.set("irr.imported",true);S.localCount=0;S.home="jobs";render();toast("Removed from this device");
 }
 
 /* ---------- Team & account (technicians) ---------- */
