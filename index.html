@@ -574,13 +574,14 @@ function banner(){
   return "";
 }
 function homeView(){
-  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"],...(sb?[["team","Team"]]:[])];
+  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
   else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
-  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?"Team":S.home==="import"?"Review phone jobs":"Jobs"}</h1></div>
-    <button class="iconbtn" data-new="1">+ New job</button>${acctChip()}</div></header>
-  <nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav></div>
+  const side=S.home==="team"||S.home==="import";
+  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review phone jobs":"Jobs"}</h1></div>
+    ${side?"":`<button class="iconbtn" data-new="1">+ New job</button>`}${acctChip()}</div></header>
+  ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
 }
 function jobsList(){
@@ -1522,7 +1523,7 @@ async function signOut(){S.acctOpen=false;
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.admin?"Admin":"Technician"}</span></div>
-    <button class="btn quiet sm" data-accteam="1">Team & account</button><button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button><button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- jobs saved on this phone before sign-in: review, then upload or discard ----------
    Protections: nothing uploads automatically; each job is opt-in; a job whose ID already exists on
