@@ -242,6 +242,14 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .acctname{font-weight:700;font-size:.9rem;max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acctmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:15;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px;min-width:230px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 @media (max-width:430px){.acctname{display:none}.acctbtn{padding:3px}}
+.satbody{flex:1;min-height:0;overflow:auto;display:grid;align-content:start;gap:10px;padding-block:12px max(16px,env(safe-area-inset-bottom,0px));padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.satframe{position:relative;width:100%;max-width:100%;aspect-ratio:1000/700;background:var(--sunk);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.satframe img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:crosshair}
+.satcross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.5)}
+.satempty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);padding:16px;text-align:center}
+.me-btn.dark{color:var(--ink);border-color:var(--line);background:var(--surface)}
+.gpsbar{border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:var(--bg)}
+.gpsdot{width:12px;height:12px;border-radius:50%;background:#2F7BFF;box-shadow:0 0 0 3px rgba(47,123,255,.25);flex:none}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -683,10 +691,93 @@ function mapTab(){const j=job();loadBg(j.id);
   return `<div class="card"><div class="cardhead"><h2>Property map</h2><span class="muted small">${n} item${n===1?"":"s"}</span></div>
   <button type="button" class="mapprev" data-mapopen="1" aria-label="Open map editor">${mapSvg(j,false,S.mapHide)}<span class="mapopen">${n?"Edit map":"Start the map"}</span></button>
   <div class="row"><button class="btn" data-mapopen="1">Open map editor</button>
-    <label class="btn quiet" style="cursor:pointer">${S.bg[j.id]?"Change site photo":"Add site photo"}<input type="file" accept="image/*" data-bgfile="1" hidden></label>
-    ${S.bg[j.id]?`<button class="btn quiet sm" data-bgclear="1">Remove photo</button>`:""}</div>
+    ${mbToken()?`<button class="btn ghost" data-satopen="1">🛰 ${j.map.geo?"Change satellite view":"Satellite view"}</button>`:""}
+    <label class="btn quiet" style="cursor:pointer">${S.bg[j.id]&&!j.map.geo?"Change site photo":"Add site photo"}<input type="file" accept="image/*" data-bgfile="1" hidden></label>
+    ${S.bg[j.id]?`<button class="btn quiet sm" data-bgclear="1">${j.map.geo?"Back to grid":"Remove photo"}</button>`:""}</div>
+  ${j.map.geo?`<p class="small muted" style="margin:0">Satellite view is on. In the map editor, the blue dot shows where you're standing; tap <b>Drop here</b> to place the selected item at your spot.</p>`:""}
   <div class="q"><span class="ql">Show on map and report</span><div class="chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-hide="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])} <span class="mono">${counts[p[0]]}</span></button>`).join("")||'<span class="small muted">Layers appear as you add items.</span>'}</div></div></div>`;
 }
+
+/* ---------------- Satellite view + GPS (Mapbox) ----------------
+   The satellite picture becomes the map background, framed exactly like the 1000×700 drawing area,
+   so the editor, report and storage all work unchanged. GPS positions are converted into that frame. */
+function mbToken(){return (window.SW_CONFIG||{}).mapboxToken||""}
+const SAT_STYLE="mapbox/satellite-streets-v12";
+function mbStatic(lat,lng,z,hi){return `https://api.mapbox.com/styles/v1/${SAT_STYLE}/static/${lng.toFixed(6)},${lat.toFixed(6)},${z.toFixed(2)},0/1000x700${hi?"@2x":""}?access_token=${encodeURIComponent(mbToken())}`}
+function merc(lat,lng,z){const W=512*Math.pow(2,z);const s=Math.sin(lat*Math.PI/180);return [(lng+180)/360*W,(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*W]}
+function unmerc(x,y,z){const W=512*Math.pow(2,z);const n=Math.PI-2*Math.PI*y/W;return [180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))),x/W*360-180]}
+function geoToXY(g,lat,lng){const c=merc(g.lat,g.lng,g.zoom),p=merc(lat,lng,g.zoom);return [500+(p[0]-c[0]),350+(p[1]-c[1])]}
+function metersPerUnit(g){return 40075016.686*Math.cos(g.lat*Math.PI/180)/(512*Math.pow(2,g.zoom))}
+
+/* picker */
+function satOpen(){const j=job();const g=j.map.geo;
+  S.sat={lat:g?g.lat:null,lng:g?g.lng:null,zoom:g?g.zoom:19,q:[j.info.address,j.info.city].filter(Boolean).join(", "),busy:false,err:"",msg:""};
+  satRender();if(S.sat.lat==null&&S.sat.q)satSearch();}
+function satClose(){S.sat=null;const el=document.getElementById("satpick");if(el)el.remove();document.body.style.overflow="";rr()}
+function satRender(){
+  let el=document.getElementById("satpick");
+  if(!el){el=document.createElement("div");el.id="satpick";el.className="me";el.setAttribute("role","dialog");el.setAttribute("aria-label","Choose satellite view");document.body.appendChild(el);document.body.style.overflow="hidden";
+    el.addEventListener("click",satClick);el.addEventListener("submit",ev=>{ev.preventDefault();const i=document.getElementById("sat-q");S.sat.q=i?i.value:"";satSearch()})}
+  const s=S.sat;const has=s.lat!=null;const mpu=has?metersPerUnit(s):0;const widthFt=has?Math.round(mpu*1000*3.281):0;
+  el.innerHTML=`<div class="me-top"><button class="me-btn strong" data-sat="close">Cancel</button><div class="me-title">Satellite view</div></div>
+  <div class="satbody">
+    <form class="row satq"><input id="sat-q" type="text" value="${esc(s.q)}" placeholder="Property address" autocomplete="street-address" style="flex:1;min-width:160px"><button class="btn sm" ${s.busy?"disabled":""}>Find</button><button type="button" class="btn quiet sm" data-sat="gps">📍 My location</button></form>
+    ${s.err?`<div class="note bad">${esc(s.err)}</div>`:""}${s.msg?`<div class="note info">${esc(s.msg)}</div>`:""}
+    <div class="satframe">${has?`<img id="sat-img" src="${mbStatic(s.lat,s.lng,s.zoom,false)}" alt="Satellite view of the property" data-sat="tap"><div class="satcross" aria-hidden="true"></div>`:`<div class="satempty">${s.busy?"Finding the property…":"Search the address or use your location."}</div>`}</div>
+    ${has?`<div class="row"><button class="me-btn dark" data-sat="out" aria-label="Zoom out">−</button><button class="me-btn dark" data-sat="in" aria-label="Zoom in">+</button><span class="small muted spacer">About ${widthFt.toLocaleString()} ft across. Tap the picture to center it on that spot. Fit the whole yard in the frame.</span></div>
+    <button class="btn" data-sat="use" ${s.busy?"disabled":""} style="min-height:48px">${s.busy?"Saving…":"Use this view"}</button>
+    <p class="small muted" style="margin:0">Anything already drawn stays where it is on the frame. Drag items onto the right spots afterwards.</p>`:""}
+  </div>`;
+}
+async function satSearch(){const s=S.sat;if(!s.q.trim()){s.err="Type the property address.";return satRender()}
+  s.busy=true;s.err="";satRender();
+  try{const r=await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(s.q)}&country=us&limit=1&access_token=${encodeURIComponent(mbToken())}`);
+    const d=await r.json();const f=d&&d.features&&d.features[0];
+    if(!f){s.err="Couldn't find that address. Check it, or stand on the property and use My location.";}
+    else{const [lng,lat]=f.geometry.coordinates;s.lat=lat;s.lng=lng;s.msg="";}
+  }catch(e){s.err="Can't reach the map service. Check your signal."}
+  s.busy=false;satRender();}
+function satGps(){const s=S.sat;if(!navigator.geolocation){s.err="This phone doesn't share location with the browser.";return satRender()}
+  s.busy=true;s.err="";s.msg="Getting your location…";satRender();
+  navigator.geolocation.getCurrentPosition(p=>{s.lat=p.coords.latitude;s.lng=p.coords.longitude;s.busy=false;s.msg=`Centered on you (±${Math.round(p.coords.accuracy*3.281)} ft).`;satRender()},
+    e=>{s.busy=false;s.msg="";s.err=e.code===1?"Location is blocked. Allow location for this site in your browser settings, then try again.":"Couldn't get your location. Try again outside, away from buildings.";satRender()},
+    {enableHighAccuracy:true,timeout:15000,maximumAge:5000});}
+async function satUse(){const s=S.sat;const j=job();if(!j||s.lat==null)return;s.busy=true;satRender();
+  try{const r=await fetch(mbStatic(s.lat,s.lng,s.zoom,true));if(!r.ok)throw new Error("HTTP "+r.status);
+    const blob=await r.blob();const url=URL.createObjectURL(blob);
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const c=document.createElement("canvas");c.width=2000;c.height=1400;c.getContext("2d").drawImage(img,0,0,2000,1400);URL.revokeObjectURL(url);
+    let q=.8,data=c.toDataURL("image/jpeg",q);while(data.length>900000&&q>.4){q-=.1;data=c.toDataURL("image/jpeg",q)}
+    j.map.geo={lat:s.lat,lng:s.lng,zoom:s.zoom,at:Date.now()};
+    await saveBg(j.id,data);scheduleSave(S.cur);
+    S.sat=null;const el=document.getElementById("satpick");if(el)el.remove();document.body.style.overflow="";rr();toast("Satellite view saved");
+  }catch(e){s.busy=false;s.err="Couldn't download the satellite picture. Check your signal and try again.";satRender()}}
+function satClick(ev){const b=ev.target.closest("[data-sat]");if(!b)return;const a=b.dataset.sat;const s=S.sat;
+  if(a==="close")return satClose();
+  if(a==="gps")return satGps();
+  if(a==="in"||a==="out"){s.zoom=Math.max(15,Math.min(21,s.zoom+(a==="in"?1:-1)));return satRender()}
+  if(a==="use")return satUse();
+  if(a==="tap"){const r=b.getBoundingClientRect();const dx=(ev.clientX-r.left)/r.width*1000-500,dy=(ev.clientY-r.top)/r.height*700-350;
+    const c=merc(s.lat,s.lng,s.zoom);const ll=unmerc(c[0]+dx,c[1]+dy,s.zoom);s.lat=ll[0];s.lng=ll[1];s.msg="";return satRender()}
+}
+
+/* GPS inside the map editor */
+function meGpsStart(){const g=(job()||{map:{}}).map.geo;ME.gps=null;if(!g||!navigator.geolocation)return;
+  try{ME.gpsWatch=navigator.geolocation.watchPosition(p=>{ME.gps={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};ME.gpsErr="";meReq();meChromeLight()},
+    e=>{ME.gpsErr=e.code===1?"Location blocked. Allow it in browser settings to use Drop here.":"Waiting for GPS…";meChromeLight()},{enableHighAccuracy:true,maximumAge:2000,timeout:20000})}catch(e){}}
+function meGpsStop(){if(ME.gpsWatch!=null&&navigator.geolocation)navigator.geolocation.clearWatch(ME.gpsWatch);ME.gpsWatch=null;ME.gps=null}
+function meGpsXY(){const g=job().map.geo;if(!g||!ME.gps)return null;return geoToXY(g,ME.gps.lat,ME.gps.lng)}
+function meGpsSvg(k){const g=job().map.geo;const xy=meGpsXY();if(!g||!xy)return "";const r=Math.max(ME.gps.acc/metersPerUnit(g),6*k);
+  return `<g pointer-events="none"><circle cx="${xy[0]}" cy="${xy[1]}" r="${r}" style="fill:#2F7BFF;fill-opacity:.15;stroke:#2F7BFF;stroke-opacity:.5" stroke-width="${1.5*k}"/>
+    <circle cx="${xy[0]}" cy="${xy[1]}" r="${9*k}" style="fill:#2F7BFF;stroke:#fff" stroke-width="${3*k}"/></g>`}
+function meGpsBar(){const j=job();if(!j.map.geo)return "";const xy=meGpsXY();const isLine=MAP_LINES.some(l=>l[0]===ME.tool);
+  const inFrame=xy&&xy[0]>=0&&xy[0]<=1000&&xy[1]>=0&&xy[1]<=700;
+  const label=ME.tool==="select"?"":isLine?"📍 Add point here":"📍 Drop here";
+  const status=!ME.gps?(ME.gpsErr||"Waiting for GPS…"):!inFrame?"You're outside this map's area":`GPS ±${Math.round(ME.gps.acc*3.281)} ft`;
+  return `<div class="me-row gpsbar"><span class="gpsdot"></span><span class="small spacer" id="me-gpsstat">${esc(status)}</span>
+    ${ME.gps&&inFrame?`<button class="btn quiet sm" data-me="gpscenter">Find me</button>`:""}${label?`<button class="btn sm" data-me="gpsdrop" ${ME.gps&&inFrame?"":"disabled"}>${label}</button>`:""}</div>`}
+function meChromeLight(){const el=document.getElementById("me-gpsstat");if(!el){return}const bar=el.closest(".gpsbar");if(bar){const tmp=document.createElement("div");tmp.innerHTML=meGpsBar();if(tmp.firstElementChild)bar.replaceWith(tmp.firstElementChild)}}
+function meGpsDrop(){const xy=meGpsXY();if(!xy)return;meTap({p0:xy,item:null,vtx:null,line:null,gps:true})}
 
 /* ---------------- full-screen map editor ---------------- */
 const ME={open:false,vb:{x:0,y:0,w:1000,h:700},tool:"select",sel:null,draw:null,ptrs:new Map(),g:null,undo:[],layers:false,raf:0};
@@ -704,10 +795,10 @@ function openMap(){
   st.addEventListener("wheel",meWheel,{passive:false});
   el.addEventListener("click",meClick);el.addEventListener("input",meInput);
   window.addEventListener("resize",meResize);
-  meChrome();meFit();meDraw();
+  meGpsStart();meChrome();meFit();meDraw();
   if(window.ResizeObserver){ME.ro=new ResizeObserver(()=>meResize());ME.ro.observe(st)}
 }
-function closeMap(){ME.open=false;if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
+function closeMap(){ME.open=false;meGpsStop();if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
 function meResize(){if(!ME.open)return;const r=meEl("me-stage").getBoundingClientRect();if(!r.width||!r.height)return;const v=ME.vb;const h=v.w*r.height/r.width;if(Math.abs(h-v.h)<0.5)return;ME.vb={x:v.x,y:v.y,w:v.w,h};meDraw()}
 function meFit(){const r=meEl("me-stage").getBoundingClientRect();const a=r.height/Math.max(1,r.width);
   if(a>0.7){ME.vb={x:-20,w:1040,h:1040*a,y:350-1040*a/2}}else{const h=740;ME.vb={y:-20,h,w:h/a,x:500-h/a/2}}}
@@ -741,6 +832,7 @@ function meDraw(){
       <text text-anchor="middle" dy=".35em" font-family="IBM Plex Mono, monospace" font-size="${(head?10:13)*k}" font-weight="600" style="fill:${head?"var(--ink)":"var(--surface)"}">${esc(head?(it.sub||"").slice(0,2).toUpperCase():d[2])}</text>
       ${it.label?`<text y="${r+15*k}" text-anchor="middle" font-family="Source Sans 3, sans-serif" font-size="${13*k}" font-weight="700" style="fill:var(--ink);stroke:var(--surface)" stroke-width="${4*k}" paint-order="stroke">${esc(it.label)}</text>`:""}</g>`;
   }
+  s+=meGpsSvg(k);
   svg.innerHTML=s;
 }
 function toolLabel(t){if(t==="select")return "Move";const h=HEAD_TOOLS.find(x=>x[0]===t);if(h)return h[1]+" head";const p=MAP_POINTS.find(x=>x[0]===t);if(p)return p[1];const l=MAP_LINES.find(x=>x[0]===t);return l?l[1]:t}
@@ -767,7 +859,7 @@ function meChrome(){
   const counts={};j.map.items.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);j.map.lines.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);
   const layers=ME.layers?`<div class="me-row chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-me="hide" data-v="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])}</button>`).join("")||'<span class="small muted">Nothing on the map yet.</span>'}</div>`:"";
   const tb=(t,l,sw)=>`<button class="tool" data-me="tool" data-v="${t}" aria-pressed="${ME.tool===t}">${sw||""}${esc(l)}</button>`;
-  bot.innerHTML=`${sheet}${layers}<div class="me-row"><span class="small muted spacer">${hint}</span>
+  bot.innerHTML=`${sheet}${layers}${meGpsBar()}<div class="me-row"><span class="small muted spacer">${hint}</span>
     ${drawing?`<button class="btn quiet sm" data-me="unpt">Undo point</button><button class="btn sm" data-me="finish">Finish line</button>`:""}
     <button class="chip" data-me="layers" aria-pressed="${ME.layers}">Layers</button></div>
     <div class="me-pal">
@@ -784,6 +876,8 @@ function meClick(ev){
   const b=ev.target.closest("[data-me]");if(!b)return;const a=b.dataset.me;const j=job();
   const pal=document.querySelector(".me-pal");if(pal)ME.palScroll=pal.scrollLeft;
   if(a==="done"){closeMap();return}
+  if(a==="gpsdrop"){meGpsDrop();return}
+  if(a==="gpscenter"){const xy=meGpsXY();if(xy){ME.vb.x=xy[0]-ME.vb.w/2;ME.vb.y=xy[1]-ME.vb.h/2;meDraw()}return}
   if(a==="undo"){meUndo();return}
   if(a==="in"||a==="out"){const f=a==="in"?0.7:1/0.7;meZoom(f,ME.vb.x+ME.vb.w/2,ME.vb.y+ME.vb.h/2);return}
   if(a==="fit"){meFit();meDraw();return}
@@ -1705,7 +1799,8 @@ app.addEventListener("click",ev=>{
     render();const el=document.querySelectorAll(".card")[1];if(el)el.scrollIntoView({block:"start"});return}
   if(d.mapopen){openMap();return}
   if(d.hide){S.mapHide[d.hide]=!S.mapHide[d.hide];rr();return}
-  if(d.bgclear){saveBg(j.id,null);return}
+  if(d.bgclear){delete j.map.geo;saveBg(j.id,null);return}
+  if(d.satopen){satOpen();return}
   if(d.mkreport){render();window.scrollTo(0,0);return}
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
   if(d.quoted){j.info.status="Quoted";scheduleSave(S.cur);rr();toast("Marked as quoted");return}
@@ -1766,7 +1861,7 @@ function readBg(file){
     const s=Math.max(w/img.width,h/img.height);const dw=img.width*s,dh=img.height*s;x.drawImage(img,(w-dw)/2,(h-dh)/2,dw,dh);
     let q=.62,url=c.toDataURL("image/jpeg",q);while(url.length>230000&&q>.25){q-=.08;url=c.toDataURL("image/jpeg",q)}
     if(url.length>240000){c.width=700;c.height=490;c.getContext("2d").drawImage(img,(700-dw*.7)/2,(490-dh*.7)/2,dw*.7,dh*.7);url=c.toDataURL("image/jpeg",.5)}
-    saveBg(S.cur,url)};img.onerror=()=>toast("That file isn't an image we can read");img.src=fr.result};fr.readAsDataURL(file);
+    {const jj=job();if(jj&&jj.map.geo)delete jj.map.geo;}saveBg(S.cur,url)};img.onerror=()=>toast("That file isn't an image we can read");img.src=fr.result};fr.readAsDataURL(file);
 }
 boot();
 })();
