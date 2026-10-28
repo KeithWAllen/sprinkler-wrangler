@@ -418,8 +418,10 @@ async function deleteJob(id){
   if(S.mode==="local"){const all=LS.get("irr.jobs")||{};delete all[id];LS.set("irr.jobs",all);IDB.del("irr.bg."+id)}
   else if(S.mode==="db"&&!S.ro){try{await db.doc("jobs/"+id).delete();await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
+/* Admins (owner + developer) change prices; technicians only read them */
+function isAdmin(){return !sb||!!(S.me&&S.me.admin)}
 let pTimer=null;
-function savePricing(){clearTimeout(pTimer);pTimer=setTimeout(async()=>{
+function savePricing(){if(!isAdmin())return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
   if(S.mode==="local")LS.set("irr.pricing",S.pricing);
   else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing})}catch(e){handleWriteErr(e)}}
 pTimer=null},700)}
@@ -592,14 +594,14 @@ function docketView(){
 }
 function pricesView(){
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
-  return `<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
+  return `${isAdmin()?"":`<div class="note info">Only admins can change prices and business info. Ask Bradley if a price needs updating.</div>`}<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
   <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
-    <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
   <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
   ${GROUP_ORDER.filter(g=>groups[g]).map(g=>`<div class="card"><h2>${esc(g)}</h2><div class="acts">${groups[g].map(([k,d])=>{const v=S.pricing[k];const changed=v!=null&&v!==""&&num(v)!==d.p;
     return `<div class="act"><div class="al">${esc(d.l)}<div class="ap">per ${esc(d.u)}${changed?` · sample ${money(d.p)}`:""} · commercial ${money(basePrice(k)*(1+commPct()/100))}</div></div>
-    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" value="${v!=null&&v!==""?esc(v):d.p}" aria-label="${esc(d.l)} price"></label></div>`}).join("")}</div></div>`).join("")}
-  <div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`;
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${v!=null&&v!==""?esc(v):d.p}" aria-label="${esc(d.l)} price"></label></div>`}).join("")}</div></div>`).join("")}
+  ${isAdmin()?`<div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`:""}`;
 }
 
 function jobView(){
@@ -909,8 +911,8 @@ function ohmBlock(c,b,zn){
     ${edit?`<div class="grid3"><label class="f"><span>Short below (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_short" data-price="_ohm_short" data-ohmcut="1" value="${cut.short}"></label><label class="f"><span>High above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_high" data-price="_ohm_high" data-ohmcut="1" value="${cut.high}"></label><label class="f"><span>Floating above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_float" data-price="_ohm_float" data-ohmcut="1" value="${cut.float}"></label></div>
       <div class="row"><button class="btn sm" data-ohmans="yes">Save, these are correct now</button></div>`
     :`<div class="row"><button class="btn sm" data-ohmans="yes">Yes</button><button class="btn danger sm" data-ohmans="no">No</button></div>`}</div>`;
-  if(ans!=="yes")return `<div class="combo"><h4>Zone wire readings (ohms)</h4>${test}<p class="small muted" style="margin:0">Answer the question above to enter readings.</p></div>`;
-  return `<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted" style="margin:0">${bands}. Type OL for an open reading. <button class="linkbtn" data-ohmans="edit">Change ranges</button></p>
+  if(ans!=="yes"&&isAdmin())return `<div class="combo"><h4>Zone wire readings (ohms)</h4>${test}<p class="small muted" style="margin:0">Answer the question above to enter readings.</p></div>`;
+  return `<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted" style="margin:0">${bands}. Type OL for an open reading. ${isAdmin()?`<button class="linkbtn" data-ohmans="edit">Change ranges</button>`:(ans!=="yes"?"An admin still needs to confirm these ranges.":"")}</p>
     <div class="ohms">${Array.from({length:zn},(_,i)=>{const z=i+1;const v=(c.ohms||{})[z];const st=ohmState(v);return `<label class="ohm ${st}"><b>Zone ${z}</b><input type="text" inputmode="decimal" autocomplete="off" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" data-ohm="1" value="${esc(v)}" aria-label="Zone ${z} ohms"><span class="ohst">${st?OHM_TXT[st]:"&nbsp;"}</span><button type="button" class="olbtn" data-ol="${b}.ohms.${z}">OL</button></label>`}).join("")}</div></div>`;
 }
 function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==false:!!v;
@@ -1054,7 +1056,7 @@ const TCEQ_NOTICE="Irrigation in Texas is regulated by the Texas Commission on E
 const BIZ_FIELDS=[["_biz_name","Business name"],["_biz_irrigator","Licensed irrigator name"],["_biz_lic","Irrigator license # (LI)"],["_biz_addr","Business address"],["_biz_phone","Business phone"],["_biz_email","Business email"]];
 function bizInfo(){const p=S.pricing;return {name:p._biz_name||"",irr:p._biz_irrigator||"",lic:p._biz_lic||"",addr:p._biz_addr||"",phone:p._biz_phone||"",email:p._biz_email||""}}
 function bizMissing(){const b=bizInfo();const m=[];if(!b.irr)m.push("Licensed irrigator name");if(!b.lic)m.push("License #");if(!b.addr)m.push("Business address");if(!b.phone)m.push("Business phone");return m}
-function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<label class="f"><span>${l}${["_biz_irrigator","_biz_lic","_biz_addr","_biz_phone"].includes(k)?" *":""}</span><input type="text" id="p-${k}" data-price="${k}" data-biz="1" value="${esc(S.pricing[k]||"")}"></label>`).join("")}</div>`}
+function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<label class="f"><span>${l}${["_biz_irrigator","_biz_lic","_biz_addr","_biz_phone"].includes(k)?" *":""}</span><input type="text" id="p-${k}" data-price="${k}" data-biz="1" ${isAdmin()?"":"disabled"} value="${esc(S.pricing[k]||"")}"></label>`).join("")}</div>`}
 
 /* ---- upgrades / upsells ---- */
 /* Upgrades/upsells are built but hidden for now — set to true to turn them back on */
@@ -1129,7 +1131,7 @@ function invoiceText(j){const e=buildEstimate(j);const b=bizInfo();const inv=j.i
 function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Add them on the Customer tab.</p><div><button class="btn" data-tab="dispatch">Go to Customer</button></div></div>`;
   const blocks=[];
-  if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. You only enter this once.</p>${bizFields()}<div><button class="btn sm" data-tab="invoice">Done</button></div></div>`);
+  if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this on the Price sheet."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
   if(!cur)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
   const ready=!bm.length&&cur;
   return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Unpaid</span>'):'<span class="pill neutral">Estimate</span>'}</div>
@@ -1409,7 +1411,7 @@ async function afterSignIn(session){
   if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
-  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role};
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin};
   if(p.role==="tech"){startDb(makeSupaDb());checkLocalImport()}
   else if(SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
@@ -1514,24 +1516,26 @@ async function importLocal(){
 
 /* ---------- Team & account (technicians) ---------- */
 async function loadTeam(){
-  const [p,s]=await Promise.all([sb.from("profiles").select("id,email,name,role,created_at").order("created_at"),sb.from("staff_emails").select("email")]);
+  const [p,s]=await Promise.all([sb.from("profiles").select("*").order("created_at"),sb.from("staff_emails").select("email")]);
   S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.home==="team"&&!S.cur)render();
 }
 function teamView(){
   if(!S.team){loadTeam();return `<div class="card"><p class="muted">Loading team…</p></div>`}
   const me=S.me;const techs=S.team.people.filter(p=>p.role==="tech");const owners=S.team.people.filter(p=>p.role==="owner");
   const pending=S.team.staff.filter(e=>!S.team.people.some(p=>p.email===e));
-  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">Technician</span></div>
+  const adm=isAdmin();
+  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">${me.admin?"Admin":"Technician"}</span></div>
     <div class="grid2"><label class="f"><span>Your name (shown on reports you issue)</span><input id="me-name" type="text" data-mename="1" value="${esc(me.name)}"></label><label class="f"><span>Email</span><input type="email" value="${esc(me.email)}" disabled></label></div>
     <div><button class="btn quiet" data-signout="1">Sign out</button></div></div>
-  <div class="card"><h2>Technicians</h2><p class="small muted" style="margin:0">Technicians can see and edit every job, prices and reports.</p>
-    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${p.id===me.id?"":delBtn("staff:"+p.email,"Remove")}</div>`).join("")}
-    ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${delBtn("staff:"+e,"Remove")}</div>`).join("")}</div>
-    <form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
-    <p class="small muted" style="margin:0">They create their own account on the sign-in screen using this email. If they already have one, they become a technician right away.</p></div>
+  <div class="card"><h2>Team</h2><p class="small muted" style="margin:0">Technicians do jobs, reports and invoices and can see prices. <b>Admins</b> can also change prices and business info and manage the team.</p>
+    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm?`<div class="row" style="gap:6px;justify-content:flex-end">${p.is_admin?(p.id===me.id?"":delBtn("unadmin:"+p.email,"Remove admin")):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`}${p.id===me.id?"":delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
+    ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${adm?delBtn("staff:"+e,"Remove"):""}</div>`).join("")}</div>
+    ${adm?"":"<!--"}<form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
+    <p class="small muted" style="margin:0">They create their own account on the sign-in screen using this email. If they already have one, they become a technician right away.</p>${adm?"":"-->"}</div>
   ${SHOW_PORTAL?"":"<!--"}<div class="card"><h2>Property owners</h2><p class="small muted" style="margin:0">Owners see only the issued reports and invoices for jobs where their email is the customer email.</p>
     ${owners.length?`<div class="acts">${owners.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}</div></div></div>`).join("")}</div>`:'<p class="muted" style="margin:0">No owners have signed up yet.</p>'}</div>${SHOW_PORTAL?"":"-->"}`;
 }
+async function setAdmin(email,on){const {error}=await sb.rpc("set_admin",{p_email:email,p_admin:on});if(error){toast(error.message.replace(/^.*?:\s*/,""));return}toast(on?"Admin access given":"Admin access removed");loadTeam()}
 async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_email:email,p_staff:on});if(error){toast(error.message.replace(/^.*?:\s*/,""));return}toast(on?"Technician added":"Technician removed");loadTeam()}
 
 /* ---------- Owner portal ---------- */
@@ -1596,7 +1600,7 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-import]");
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-import],[data-mkadmin]");
   if(ab){const d=ab.dataset;
     if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
@@ -1604,6 +1608,7 @@ app.addEventListener("click",ev=>{
     if(d.pback){S.portal.view=null;render();return}
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
     if(d.import){importLocal();return}
+    if(d.mkadmin){setAdmin(d.mkadmin,true);return}
   }
 },true);
 app.addEventListener("click",ev=>{
@@ -1677,6 +1682,7 @@ function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
   if(k==="staff"){setStaff(key.slice(6),false);return}
+  if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
   if(k==="job"){deleteJob(a);S.cur=null;render();toast("Job deleted");return}
   if(!j)return;

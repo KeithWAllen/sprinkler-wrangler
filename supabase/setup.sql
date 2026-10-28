@@ -159,4 +159,5 @@ do $$ begin
   begin alter publication supabase_realtime add table public.settings; exception when others then null; end;
 end $$;
 
+-- (Admins: also run 02-admins.sql)
 select 'Sprinkler Wrangler setup complete' as result;
