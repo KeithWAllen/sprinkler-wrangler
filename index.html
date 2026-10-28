@@ -279,6 +279,8 @@ body.training .bar{color:#fff}
 .tlp-r{background:var(--tl-r);color:#fff}.tlp-y{background:var(--tl-y);color:#2B2100}.tlp-g{background:var(--tl-g);color:#fff}
 ul.soltl li::before{content:none}ul.soltl{padding-left:0}ul.soltl li{display:flex;gap:6px;align-items:baseline}
 tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px solid var(--tl-y)}
+.ba{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bacol{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:4px}.baarrow{font-size:1.6rem;color:var(--muted)}
+.compi{gap:8px}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -669,7 +671,7 @@ function jobView(){
   const j=job();const e=buildEstimate(j);
   const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
   const miss=missingCustomer(j);
-  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer",miss.length?"!":""],["report","Report"],["invoice","Invoice"]];
+  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer",miss.length?"!":""],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
   if(!j.info.propType)return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">Start of job</div><h1>New job</h1></div></div></header></div>
   <div class="wrap"><main>${banner()}<div class="card"><div class="eyebrow">Step 1</div><h2>What kind of property is this?</h2>
@@ -681,7 +683,7 @@ function jobView(){
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · Start of job</div><h1>Controller setup</h1></div>${acctChip()}</div></header></div>
   <div class="wrap"><main>${banner()}${ctlSetupForm("What controller is on site?",true)}
     <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`}
-  const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab}[S.tab]();
+  const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${dn[k]?'<span class="tabok" aria-label="done">✓</span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")})()}</div></nav></div>
@@ -1322,7 +1324,7 @@ function invoiceHtml(j){
   return (S.training?TRAIN_STAMP:"")+invoiceHtmlReal(j);
 }
 function invoiceHtmlReal(j){
-  const e=buildEstimate(j);const b=bizInfo();const inv=j.inv||{};const cur=currentRev(j);const kind=inv.kind==="invoice"?"Invoice":"Estimate";
+  const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const cur=currentRev(j);const kind=inv.kind==="invoice"?"Invoice":"Estimate";
   return `<div class="lh"><div><div class="eyebrow">${kind}</div><h1>${esc(b.name||"Your business name")}</h1>
     <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
     <div class="small">Licensed Irrigator: ${esc(b.irr||"—")} · LI ${esc(b.lic||"—")}</div></div>
@@ -1335,7 +1337,7 @@ function invoiceHtmlReal(j){
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
 }
-function invoiceText(j){const e=buildEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
+function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
   L.push(kind+" "+(inv.no||""));L.push(b.name);L.push(b.addr);L.push([b.phone,b.email].filter(Boolean).join(" · "));L.push("Licensed Irrigator: "+b.irr+" · LI "+b.lic);L.push("");
   L.push("Bill to: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
   let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${l.unit!=="each"?" "+l.unit:""}  ${money(l.total)}`)});
@@ -1398,7 +1400,7 @@ async function issueRev(j){
   const note=String(j.est.revNote||"").trim();
   if(last&&!note){toast("Describe what changed before issuing");const el=document.getElementById("f-est.revNote");if(el)el.focus();return}
   const n=last?last.n+1:0;const at=Date.now();
-  const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total};
+  const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total,audit:auditSnapshot(j)};
   const html=reportHtml(j,rev);
   delete j.est.revNote;
   rev.fp=jobPrint(j);revs.push(rev);
@@ -1465,6 +1467,62 @@ function estTableTL(j,e,editable){
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div>
   ${groups.r.length&&groups.y.length?`<div class="small"><span>Fix now only (service + red, before tax)</span><span>${money(sub(groups.s)+sub(groups.r))}</span></div>`:""}</div>
   ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
+
+/* ---------------- Completion: what was (audit) vs what is (after the work) ----------------
+   Each issued audit revision keeps a snapshot of its Red/Yellow items. After the work, the tech marks each
+   item Done / Declined / Not done; the completion report shows before vs after, and the invoice bills only Done work. */
+const COMP_ST=[["done","Done"],["declined","Declined by customer"],["notdone","Not done yet"]];
+function auditSnapshot(j){const e=buildEstimate(j);return {at:Date.now(),lines:e.lines.filter(l=>lineColor(j,l)).map(l=>({k:lineKey(l),label:l.label,sec:l.sec,c:lineColor(j,l),total:l.total,qty:l.qty,unit:l.unit}))}}
+function latestAudit(j){return [...(j.revs||[])].reverse().find(r=>r.audit)||null}
+function syncCompletion(j){const rv=latestAudit(j);if(!rv)return null;
+  const old=j.completion||{};const prev={};(old.items||[]).forEach(i=>prev[i.k]=i);
+  const items=rv.audit.lines.map(l=>Object.assign({k:l.k,label:l.label,sec:l.sec,c:l.c,total:l.total,status:"",note:""},prev[l.k]?{status:prev[l.k].status,note:prev[l.k].note||"",pic_ph:prev[l.k].pic_ph}:{}));
+  const changed=old.rev!==rv.n||JSON.stringify((old.items||[]).map(i=>[i.k,i.status]))!==JSON.stringify(items.map(i=>[i.k,i.status]));
+  if(changed||!j.completion){j.completion=Object.assign({},old,{rev:rv.n,items});}
+  return {rv,changed:changed&&old.rev!==undefined&&old.rev!==rv.n}}
+function compCounts(items){const n={r:0,y:0,fixed:0,rLeft:0,yLeft:0,declined:0};items.forEach(i=>{n[i.c]++;if(i.status==="done")n.fixed++;else{if(i.c==="r")n.rLeft++;else n.yLeft++}if(i.status==="declined")n.declined++});return n}
+function compPrint(j){return hashStr(JSON.stringify((j.completion.items||[]).map(i=>[i.k,i.status,i.note,i.pic_ph||[]])))}
+function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.n===c.rev)||{};const n=compCounts(c.items);const biz=bizInfo();
+  const d=t=>t?new Date(t).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
+  const nowCell=i=>i.status==="done"?`${tlDot("g")} <b>Fixed</b>`:i.status==="declined"?`${tlDot(i.c)} Declined by customer`:`${tlDot(i.c)} Not done yet`;
+  const ord={r:0,y:1};const items=c.items.slice().sort((a,b)=>ord[a.c]-ord[b.c]);
+  const figs=[];items.forEach(i=>(i.pic_ph||[]).forEach(id=>figs.push(`<figure class="rph"><img data-ph="${id}" alt="${esc(i.label)}"><figcaption>After: ${esc(i.label)}</figcaption></figure>`)));
+  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}Completion report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
+    <div style="text-align:right"><div class="eyebrow">Audit</div><div class="mono">Rev ${revNo(c.rev)} · ${esc(d(rv.at))}</div><div class="eyebrow" style="margin-top:6px">Completed</div><div>${esc(d(c.issuedAt||Date.now()))}</div>${c.by?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(c.by)}</div>`:""}</div></div>
+  <section><h2>Before and after</h2><div class="ba">
+    <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> fix now ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
+    <div class="baarrow" aria-hidden="true">→</div>
+    <div class="bacol"><div class="eyebrow">What is now</div><div class="row">${tlDot("g")} <b>${n.fixed}</b> fixed ${tlDot("r")} <b>${n.rLeft}</b> fix now ${tlDot("y")} <b>${n.yLeft}</b> recommended</div></div></div></section>
+  <section><h2>Item by item</h2><div class="tbl"><table><thead><tr><th>Item</th><th>Was</th><th>Now</th></tr></thead><tbody>
+    ${items.map(i=>`<tr><td>${esc(i.label)}<div class="small muted">${esc(i.sec)}${i.note?" · "+esc(i.note):""}</div></td><td>${tlDot(i.c)} ${TL[i.c][0]}</td><td>${nowCell(i)}</td></tr>`).join("")}</tbody></table></div></section>
+  ${n.declined?`<section><p class="small"><b>Declined items:</b> the customer chose not to have ${n.declined===1?"this item":"these items"} done at this time. ${n.declined===1?"It was":"They were"} explained on the audit report (Rev ${revNo(c.rev)}, ${esc(d(rv.at))}).</p></section>`:""}
+  ${figs.length?`<section><h2>After photos</h2><div class="rphs">${figs.join("")}</div></section>`:""}`}
+function completionTab(){const j=job();const s=syncCompletion(j);
+  if(!s)return `<div class="card"><h2>Completion</h2><p>Issue the audit report first. The completion report compares the work done against it.</p><div><button class="btn" data-tab="report">Go to Report</button></div></div>`;
+  if(s.changed)scheduleSave(S.cur);
+  const c=j.completion;const n=compCounts(c.items);const answered=c.items.filter(i=>i.status).length;const issued=c.issuedAt&&c.fp===compPrint(j);
+  const ord={r:0,y:1};const rows=c.items.map((i,ix)=>[i,ix]).sort((a,b)=>ord[a[0].c]-ord[b[0].c]);
+  return `<div class="card"><div class="cardhead"><h2>Completion</h2><span class="muted small">Audit Rev ${revNo(c.rev)}</span></div>
+    <p class="small muted" style="margin:0">Mark each audit item once the work is finished. The invoice bills only items marked Done.</p>
+    <div class="row">${tlDot("r")} ${n.r} fix now · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
+  ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)} · ${money(i.total)}</div></div></div>
+      ${seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
+      ${i.status?fld("Note (optional)",`completion.items.${ix}.note`):""}
+      ${i.status==="done"?`<div class="q"><span class="ql">After photo (optional)</span>${photoStrip(`completion.items.${ix}.pic`).replace("Photo required","Add photo").replace('class="phadd req"','class="phadd"')}</div>`:""}</div>`).join("")
+    :`<div class="card"><p class="muted">The audit had no red or yellow items to complete.</p></div>`}
+  <div class="card">${issued?`<div class="note info">Completion report issued ${esc(fmtDT(c.issuedAt))}.</div>`:c.issuedAt?`<div class="note bad">Items changed after the completion report was issued. Issue it again.</div>`:""}
+    <div class="row"><button class="btn" data-compissue="1" ${answered===c.items.length?"":"disabled"}>${c.issuedAt?"Issue again":"Issue completion report"}</button>
+    ${issued&&CAN_PRINT?`<button class="btn ghost" data-compprint="1">Print</button>`:""}${issued?`<button class="btn ghost" data-compcopy="1">Copy as text</button>`:""}</div>
+    ${answered===c.items.length?"":`<p class="small muted" style="margin:0">Mark every item to issue the completion report.</p>`}</div>
+  ${c.items.length?`<article class="sheet">${completionHtml(j)}</article>`:""}`}
+function completionText(j){const c=j.completion;const n=compCounts(c.items);const L=["COMPLETION REPORT",bizInfo().name||"",j.info.customer||"",[j.info.address,j.info.city].filter(Boolean).join(", "),"Audit Rev "+revNo(c.rev),"",
+  `Before: ${n.r} fix now, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} fix now, ${n.yLeft} recommended`,""];
+  c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
+/* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
+function invoiceEstimate(j){const e=buildEstimate(j);const c=j.completion;if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
+  const inAudit=new Set(c.items.map(i=>i.k)),done=new Set(c.items.filter(i=>i.status==="done").map(i=>i.k));
+  const lines=e.lines.filter(l=>l.sec==="Service"||!inAudit.has(lineKey(l))||done.has(lineKey(l)));
+  const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}
 
 /* ---------------- Equipment brands & company quality ratings ----------------
    Brand lists per part. Ratings are the company's own call, set by an admin on the Price sheet,
@@ -1698,7 +1756,7 @@ function makeSupaDb(){
     const c=custOf(j);
     if(lastEmail[id]!==undefined&&lastEmail[id]!==c.customer_email){await sb.from("reports").update({customer_email:c.customer_email,customer_name:c.customer_name,address:c.address}).eq("job_id",id)}
     lastEmail[id]=c.customer_email;
-    if(j.inv&&j.inv.no){const e=buildEstimate(j);
+    if(j.inv&&j.inv.no){const e=invoiceEstimate(j);
       const {error}=await sb.from("invoices").upsert(Object.assign({job_id:id,no:j.inv.no,kind:j.inv.kind||"estimate",status:j.inv.kind==="invoice"?(j.inv.status||"unpaid"):"estimate",total:e.total,html:invoiceHtml(j),updated_at:new Date().toISOString()},c));
       if(error)throw sbErr(error)}
   }
@@ -2118,6 +2176,9 @@ app.addEventListener("click",ev=>{
     if(kind==="lat"){z.laterals=z.laterals||[];z.laterals.push(TPL.lateral());toast("Lateral break added. Fill in its size and length below")}
     scheduleSave(S.cur);rr();return}
   if(d.tl){j.est.tl=Object.assign({},j.est.tl||{});const l=buildEstimate(j).lines.find(x=>lineKey(x)===d.tl);if(l){j.est.tl[d.tl]=lineColor(j,l)==="r"?"y":"r"}scheduleSave(S.cur);rr();return}
+  if(d.compissue){const c=j.completion;if(!c)return;c.issuedAt=Date.now();c.by=(S.me&&S.me.name)||j.info.tech||"";c.fp=compPrint(j);c.html=completionHtml(j);j.info.status="Completed";scheduleSave(S.cur);rr();toast("Completion report issued");return}
+  if(d.compprint){printDoc(j.completion.html||completionHtml(j));return}
+  if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
   if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
