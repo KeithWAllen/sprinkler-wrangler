@@ -255,6 +255,14 @@ body.training .bar{color:#fff}
 .trainbar{border:2px solid var(--warn);background:var(--warn-soft);border-radius:10px;padding:10px 12px;font-size:.92rem}
 .trainstamp{border:3px dashed var(--bad);color:var(--bad);font-family:var(--display);font-weight:700;font-size:1.3rem;letter-spacing:.06em;text-align:center;padding:8px;border-radius:8px}
 .branchbar{border:1px solid var(--soil);border-radius:10px;padding:6px 8px;background:var(--bg)}
+.zcheck{border:2px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;background:var(--bg)}
+.zcheck.need{border-color:var(--water)}
+.hints{display:grid;gap:6px}.hint{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem;border-left:3px solid var(--warn);padding-left:8px}.hint span{flex:1;min-width:160px}
+.chip.zc-yes{border-color:var(--good)}.chip.zc-no{border-color:var(--bad)}
+.guide{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
+.gsteps{display:flex;gap:4px;flex-wrap:wrap}
+.gstep{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.gstep.done{background:var(--accent-soft);color:var(--good)}.gstep.now{background:var(--water);color:#fff}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -653,7 +661,7 @@ function jobView(){
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")}</div></nav></div>
-  <div class="wrap"><main>${banner()}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
+  <div class="wrap"><main>${banner()}${guideBar(j)}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");return m}
@@ -693,7 +701,7 @@ function mapSvg(j,interactive,hideMap){
   s+="</svg>";
   return s.replace(/<(\w+)([^>]*)>/g,(m,tag,attrs)=>{const st=[];let self=/\/\s*$/.test(attrs);attrs=attrs.replace(/\/\s*$/,"").replace(/ (fill|stroke)="(var\([^)]*\))"/g,(mm,a,v)=>{st.push(a+":"+v);return ""});return st.length?`<${tag}${attrs} style="${st.join(";")}"${self?"/":""}>`:m});
 }
-function mapTab(){const j=job();loadBg(j.id);
+function mapTab(){const j=job();loadBg(j.id);const zc=mapZoneCard(j);
   const counts={};j.map.items.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);j.map.lines.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);
   const n=j.map.items.length+j.map.lines.length;
   return `<div class="card"><div class="cardhead"><h2>Property map</h2><span class="muted small">${n} item${n===1?"":"s"}</span></div>
@@ -704,7 +712,7 @@ function mapTab(){const j=job();loadBg(j.id);
     ${S.bg[j.id]?`<button class="btn quiet sm" data-bgclear="1">${j.map.geo?"Back to grid":"Remove photo"}</button>`:""}</div>
   ${n?`<div class="row"><span class="small muted spacer">Start over? This removes every item and line but keeps the satellite view or photo.</span>${delBtn("mapclear","Clear all items")}</div>`:""}
   ${j.map.geo?`<p class="small muted" style="margin:0">Satellite view is on. In the map editor, the blue dot shows where you're standing; tap <b>Drop here</b> to place the selected item at your spot.</p>`:""}
-  <div class="q"><span class="ql">Show on map and report</span><div class="chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-hide="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])} <span class="mono">${counts[p[0]]}</span></button>`).join("")||'<span class="small muted">Layers appear as you add items.</span>'}</div></div></div>`;
+  <div class="q"><span class="ql">Show on map and report</span><div class="chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-hide="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])} <span class="mono">${counts[p[0]]}</span></button>`).join("")||'<span class="small muted">Layers appear as you add items.</span>'}</div></div></div>${zc}`;
 }
 
 /* ---------------- Satellite view + GPS (Mapbox) ----------------
@@ -807,7 +815,7 @@ function openMap(){
   meGpsStart();meChrome();meFit();meDraw();
   if(window.ResizeObserver){ME.ro=new ResizeObserver(()=>meResize());ME.ro.observe(st)}
 }
-function closeMap(){ME.open=false;meGpsStop();if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
+function closeMap(){ME.open=false;{const jj=job();if(jj){const t=linkMapZones(jj);if(t.length){scheduleSave(S.cur);toast(`Zone${t.length>1?"s":""} ${t.join(", ")} linked from the map. Confirm each one works.`)}}}meGpsStop();if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
 function meResize(){if(!ME.open)return;const r=meEl("me-stage").getBoundingClientRect();if(!r.width||!r.height)return;const v=ME.vb;const h=v.w*r.height/r.width;if(Math.abs(h-v.h)<0.5)return;ME.vb={x:v.x,y:v.y,w:v.w,h};meDraw()}
 function meFit(){const r=meEl("me-stage").getBoundingClientRect();const a=r.height/Math.max(1,r.width);
   if(a>0.7){ME.vb={x:-20,w:1040,h:1040*a,y:350-1040*a/2}}else{const h=740;ME.vb={y:-20,h,w:h/a,x:500-h/a/2}}}
@@ -1080,7 +1088,7 @@ function zonesTab(){const j=job();
   const zs=j.zones.map((z,i)=>[z,i]).sort((a,b)=>ctlName(j,a[0].ctl).localeCompare(ctlName(j,b[0].ctl))||num(a[0].num)-num(b[0].num));
   if(S.zoneOpen&&!j.zones.find(z=>z.id===S.zoneOpen))S.zoneOpen=null;
   const list=`<div class="card"><div class="cardhead"><h2>Zones</h2><button class="btn sm" data-addzone="1">+ Add zone</button></div>
-   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);return `<button class="chip" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
+   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);return `<button class="chip zc-${z.works||"none"}" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${z.works==="yes"?"✓ ":z.works==="no"?"✕ ":""}${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
   const zo=j.zones.findIndex(z=>z.id===S.zoneOpen);
   if(zo<0)return list;
   const z=j.zones[zo],b=`zones.${zo}`;
@@ -1090,7 +1098,9 @@ function zonesTab(){const j=job();
     combos+=`<div class="combo"><h4>${s}" ${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${acts.map(a=>stepRow(ACT_L[a],`${b}.acts.${t}_${s}_${a}`,headPriceKey(t,s,a))).join("")}</div></div>`}
   for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))combos+=`<div class="combo"><h4>${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${OTHER_ACTS[t].map(([k,l])=>stepRow(l,`${b}.acts.${k}`,k,PRICE_DEFAULTS[k].u)).join("")}</div></div>`;
   const v=z.valve||{};
-  return list+`<div class="card"><div class="cardhead"><h2>Zone ${esc(z.num)}</h2><span class="muted small">${esc(ctlName(j,z.ctl))}</span></div>
+  return list+`<div class="card"><div class="cardhead"><h2>Zone ${esc(z.num)}</h2><span class="muted small">${esc(ctlName(j,z.ctl))}${z.mapValve?" · on map":""}</span></div>
+  ${zoneCheck(j,z,zo)}
+  ${mapHeadSummary(j,z)?`<p class="small muted" style="margin:0">On the map: ${esc(mapHeadSummary(j,z))}</p>`:""}
   <div class="grid2">${sel("Controller",b+".ctl",j.controllers.map(c=>[c.id,c.name]))}${fld("Zone number",b+".num","number",'data-rr="1"')}</div>
   ${seg("Soil type",b+".soil",["Clay","Loam","Sandy","Rocky","Mixed"])}
   ${seg("Sun exposure",b+".sun",[["partial","Partial"],["half","Half"],["full","Full"],["mixed","Mixed"]])}
@@ -1157,7 +1167,8 @@ function findings(j,tech){
     out.push([c.name||"Controller",it]);
   });
   const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));
-  zs.forEach(z=>{const it=[];const types=z.types.map(t=>HEAD_TYPES.find(h=>h[0]===t)[1].toLowerCase());
+  zs.forEach(z=>{const it=[];if(z.works==="yes")it.push(`<b>Working properly.</b>`);if(z.works==="no")it.push(`<span class="flag">Not working${(z.symptoms||[]).length?": "+(z.symptoms||[]).map(k=>(SYMPTOMS.find(x=>x[0]===k)||["",k])[1].toLowerCase()).join(", "):""}.</span>`);
+    const mh=mapHeadSummary(j,z);if(mh)it.push("Mapped: "+esc(mh));const types=z.types.map(t=>HEAD_TYPES.find(h=>h[0]===t)[1].toLowerCase());
     const desc=[types.length?types.join(", ")+" heads":"",z.sizes.length&&z.types.some(t=>SIZED.includes(t))?z.sizes.map(s=>s+'"').join("/"):"",z.soil?z.soil.toLowerCase()+" soil":"",z.sun?z.sun+" sun":""].filter(Boolean).join(" · ");
     if(desc)it.push(desc);
     const v=z.valve||{};if(v.condition&&v.condition!=="Good")it.push(`Zone valve condition: ${esc(v.condition.toLowerCase())}`);
@@ -1182,11 +1193,11 @@ function reportHtmlReal(j,rev){
   const biz=bizInfo();
   return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
   <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
-  <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}</p>
+  <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
   ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p></section>
   ${hasMap?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
     <p class="small muted">${MAP_POINTS.filter(p=>j.map.items.some(i=>i.t===p[0])).map(p=>`${p[2]} = ${p[1]}`).concat(MAP_LINES.filter(l=>j.map.lines.some(x=>x.t===l[0])).map(l=>l[1]+" shown as "+(l[4]?(l[0]==="drip"?"dotted":"dashed"):"solid")+" line")).join(" · ")}</p></section>`:""}
-  <section><h2>Issues and solutions</h2>${f.length?f.map(([h,it,ph])=>{const sol=work.filter(l=>l.sec===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':'<span class="pill ok">OK</span>';
+  <section><h2>Issues and solutions</h2>${f.length?f.map(([h,it,ph])=>{const sol=work.filter(l=>l.sec===h);const zz=j.zones.find(z=>zoneSecName(j,z)===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':zz&&zz.works==="no"?'<span class="pill bad">Not working</span>':zz&&!zz.works?'<span class="pill neutral">Not checked</span>':'<span class="pill ok">OK</span>';
     return `<div class="isec"><div class="row"><h3 class="spacer">${esc(h)}</h3>${st}</div>
       <div class="isgrid"><div><div class="eyebrow">What we found</div>${it.length?`<ul>${it.map(x=>`<li>${x}</li>`).join("")}</ul>`:'<p class="muted small">Nothing noted.</p>'}</div>
       <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol">${sol.map(l=>`<li>${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:'<p class="muted small">No work needed.</p>'}</div></div>
@@ -1378,6 +1389,65 @@ function standaloneReport(j,html){
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>${css}
   body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
 }
+
+/* ---------------- Guided workflow ----------------
+   Map valves become zones, every zone gets a "fully working?" check, and a Next-step strip leads the job. */
+const SYMPTOMS=[["noon","Won't turn on"],["nooff","Won't shut off"],["lowpress","Low pressure / poor coverage"],["broken","Broken or missing heads"],["leak","Leak or soggy area"],["mist","Misting / overspray"],["other","Other"]];
+const SYMPTOM_HINT={
+  noon:["Check this zone's ohm reading on the Controllers tab, then the valve solenoid.",["sol","Add: replace solenoid"]],
+  nooff:["Usually debris or a torn diaphragm in the valve.",["rebuild","Add: rebuild valve"]],
+  lowpress:["Look for a lateral break or a partly closed valve, then check nozzles.",["lat","Add: lateral line break"]],
+  broken:["Count the heads to replace under the head types below.",null],
+  leak:["Find the source: lateral break, head seal or the valve.",["lat","Add: lateral line break"]],
+  mist:["Pressure is too high. Consider MP rotator nozzles here or a PRV on the mainline.",null],
+  other:["Describe it in the zone notes at the bottom.",null]};
+function zoneSecName(j,z){return `Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`}
+function mapHeadsFor(j,z){if(!z.mapValve)return [];return j.map.items.filter(i=>i.t==="head"&&i.zone===z.mapValve)}
+function mapHeadSummary(j,z){const hs=mapHeadsFor(j,z);if(!hs.length)return "";const c={};hs.forEach(h=>{const n=(HEAD_TYPES.find(t=>t[0]===h.sub)||["","head"])[1].toLowerCase();c[n]=(c[n]||0)+1});
+  return Object.entries(c).map(([n,k])=>`${k} ${n}`).join(" · ")}
+/* Each labeled zone valve on the map (Z1, Z2…) is linked to that zone number on the first controller */
+function linkMapZones(j){
+  const vs=j.map.items.filter(i=>i.t==="zv"&&/^Z\d+$/.test(i.label||""));if(!vs.length)return [];
+  if(!j.controllers.length){const c=newController(1);c.zones=0;j.controllers.push(c)}
+  const ctl=j.controllers[0];const touched=[];
+  j.zones.forEach(z=>{if(z.mapValve&&!vs.some(v=>v.id===z.mapValve))delete z.mapValve});
+  vs.forEach(v=>{const n=v.label.slice(1);
+    let z=j.zones.find(z=>z.mapValve===v.id)||j.zones.find(z=>z.ctl===ctl.id&&String(z.num)===n&&!z.mapValve);
+    if(!z){z=newZone(j);z.ctl=ctl.id;z.num=n;z.types=[];z.sizes=[];j.zones.push(z)}
+    z.mapValve=v.id;
+    mapHeadsFor(j,z).forEach(h=>{if(HEAD_TYPES.some(t=>t[0]===h.sub)&&!z.types.includes(h.sub))z.types.push(h.sub)});
+    if(z.types.some(t=>SIZED.includes(t))&&!z.sizes.length)z.sizes=["4","6"];
+    if(num(ctl.zones)<num(n))ctl.zones=num(n);
+    touched.push(n)});
+  return touched;
+}
+function zoneCheck(j,z,zo){const b=`zones.${zo}`;const syms=z.symptoms||[];
+  return `<div class="zcheck ${z.works?"":"need"}"><div class="eyebrow">Zone check</div>
+    ${seg(`Is Zone ${esc(z.num)} fully working?`,b+".works",[["yes","Yes, working"],["no","No"]],{no:"bad"})}
+    ${z.works==="no"?`${multi("What's wrong? (pick all that apply)",b+".symptoms",SYMPTOMS)}
+      ${syms.length?`<div class="hints">${syms.map(k=>{const h=SYMPTOM_HINT[k];if(!h)return "";return `<div class="hint"><span>${esc(h[0])}</span>${h[1]?`<button class="btn ghost sm" data-zfix="${zo}|${h[1][0]}">${esc(h[1][1])}</button>`:""}</div>`}).join("")}</div>`:""}`
+    :z.works==="yes"?`<p class="small muted" style="margin:0">Marked working. You can still note upkeep below.</p>`:`<p class="small" style="margin:0">Run the zone and answer before moving on.</p>`}</div>`}
+function mapZoneCard(j){const vs=j.map.items.filter(i=>i.t==="zv"&&/^Z\d+$/.test(i.label||""));if(!vs.length)return "";
+  return `<div class="card"><div class="cardhead"><h2>Zone check</h2><span class="muted small">${j.zones.filter(z=>z.mapValve&&z.works).length} of ${vs.length} answered</span></div>
+  <p class="small muted" style="margin:0">Run each zone and confirm it. Anything marked No goes on the report with what it needs.</p>
+  <div class="acts">${vs.map(v=>{const zo=j.zones.findIndex(z=>z.mapValve===v.id);const z=j.zones[zo];if(!z)return "";
+    return `<div class="act"><div class="al"><b>${esc(v.label)}</b><div class="ap">${esc(mapHeadSummary(j,z)||"no heads mapped")}</div></div>
+      <div class="row" style="gap:6px;justify-content:flex-end"><button class="chip" data-set="zones.${zo}.works" data-v="yes" aria-pressed="${z.works==="yes"}">Working</button><button class="chip bad" data-set="zones.${zo}.works" data-v="no" aria-pressed="${z.works==="no"}">Not working</button>
+      ${z.works==="no"?`<button class="btn ghost sm" data-gozone="${z.id}">Details</button>`:""}</div></div>`}).join("")}</div></div>`}
+function jobSteps(j){
+  const ml=j.mainline.length>0&&j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow));
+  const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
+  return [
+    {k:"mainline",label:"Mainline",done:ml,todo:"Check the water meter with the system off: is it moving?"},
+    {k:"controllers",label:"Controller",done:j.controllers.length>0,todo:"Add the controller and check power and wiring."},
+    {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
+    {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
+    {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the report."}];
+}
+function guideBar(j){const st=jobSteps(j);const nx=st.find(s=>!s.done);
+  const dots=st.map(s=>`<span class="gstep ${s.done?"done":s===nx?"now":""}">${s.done?"✓":""}${esc(s.label)}</span>`).join("");
+  return `<div class="guide"><div class="gsteps">${dots}</div>${nx?`<div class="row"><span class="spacer small"><b>Next:</b> ${esc(nx.todo)}</span>${S.tab===nx.k&&nx.k!=="zones"?"":`<button class="btn sm" data-gonext="${nx.k}">Go</button>`}</div>`
+    :`<div class="row"><span class="spacer small"><b>All steps done.</b> Report Rev ${revNo(currentRev(j).n)} is ready to send.</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
 
 /* ---------------- trouble photos ---------------- */
 const BADCOND=["Poor","Failed"];
@@ -1852,7 +1922,7 @@ app.addEventListener("click",ev=>{
   if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
   if(d.set==="inv.status"&&d.v==="paid"){j.inv=j.inv||{};if(!j.inv.paidDate)j.inv.paidDate=today()}
-  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind/.test(d.set)?"":d.v);scheduleSave(S.cur);rr();return}
+  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);scheduleSave(S.cur);rr();return}
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
   if(d.step){const v=Math.max(0,num(getP(j,d.step))+num(d.d));setP(j,d.step,v);scheduleSave(S.cur);rr();return}
   if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
@@ -1878,6 +1948,12 @@ app.addEventListener("click",ev=>{
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
     S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
   if(d.ol){setP(j,d.ol,"OL");scheduleSave(S.cur);rr();return}
+  if(d.gonext){S.tab=d.gonext;if(d.gonext==="zones"){const z=j.zones.find(z=>!z.works);if(z)S.zoneOpen=z.id}render();window.scrollTo(0,0);return}
+  if(d.gozone){S.tab="zones";S.zoneOpen=d.gozone;render();window.scrollTo(0,0);return}
+  if(d.zfix){const [zi,kind]=d.zfix.split("|");const z=j.zones[+zi];if(!z)return;
+    if(kind==="sol"||kind==="rebuild"){z.valve=Object.assign({},z.valve,{action:kind});toast(kind==="sol"?"Solenoid replacement added":"Valve rebuild added")}
+    if(kind==="lat"){z.laterals=z.laterals||[];z.laterals.push(TPL.lateral());toast("Lateral break added. Fill in its size and length below")}
+    scheduleSave(S.cur);rr();return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
   if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
