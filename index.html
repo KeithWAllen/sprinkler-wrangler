@@ -262,6 +262,7 @@ body.training .bar{color:#fff}
 .guide{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
 .gprog{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}.gprog span{display:block;height:100%;background:var(--accent);border-radius:999px}
 .tabok{color:var(--good);font-weight:800;margin-right:4px}
+.tier-pro{color:var(--good)}.tier-std{color:var(--water)}.tier-eco{color:var(--warn)}
 .gsteps{display:flex;gap:4px;flex-wrap:wrap}
 .gstep{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
 .gstep.done{background:var(--accent-soft);color:var(--good)}.gstep.now{background:var(--water);color:#fff}
@@ -641,6 +642,7 @@ function docketView(){
 function pricesView(){
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
   return `${isAdmin()?"":`<div class="note info">Only admins can change prices and business info. Ask Bradley if a price needs updating.</div>`}<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
+  ${brandsCard()}
   <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
   <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
@@ -670,7 +672,7 @@ function jobView(){
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${dn[k]?'<span class="tabok" aria-label="done">✓</span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")})()}</div></nav></div>
-  <div class="wrap"><main>${banner()}${guideBar(j)}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
+  <div class="wrap"><main>${banner()}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");return m}
@@ -1023,7 +1025,7 @@ function meTap(g){
 function compBlock(base,c,label,hasPos){
   return `<div class="combo"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
-  <div class="grid3">${fld("Size",base+".size","text",'placeholder="1&quot;"')}${fld("Type / brand",base+".type")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
+  <div class="grid3">${fld("Size",base+".size","text",'placeholder="1&quot;"')}${brandSel("Brand",base+".brand",base.endsWith(".prv")?"prv":base.endsWith(".iso")?"iso":"valve")}${fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
   ${seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
 }
 function mainlineTab(){const j=job();
@@ -1042,7 +1044,7 @@ function mainlineTab(){const j=job();
     ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo"><h4>Backflow preventer</h4>
-    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${fld("Model",b+".bf.model")}${fld("Serial number",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
@@ -1126,11 +1128,12 @@ function zonesTab(){const j=job();
   <div class="grid2">${sel("Controller",b+".ctl",j.controllers.map(c=>[c.id,c.name]))}${fld("Zone number",b+".num","number",'data-rr="1"')}</div>
   ${seg("Soil type",b+".soil",["Clay","Loam","Sandy","Rocky","Mixed"])}
   ${seg("Sun exposure",b+".sun",[["partial","Partial"],["half","Half"],["full","Full"],["mixed","Mixed"]])}
+  <div class="grid2">${brandSel("Head brand (most of the heads)",b+".headBrand","heads")}</div>
   ${multi("Head types",b+".types",HEAD_TYPES)}
   ${sized.length?multi("Head sizes",b+".sizes",SIZES.map(s=>[s,s+'"'])):""}
   ${sized.length&&!z.sizes.length?`<p class="small muted">Pick the head sizes to see repair options.</p>`:""}
   ${combos}
-  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sel("Size",b+".valve.size",["","3/4\"","1\"","1.5\"","2\""])}${fld("Type / brand",b+".valve.type")}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
+  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sel("Size",b+".valve.size",["","3/4\"","1\"","1.5\"","2\""])}${brandSel("Brand",b+".valve.brand","valve")}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
     ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["locate","Locate valve"]])}
     ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
   <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
@@ -1171,7 +1174,7 @@ function findings(j,tech){
     (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
       if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
     if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
-    const bf=m.bf;if(bf.size||bf.type||bf.condition){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="no")s+=", not insulated";if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    const bf=m.bf;if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="no")s+=", not insulated";if(bf.insulated==="yes")s+=", insulated";it.push(s)}
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`)});
     if(m.notes)it.push(esc(m.notes));
     if(it.length)out.push([m.name||"Mainline",it]);
@@ -1225,6 +1228,7 @@ function reportHtmlReal(j,rev){
       <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol">${sol.map(l=>`<li>${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:'<p class="muted small">No work needed.</p>'}</div></div>
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
+  ${equipmentSection(j)}
   ${ups.length?`<section><h2>Optional upgrades</h2><p class="small muted">Not required to fix today's issues. Ask us about any of these.</p>
     <div class="ups">${ups.map((u,i)=>{const ph=(u.pic_ph||[]);return `<div class="up"><div class="row"><b class="spacer">${esc(u.desc||u.cat)}</b>${u.status==="accepted"?'<span class="pill ok">Approved</span>':u.priority==="recommended"?'<span class="pill warn">Recommended</span>':'<span class="pill neutral">Optional</span>'}</div>
     <div class="small muted">${esc([u.cat,u.sec].filter(Boolean).join(" · "))}</div>${u.benefit?`<p class="small" style="margin:4px 0 0">${esc(u.benefit)}</p>`:""}
@@ -1411,6 +1415,44 @@ function standaloneReport(j,html){
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>${css}
   body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
 }
+
+/* ---------------- Equipment brands & company quality ratings ----------------
+   Brand lists per part. Ratings are the company's own call, set by an admin on the Price sheet,
+   and shown to the customer in an "Equipment on your property" section of the report. */
+const BRANDS={
+  backflow:["Febco","Watts","Zurn Wilkins","Ames","Apollo"],
+  prv:["Watts","Zurn Wilkins","Honeywell","Cash Acme","Apollo"],
+  iso:["NIBCO","Apollo","Watts","Mueller","Spears"],
+  valve:["Hunter","Rain Bird","Toro","Irritrol","Weathermatic","Orbit"],
+  heads:["Hunter","Rain Bird","Toro","K-Rain","Weathermatic","Orbit"],
+  controller:["Hunter","Rain Bird","Toro","Weathermatic","Irritrol","Orbit","Rachio"]};
+const TIERS=[["pro","Professional grade","Built for long service life"],["std","Standard grade","Average service life"],["eco","Economy grade","Shorter expected service life"]];
+const BRAND_NOTE_DEFAULT="Better-built irrigation parts usually last longer and fail less often. We recorded the brand of the main equipment on your system and our rating of each, so you know what you have. When parts are replaced, the choice of brand is yours; higher-grade parts generally cost more up front and last longer.";
+function brandName(v,other){return v==="Other"?String(other||"").trim():v==="Not sure"?"":String(v||"").trim()}
+function brandSel(label,path,cat){const j=job();const v=getP(j,path)||"";
+  return sel(label,path,[["","Choose…"]].concat(BRANDS[cat],["Other","Not sure"]))+(v==="Other"?fld("Brand name",path+"Other"):"")}
+function brandTier(name){if(!name)return null;const t=(S.pricing._brandTiers||{})[name];return TIERS.find(x=>x[0]===t)||null}
+function allBrands(){const set=new Set();Object.values(BRANDS).forEach(l=>l.forEach(b=>set.add(b)));
+  Object.values(S.jobs).forEach(j=>equipmentRows(j).forEach(r=>{if(r.brand)set.add(r.brand)}));
+  Object.keys(S.pricing._brandTiers||{}).forEach(b=>set.add(b));return [...set].sort((a,b)=>a.localeCompare(b))}
+function equipmentRows(j){const R=[];
+  (j.mainline||[]).forEach(m=>{const pre=j.mainline.length>1?m.name+" · ":"";
+    const bf=m.bf||{};const bb=brandName(bf.brand,bf.brandOther);if(bb||bf.model||bf.serial)R.push({part:pre+"Backflow preventer",brand:bb,model:[bf.type,bf.size,bf.model].filter(Boolean).join(" · "),serial:bf.serial||""});
+    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k]||{};if(c.present!=="yes")return;const b=brandName(c.brand,c.brandOther);if(b||c.model)R.push({part:pre+l,brand:b,model:[c.size,c.model].filter(Boolean).join(" · ")})})});
+  (j.controllers||[]).forEach(c=>{const b=ctlBrand(c);if(b||c.model)R.push({part:"Controller"+(j.controllers.length>1?" · "+c.name:""),brand:b,model:c.model||""})});
+  const vb={},hb={};(j.zones||[]).forEach(z=>{const b=brandName((z.valve||{}).brand,(z.valve||{}).brandOther);if(b)(vb[b]=vb[b]||[]).push(z.num);const h=brandName(z.headBrand,z.headBrandOther);if(h)(hb[h]=hb[h]||[]).push(z.num)});
+  Object.entries(vb).forEach(([b,zs])=>R.push({part:"Zone valves",brand:b,model:"Zone"+(zs.length>1?"s ":" ")+zs.join(", ")}));
+  Object.entries(hb).forEach(([b,zs])=>R.push({part:"Sprinkler heads",brand:b,model:"Zone"+(zs.length>1?"s ":" ")+zs.join(", ")}));
+  return R}
+function equipmentSection(j){const rows=equipmentRows(j);if(!rows.length)return "";const biz=bizInfo().name||"Our";
+  return `<section><h2>Equipment on your property</h2><p class="small">${esc(S.pricing._brandNote||BRAND_NOTE_DEFAULT)}</p>
+  <div class="tbl"><table><thead><tr><th>Part</th><th>Brand</th><th>Model / details</th><th>${esc(biz)}${biz==="Our"?"":"'s"} rating</th></tr></thead><tbody>
+  ${rows.map(r=>{const t=brandTier(r.brand);return `<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"Not identified")}</td><td>${esc(r.model||"")}${r.serial?`<div class="small muted">Serial ${esc(r.serial)}</div>`:""}</td><td>${t?`<b class="tier-${t[0]}">${esc(t[1])}</b><div class="small muted">${esc(t[2])}</div>`:'<span class="muted">Not rated</span>'}</td></tr>`}).join("")}</tbody></table></div>
+  <p class="small muted">This record was provided to the customer on the date of this report.</p></section>`}
+function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};
+  return `<div class="card"><h2>Brands & quality ratings</h2><p class="small muted" style="margin:0">Your company's rating of each brand. It prints on the customer report next to the equipment found on their property. Leave a brand "Not rated" to show no rating.</p>
+  <div class="acts">${allBrands().map(b=>`<div class="act"><div class="al">${esc(b)}</div><div class="chips">${TIERS.map(t=>`<button class="chip" data-tier="${esc(b)}|${t[0]}" aria-pressed="${tiers[b]===t[0]}" ${adm?"":"disabled"}>${t[1].replace(" grade","")}</button>`).join("")}<button class="chip" data-tier="${esc(b)}|" aria-pressed="${!tiers[b]}" ${adm?"":"disabled"}>Not rated</button></div></div>`).join("")}</div>
+  <label class="f"><span>Note printed above the equipment list</span><textarea id="p-_brandNote" data-price="_brandNote" ${adm?"":"disabled"}>${esc(S.pricing._brandNote||BRAND_NOTE_DEFAULT)}</textarea></label></div>`}
 
 /* ---------------- Controller-first setup ----------------
    A job starts with a few controller questions; the app then builds exactly that many zones. */
@@ -1983,6 +2025,7 @@ app.addEventListener("click",ev=>{
   if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;render();return}
   if(d.filter){S.filter=d.filter;rr();return}
+  if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});if(t)S.pricing._brandTiers[bn]=t;else delete S.pricing._brandTiers[bn];savePricing();rr();return}
   if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
   if(d.set==="inv.status"&&d.v==="paid"){j.inv=j.inv||{};if(!j.inv.paidDate)j.inv.paidDate=today()}
