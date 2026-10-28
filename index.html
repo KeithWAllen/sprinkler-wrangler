@@ -236,6 +236,12 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .codein{font-family:var(--mono);font-size:1.5rem;letter-spacing:.3em;text-align:center}
 .linkbtn{background:none;border:0;padding:6px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .imp.dim{opacity:.6}
+.acct{position:relative;flex:none}
+.acctbtn{display:flex;align-items:center;gap:6px;background:transparent;border:1.5px solid currentColor;color:inherit;border-radius:999px;padding:3px 10px 3px 3px;min-height:40px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--accent-ink);color:var(--accent);display:grid;place-items:center;font-weight:800;font-size:.8rem}
+.acctname{font-weight:700;font-size:.9rem;max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acctmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:15;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px;min-width:230px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+@media (max-width:430px){.acctname{display:none}.acctbtn{padding:3px}}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -573,7 +579,7 @@ function homeView(){
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
   else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
   return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?"Team":S.home==="import"?"Review phone jobs":"Jobs"}</h1></div>
-    <button class="iconbtn" data-new="1">+ New job</button></div></header>
+    <button class="iconbtn" data-new="1">+ New job</button>${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav></div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
 }
@@ -628,7 +634,7 @@ function jobView(){
     <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`;
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
-    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div></div></header>
+    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")}</div></nav></div>
   <div class="wrap"><main>${banner()}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
@@ -1507,7 +1513,16 @@ async function authSubmit(kind){
       const {data}=await sb.auth.getSession();a.busy=false;toast("Password updated");return afterSignIn(data.session)}
   }catch(e){go({err:authMsg(e)})}
 }
-async function signOut(){try{await sb.auth.signOut()}catch(e){}resetToSignIn()}
+/* Sign out on this phone right away; never wait on the network */
+async function signOut(){S.acctOpen=false;
+  try{await Promise.race([sb.auth.signOut({scope:"local"}),new Promise(r=>setTimeout(r,1500))])}catch(e){}
+  try{Object.keys(localStorage).filter(k=>/^sb-.*-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(e){}
+  resetToSignIn();toast("Signed out")}
+/* Who's signed in: shown in the top bar on every screen */
+function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
+  return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
+  ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.admin?"Admin":"Technician"}</span></div>
+    <button class="btn quiet sm" data-accteam="1">Team & account</button><button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- jobs saved on this phone before sign-in: review, then upload or discard ----------
    Protections: nothing uploads automatically; each job is opt-in; a job whose ID already exists on
@@ -1637,16 +1652,19 @@ app.addEventListener("change",ev=>{
   if(t.tagName==="SELECT"){setP(job(),p,t.value);scheduleSave(S.cur);rr();return}
   if(t.dataset.rr||t.dataset.num)rr();
 });
+document.addEventListener("click",ev=>{if(S.acctOpen&&!ev.target.closest(".acct")){S.acctOpen=false;render()}});
 app.addEventListener("submit",ev=>{
   const f=ev.target;
   if(f.dataset.authform){ev.preventDefault();if(!S.auth.busy)authSubmit(f.dataset.authform);return}
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin]");
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam]");
   if(ab){const d=ab.dataset;
     if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
+    if(d.acct){S.acctOpen=!S.acctOpen;render();return}
+    if(d.accteam){S.acctOpen=false;S.cur=null;S.home="team";render();window.scrollTo(0,0);return}
     if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
     if(d.pback){S.portal.view=null;render();return}
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
