@@ -286,6 +286,7 @@ ul.soltl li::before{content:none}ul.soltl{padding-left:0}ul.soltl li{display:fle
 tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px solid var(--tl-y)}
 .ba{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bacol{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:4px}.baarrow{font-size:1.6rem;color:var(--muted)}
 .compi{gap:8px}
+.addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -326,6 +327,7 @@ const OTHER_ACTS={
 const PRICE_DEFAULTS=(()=>{
   const P={};const add=(k,g,l,u,p,m)=>P[k]={g,l,u,p,m:!!m};
   add("trip","Service","Service call / trip charge","each",85);
+  add("map_pkg","Add-ons","Property map package (as-built irrigation map)","each",150);
   add("labor_hour","Service","Additional labor","hour",80);
   add("head_raise","Heads","Raise head to grade","each",25);
   add("head_lower","Heads","Lower head to grade","each",25);
@@ -382,7 +384,7 @@ const PRICE_DEFAULTS=(()=>{
   add("module","Controller","Replace controller module","each",95,1);
   return P;
 })();
-const GROUP_ORDER=["Service","Heads","Replace heads","Nozzles & conversions","Shrub & bubblers","Drip","Valves","Pipe","Mainline","Controller"];
+const GROUP_ORDER=["Service","Add-ons","Heads","Replace heads","Nozzles & conversions","Shrub & bubblers","Drip","Valves","Pipe","Mainline","Controller"];
 
 const MAP_POINTS=[
   ["meter","Water meter","WM","--water"],["bf","Backflow","BF","--reclaim"],["prv","PRV","PR","--reclaim"],["mv","Master valve","MV","--reclaim"],
@@ -586,6 +588,7 @@ function buildEstimate(j){
     (z.custom||[]).forEach(c=>addC(sec,c.desc,c.qty,c.price));
   });
   if(num(j.est.laborHours)>0)add("Service","labor_hour",j.est.laborHours);
+  if(j.mapSold==="sold")add("Add-ons","map_pkg",1);
   (j.est.extra||[]).forEach(c=>addC("Additional items",c.desc,c.qty,c.price));
   (SHOW_UPSELLS?(j.upsells||[]):[]).filter(u=>u.status==="accepted").forEach(u=>addC("Upgrades",u.desc||u.cat,Math.max(1,num(u.qty)||1),u.price));
   const sub=L.reduce((s,l)=>s+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;
@@ -1242,7 +1245,8 @@ function reportHtmlReal(j,rev){
   <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
   <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
   ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p>${scorecard(j)}</section>
-  ${hasMap?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
+  ${hasMap&&!mapIncluded(j)?mapTeaser():""}
+  ${hasMap&&mapIncluded(j)?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
     <p class="small muted">${MAP_POINTS.filter(p=>j.map.items.some(i=>i.t===p[0])).map(p=>`${p[2]} = ${p[1]}`).concat(MAP_LINES.filter(l=>j.map.lines.some(x=>x.t===l[0])).map(l=>l[1]+" shown as "+(l[4]?(l[0]==="drip"?"dotted":"dashed"):"solid")+" line")).join(" · ")}</p></section>`:""}
   <section><h2>Issues and solutions</h2>${f.length?(()=>{const SC=sectionColors(j);const ord={r:0,y:1,g:2,n:3,"":3};return f.slice().sort((a,b)=>(ord[SC[a[0]]||""])-(ord[SC[b[0]]||""]))})().map(([h,it,ph])=>{const sc=sectionColors(j)[h]||"";const sol=work.filter(l=>l.sec===h);const zz=j.zones.find(z=>zoneSecName(j,z)===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':zz&&zz.works==="no"?'<span class="pill bad">Not working</span>':zz&&!zz.works?'<span class="pill neutral">Not checked</span>':'<span class="pill ok">OK</span>';
     return `<div class="isec isec-${sc||"n"}"><div class="row"><h3 class="spacer">${sc&&sc!=="n"?tlDot(sc)+" ":""}${esc(h)}</h3>${sc&&sc!=="n"?`<span class="pill tlp-${sc}">${TL[sc][0]}</span>`:st}</div>
@@ -1340,6 +1344,7 @@ function invoiceHtmlReal(j){
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
   ${inv.kind==="invoice"?`<section>${inv.status==="paid"?`<div class="paid">PAID${inv.paidAt?" · "+esc(new Date(inv.paidAt).toLocaleDateString("en-US")):""}${inv.method?" · "+esc(inv.method):""}</div>`:`<p><b>Amount due: ${money(e.total)}</b></p>`}</section>`:""}
+  ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Ask us to add it.</div></div></section>`:""}
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
 }
@@ -1363,6 +1368,13 @@ function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMi
     <p class="small muted" style="margin:0">Prices, discount, tax and terms are set on the Estimate tab.${SHOW_UPSELLS?" Accepted upgrades are included automatically.":""}</p></div>
   <article class="sheet">${invoiceHtml(j)}</article>`;
 }
+/* ---- Property map is a paid add-on (or included for premium customers) ---- */
+function mapIncluded(j){return j.mapSold==="sold"||j.mapSold==="included"}
+function mapTeaser(){return `<section><h2>Property map</h2><div class="addon"><b>Your irrigation system was mapped on this visit.</b><div class="small">Your technician recorded the valves, heads and pipe routes on your property. The full map is available as an add-on. Ask us to add it to your invoice.</div></div></section>`}
+function mapChoiceCard(j){if(!(j.map.items.length||j.map.lines.length))return "";
+  return `<div class="card"><div class="cardhead"><h2>Property map</h2>${mapIncluded(j)?'<span class="pill ok">In report</span>':'<span class="pill neutral">Teaser only</span>'}</div>
+  ${seg("Map in this report?","mapSold",[["","Not included"],["sold",`Sold as add-on (${money(price("map_pkg",j))})`],["included","Included (premium customer)"]])}
+  <p class="small muted" style="margin:0">Not included: the customer sees a note that a map is available. Sold: adds the Property map package to the estimate and invoice.</p></div>`}
 function reportTab(){const j=job();loadBg(j.id);
   const miss=missingCustomer(j);
   if(miss.length)return `<div class="card"><div class="cardhead"><h2>Customer details needed</h2><span class="pill warn">${miss.length} missing</span></div>
@@ -1385,6 +1397,7 @@ function reportTab(){const j=job();loadBg(j.id);
     ${cur?`<div class="row">${CAN_PRINT?`<button class="btn" data-print="report">Print Rev ${revNo(cur.n)}</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-copy="1">Copy Rev ${revNo(cur.n)} as text</button>${downloads?`<button class="btn ghost" data-save="1">Save Rev ${revNo(cur.n)} file</button>`:""}
     <span class="spacer"></span></div>`:""}</div>
   ${viewing?`<div class="card sunk"><div class="row"><h3 class="spacer">Viewing Rev ${revNo(viewing.n)} (locked copy)</h3><button class="btn quiet sm" data-viewrev="-1">Close</button></div><article class="sheet">${viewing.html||'<p class="muted">Loading…</p>'}</article></div>`:""}
+  ${mapChoiceCard(j)}
   <article class="sheet" id="sheet">${reportHtml(j,cur||{n:nextN,draft:true})}</article>
   ${hist}`;
 }
@@ -1396,7 +1409,7 @@ function jobPrint(j){
   const info=Object.assign({},j.info);delete info.status;
   const est=Object.assign({},j.est);delete est.revNote;
   return hashStr(JSON.stringify({info,map:{items:j.map.items,lines:j.map.lines},mainline:j.mainline,controllers:j.controllers,zones:j.zones,upsells:j.upsells||[],est,
-    lines:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price])}));
+    mapSold:j.mapSold||"",lines:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price])}));
 }
 function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];return last&&last.fp===jobPrint(j)?last:null}
 async function issueRev(j){
@@ -1444,7 +1457,7 @@ function standaloneReport(j,html){
 const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
 const RED_KEYS=new Set(["main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
-function lineColor(j,l){if(l.sec==="Service")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
+function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
 function tlDot(c,title){return c?`<span class="tl tl-${c}" title="${esc(title||TL[c][0])}" aria-label="${esc(TL[c][0])}"></span>`:""}
 const worst=(a,b)=>{const o={r:3,y:2,g:1,"":0,n:0};return (o[a]||0)>=(o[b]||0)?a:b};
@@ -1469,7 +1482,7 @@ function estTableTL(j,e,editable){
   const block=(k,title,ls)=>ls.length?`<tr class="sec tlsec-${k}"><td colspan="3">${k!=="s"?tlDot(k)+" ":""}${title}</td><td class="r">${money(sub(ls))}</td></tr>${ls.map(row).join("")}`:"";
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
-    ${block("s","Service",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
+    ${block("s","Service & add-ons",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div>
   ${groups.r.length&&groups.y.length?`<div class="small"><span>Fix now only (service + red, before tax)</span><span>${money(sub(groups.s)+sub(groups.r))}</span></div>`:""}</div>
   ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
@@ -1531,7 +1544,7 @@ function completionText(j){const c=j.completion;const n=compCounts(c.items);cons
   c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
 /* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
 function invoiceEstimate(j){const e=buildEstimate(j);const c=j.completion;
-  if((j.inv||{}).kind==="invoice"&&j.outcome==="declined"){const lines=e.lines.filter(l=>l.sec==="Service");const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
+  if((j.inv||{}).kind==="invoice"&&j.outcome==="declined"){const lines=e.lines.filter(l=>l.sec==="Service"||l.sec==="Add-ons");const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
   const inAudit=new Set(c.items.map(i=>i.k)),done=new Set(c.items.filter(i=>i.status==="done").map(i=>i.k));
   const lines=e.lines.filter(l=>l.sec==="Service"||!inAudit.has(lineKey(l))||done.has(lineKey(l)));
   const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}
