@@ -694,6 +694,7 @@ function mapTab(){const j=job();loadBg(j.id);
     ${mbToken()?`<button class="btn ghost" data-satopen="1">🛰 ${j.map.geo?"Change satellite view":"Satellite view"}</button>`:""}
     <label class="btn quiet" style="cursor:pointer">${S.bg[j.id]&&!j.map.geo?"Change site photo":"Add site photo"}<input type="file" accept="image/*" data-bgfile="1" hidden></label>
     ${S.bg[j.id]?`<button class="btn quiet sm" data-bgclear="1">${j.map.geo?"Back to grid":"Remove photo"}</button>`:""}</div>
+  ${n?`<div class="row"><span class="small muted spacer">Start over? This removes every item and line but keeps the satellite view or photo.</span>${delBtn("mapclear","Clear all items")}</div>`:""}
   ${j.map.geo?`<p class="small muted" style="margin:0">Satellite view is on. In the map editor, the blue dot shows where you're standing; tap <b>Drop here</b> to place the selected item at your spot.</p>`:""}
   <div class="q"><span class="ql">Show on map and report</span><div class="chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-hide="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])} <span class="mono">${counts[p[0]]}</span></button>`).join("")||'<span class="small muted">Layers appear as you add items.</span>'}</div></div></div>`;
 }
@@ -1851,6 +1852,7 @@ function doRemove(key){
   const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
     zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
+    mapclear:()=>{j.map.items=[];j.map.lines=[];toast("Map cleared")},
     mapitem:()=>{j.map.items=j.map.items.filter(i=>i.id!==a);S.mapSel=null},mapline:()=>{j.map.lines=j.map.lines.filter(i=>i.id!==a);S.mapSel=null}}[k];
   if(m){m();scheduleSave(S.cur)}
 }
