@@ -825,9 +825,19 @@ function openMap(){
   if(window.ResizeObserver){ME.ro=new ResizeObserver(()=>meResize());ME.ro.observe(st)}
 }
 function closeMap(){ME.open=false;{const jj=job();if(jj){const t=linkMapZones(jj);if(t.length){scheduleSave(S.cur);toast(`Zone${t.length>1?"s":""} ${t.join(", ")} linked from the map. Confirm each one works.`)}}}meGpsStop();if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
-function meResize(){if(!ME.open)return;const r=meEl("me-stage").getBoundingClientRect();if(!r.width||!r.height)return;const v=ME.vb;const h=v.w*r.height/r.width;if(Math.abs(h-v.h)<0.5)return;ME.vb={x:v.x,y:v.y,w:v.w,h};meDraw()}
-function meFit(){const r=meEl("me-stage").getBoundingClientRect();const a=r.height/Math.max(1,r.width);
-  if(a>0.7){ME.vb={x:-20,w:1040,h:1040*a,y:350-1040*a/2}}else{const h=740;ME.vb={y:-20,h,w:h/a,x:500-h/a/2}}}
+/* The view is locked to the property (0–1000 × 0–700): it opens as large as possible, can't zoom out
+   past the whole property, and panning stops at the property's edges. */
+function meStageAspect(){const r=meEl("me-stage").getBoundingClientRect();return r.width&&r.height?r.height/r.width:0.7}
+function meMaxW(){const a=meStageAspect();return a>0.7?1000:700/a}
+function meClamp(){const v=ME.vb;const a=meStageAspect();let w=Math.max(120,Math.min(meMaxW(),v.w));const h=w*a;
+  const cx=v.x+v.w/2,cy=v.y+v.h/2;let x=cx-w/2,y=cy-h/2;
+  x=w<=1000?Math.max(0,Math.min(1000-w,x)):(1000-w)/2;y=h<=700?Math.max(0,Math.min(700-h,y)):(700-h)/2;
+  ME.vb={x,y,w,h}}
+function meResize(){if(!ME.open)return;const r=meEl("me-stage").getBoundingClientRect();if(!r.width||!r.height)return;const v=ME.vb;const h=v.w*r.height/r.width;if(Math.abs(h-v.h)<0.5)return;ME.vb={x:v.x,y:v.y,w:v.w,h};meClamp();meDraw()}
+/* Open filling the whole screen with map (no empty bands); "Whole map" zooms out to show all of it */
+function meCoverW(){const a=meStageAspect();return a>0.7?700/a:1000}
+function meFit(){const w=meCoverW(),a=meStageAspect();ME.vb={x:500-w/2,y:350-w*a/2,w,h:w*a};meClamp()}
+function meWhole(){ME.vb={x:0,y:0,w:99999,h:99999*meStageAspect()};meClamp()}
 function meK(){const r=meEl("me-stage").getBoundingClientRect();return ME.vb.w/Math.max(1,r.width)}
 function mePt(cx,cy){const r=meEl("me-stage").getBoundingClientRect();return [ME.vb.x+(cx-r.left)*ME.vb.w/r.width,ME.vb.y+(cy-r.top)*ME.vb.h/r.height]}
 function clampPt(p){return [Math.round(Math.max(0,Math.min(1000,p[0]))),Math.round(Math.max(0,Math.min(700,p[1])))]}
@@ -867,7 +877,7 @@ function meChrome(){
   const isLine=MAP_LINES.some(l=>l[0]===ME.tool);const drawing=ME.draw&&j.map.lines.find(l=>l.id===ME.draw);
   top.innerHTML=`<button class="me-btn strong" data-me="done">Done</button><div class="me-title">${esc(j.info.customer||"Property map")}</div>
     <button class="me-btn" data-me="undo" ${ME.undo.length?"":"disabled"} aria-label="Undo">↶ Undo</button>
-    <button class="me-btn" data-me="out" aria-label="Zoom out">−</button><button class="me-btn" data-me="in" aria-label="Zoom in">+</button><button class="me-btn" data-me="fit">Fit</button>`;
+    <button class="me-btn" data-me="out" aria-label="Zoom out">−</button><button class="me-btn" data-me="in" aria-label="Zoom in">+</button><button class="me-btn" data-me="fit">Whole map</button>`;
   let hint;
   if(ME.tool==="select")hint="Drag items to move. Drag empty space to pan, pinch to zoom.";
   else if(isLine)hint=drawing?`Tap each bend. Tap equipment to connect. ${drawing.pts.length} point${drawing.pts.length===1?"":"s"}.`:"Tap where the line starts.";
@@ -910,10 +920,10 @@ function meClick(ev){
   if(a==="unlink"){const h=meSelItem();if(h){mePush();unlinkItem(j,h.id,false);scheduleSave(S.cur);meChrome();meDraw()}return}
   if(a==="linkbranch"){const h=meSelItem();if(h&&ME.branch){mePush();unlinkItem(j,h.id,false);connectHead(j,h,ME.branch);scheduleSave(S.cur);meChrome();meDraw()}return}
   if(a==="gpsdrop"){meGpsDrop();return}
-  if(a==="gpscenter"){const xy=meGpsXY();if(xy){ME.vb.x=xy[0]-ME.vb.w/2;ME.vb.y=xy[1]-ME.vb.h/2;meDraw()}return}
+  if(a==="gpscenter"){const xy=meGpsXY();if(xy){ME.vb.x=xy[0]-ME.vb.w/2;ME.vb.y=xy[1]-ME.vb.h/2;meClamp();meDraw()}return}
   if(a==="undo"){meUndo();return}
   if(a==="in"||a==="out"){const f=a==="in"?0.7:1/0.7;meZoom(f,ME.vb.x+ME.vb.w/2,ME.vb.y+ME.vb.h/2);return}
-  if(a==="fit"){meFit();meDraw();return}
+  if(a==="fit"){meWhole();meDraw();return}
   if(a==="tool"){ME.tool=b.dataset.v;if(ME.tool.startsWith("head:"))ME.lastHeadTool=ME.tool;ME.draw=null;if(ME.tool!=="select")ME.sel=null;meChrome();meDraw();return}
   if(a==="layers"){ME.layers=!ME.layers;meChrome();return}
   if(a==="hide"){S.mapHide[b.dataset.v]=!S.mapHide[b.dataset.v];if(ME.sel)ME.sel=null;meChrome();meDraw();return}
@@ -927,8 +937,10 @@ function meClick(ev){
   if(a==="extend"){ME.tool=sel.t;ME.draw=sel.id;meChrome();meDraw();return}
 }
 function meInput(ev){const t=ev.target;if(!t.dataset.mel)return;const sel=meSelItem();if(!sel)return;sel[t.dataset.mel]=t.value;scheduleSave(S.cur);meReq()}
-function meZoom(f,cx,cy){const v=ME.vb;const w=Math.max(150,Math.min(3000,v.w*f));const s=w/v.w;ME.vb={x:cx-(cx-v.x)*s,y:cy-(cy-v.y)*s,w,h:v.h*s};meReq()}
-function meWheel(ev){ev.preventDefault();const p=mePt(ev.clientX,ev.clientY);meZoom(ev.deltaY>0?1.12:1/1.12,p[0],p[1])}
+function meZoom(f,cx,cy){const v=ME.vb;const w=Math.max(120,Math.min(meMaxW(),v.w*f));const s=w/v.w;ME.vb={x:cx-(cx-v.x)*s,y:cy-(cy-v.y)*s,w,h:v.h*s};meClamp();meReq()}
+/* Trackpad/mouse: scroll pans the map; pinch (ctrl+wheel) or ctrl+scroll zooms */
+function meWheel(ev){ev.preventDefault();if(ev.ctrlKey||ev.metaKey){const p=mePt(ev.clientX,ev.clientY);meZoom(Math.exp(ev.deltaY*0.01),p[0],p[1]);return}
+  const r=meEl("me-stage").getBoundingClientRect();const k=ME.vb.w/r.width;ME.vb.x+=ev.deltaX*k;ME.vb.y+=ev.deltaY*k;meClamp();meReq()}
 function meDown(ev){
   const st=meEl("me-stage");try{st.setPointerCapture(ev.pointerId)}catch(e){}
   ME.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
@@ -945,14 +957,14 @@ function meDown(ev){
 function meMove(ev){
   if(!ME.ptrs.has(ev.pointerId))return;ME.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});const g=ME.g;if(!g)return;
   if(g.type==="pinch"&&ME.ptrs.size>=2){const [a,b]=[...ME.ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y)||1;
-    const w=Math.max(150,Math.min(3000,g.vb0.w*g.d0/d));const h=g.vb0.h*w/g.vb0.w;const r=meEl("me-stage").getBoundingClientRect();
-    const cx=(a.x+b.x)/2-r.left,cy=(a.y+b.y)/2-r.top;ME.vb={w,h,x:g.c0[0]-cx*w/r.width,y:g.c0[1]-cy*h/r.height};meReq();return}
+    const w=Math.max(120,Math.min(meMaxW(),g.vb0.w*g.d0/d));const h=g.vb0.h*w/g.vb0.w;const r=meEl("me-stage").getBoundingClientRect();
+    const cx=(a.x+b.x)/2-r.left,cy=(a.y+b.y)/2-r.top;ME.vb={w,h,x:g.c0[0]-cx*w/r.width,y:g.c0[1]-cy*h/r.height};meClamp();meReq();return}
   if(g.type!=="pending"&&g.type!=="drag"&&g.type!=="pan")return;
   if(!g.moved&&Math.hypot(ev.clientX-g.sx,ev.clientY-g.sy)>7){g.moved=true;
     if(g.item||g.vtx){mePush();g.type="drag";if(g.item)ME.sel={kind:"item",id:g.item.id}}else g.type="pan"}
   if(g.type==="drag"){const p=mePt(ev.clientX,ev.clientY);const q=clampPt([p[0]+g.off[0],p[1]+g.off[1]]);
     if(g.item){g.item.x=q[0];g.item.y=q[1];followLinks(job(),g.item)}else{g.vtx[0].pts[g.vtx[1]]=q}meReq()}
-  if(g.type==="pan"){const r=meEl("me-stage").getBoundingClientRect();ME.vb.x=g.vb0.x-(ev.clientX-g.sx)*g.vb0.w/r.width;ME.vb.y=g.vb0.y-(ev.clientY-g.sy)*g.vb0.h/r.height;meReq()}
+  if(g.type==="pan"){const r=meEl("me-stage").getBoundingClientRect();ME.vb.x=g.vb0.x-(ev.clientX-g.sx)*g.vb0.w/r.width;ME.vb.y=g.vb0.y-(ev.clientY-g.sy)*g.vb0.h/r.height;meClamp();meReq()}
 }
 function meUp(ev){
   ME.ptrs.delete(ev.pointerId);const g=ME.g;
