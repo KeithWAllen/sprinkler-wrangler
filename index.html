@@ -254,6 +254,7 @@ body.training .bar,body.training::before{background:var(--warn)}
 body.training .bar{color:#fff}
 .trainbar{border:2px solid var(--warn);background:var(--warn-soft);border-radius:10px;padding:10px 12px;font-size:.92rem}
 .trainstamp{border:3px dashed var(--bad);color:var(--bad);font-family:var(--display);font-weight:700;font-size:1.3rem;letter-spacing:.06em;text-align:center;padding:8px;border-radius:8px}
+.branchbar{border:1px solid var(--soil);border-radius:10px;padding:6px 8px;background:var(--bg)}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -793,7 +794,7 @@ const HEAD_TOOLS=[["head:spray","Spray"],["head:mp","MP"],["head:rotor","Rotor"]
 function meEl(id){return document.getElementById(id)}
 function openMap(){
   const j=job();if(!j)return;loadBg(j.id);
-  ME.open=true;ME.tool="select";ME.sel=null;ME.draw=null;ME.undo=[];ME.layers=false;
+  ME.open=true;ME.tool="select";ME.sel=null;ME.draw=null;ME.undo=[];ME.layers=false;ME.branch=null;
   const el=document.createElement("div");el.id="me";el.className="me";el.setAttribute("role","dialog");el.setAttribute("aria-label","Map editor");
   el.innerHTML=`<div class="me-top" id="me-top"></div><div class="me-stage" id="me-stage"><svg id="me-svg" preserveAspectRatio="none"></svg></div><div class="me-bottom" id="me-bottom"></div>`;
   document.body.appendChild(el);document.body.style.overflow="hidden";
@@ -859,6 +860,9 @@ function meChrome(){
   if(sel&&ME.sel.kind==="item"){const d=MAP_POINTS.find(x=>x[0]===sel.t);
     sheet=`<div class="me-sheet"><div class="row"><b class="spacer">${esc(sel.t==="head"?(HEAD_TYPES.find(h=>h[0]===sel.sub)||["","Head"])[1]+" head":d[1])}</b><button class="btn quiet sm" data-me="desel">Close</button></div>
       ${sel.t==="head"?`<div class="chips">${HEAD_TYPES.map(h=>`<button class="chip" data-me="sub" data-v="${h[0]}" aria-pressed="${sel.sub===h[0]}">${h[1]}</button>`).join("")}</div>`:""}
+      ${isValve(sel)?`<div class="row"><span class="small spacer">${j.map.items.filter(i=>i.zone===sel.id).length} heads connected</span><button class="btn sm" data-me="branchgo">Add heads to this valve</button></div>`:""}
+      ${sel.t==="head"?(sel.zone?`<div class="row"><span class="small spacer">Connected to <b>${esc(valveName(j.map.items.find(i=>i.id===sel.zone)))}</b></span><button class="btn quiet sm" data-me="unlink">Disconnect</button></div>`
+        :ME.branch?`<div class="row"><span class="small spacer">Not connected</span><button class="btn quiet sm" data-me="linkbranch">Connect to ${esc(valveName(j.map.items.find(i=>i.id===ME.branch)))}</button></div>`:`<p class="small muted" style="margin:0">Not connected. Tap a valve, then "Add heads to this valve".</p>`):""}
       <div class="row"><input type="text" id="me-label" data-mel="label" value="${esc(sel.label)}" placeholder="Label (e.g. Z4)" style="flex:1;min-width:120px"><button class="btn quiet sm" data-me="dup">Duplicate</button><button class="btn danger sm" data-me="del">Delete</button></div></div>`}
   if(sel&&ME.sel.kind==="line"){const d=MAP_LINES.find(x=>x[0]===sel.t);
     sheet=`<div class="me-sheet"><div class="row"><b class="spacer">${d[1]} · ${sel.pts.length} points</b><button class="btn quiet sm" data-me="desel">Close</button></div>
@@ -867,7 +871,7 @@ function meChrome(){
   const counts={};j.map.items.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);j.map.lines.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);
   const layers=ME.layers?`<div class="me-row chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-me="hide" data-v="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])}</button>`).join("")||'<span class="small muted">Nothing on the map yet.</span>'}</div>`:"";
   const tb=(t,l,sw)=>`<button class="tool" data-me="tool" data-v="${t}" aria-pressed="${ME.tool===t}">${sw||""}${esc(l)}</button>`;
-  bot.innerHTML=`${sheet}${layers}${meGpsBar()}<div class="me-row"><span class="small muted spacer">${hint}</span>
+  bot.innerHTML=`${sheet}${layers}${meBranchBar()}${meGpsBar()}<div class="me-row"><span class="small muted spacer">${hint}</span>
     ${drawing?`<button class="btn quiet sm" data-me="unpt">Undo point</button><button class="btn sm" data-me="finish">Finish line</button>`:""}
     <button class="chip" data-me="layers" aria-pressed="${ME.layers}">Layers</button></div>
     <div class="me-pal">
@@ -884,12 +888,16 @@ function meClick(ev){
   const b=ev.target.closest("[data-me]");if(!b)return;const a=b.dataset.me;const j=job();
   const pal=document.querySelector(".me-pal");if(pal)ME.palScroll=pal.scrollLeft;
   if(a==="done"){closeMap();return}
+  if(a==="branchstop"){ME.branch=null;meChrome();return}
+  if(a==="branchgo"){const v=meSelItem();if(v){ME.branch=v.id;ME.sel=null;if(!ME.tool.startsWith("head:"))ME.tool=ME.lastHeadTool||"head:spray";meChrome();meDraw()}return}
+  if(a==="unlink"){const h=meSelItem();if(h){mePush();unlinkItem(j,h.id,false);scheduleSave(S.cur);meChrome();meDraw()}return}
+  if(a==="linkbranch"){const h=meSelItem();if(h&&ME.branch){mePush();unlinkItem(j,h.id,false);connectHead(j,h,ME.branch);scheduleSave(S.cur);meChrome();meDraw()}return}
   if(a==="gpsdrop"){meGpsDrop();return}
   if(a==="gpscenter"){const xy=meGpsXY();if(xy){ME.vb.x=xy[0]-ME.vb.w/2;ME.vb.y=xy[1]-ME.vb.h/2;meDraw()}return}
   if(a==="undo"){meUndo();return}
   if(a==="in"||a==="out"){const f=a==="in"?0.7:1/0.7;meZoom(f,ME.vb.x+ME.vb.w/2,ME.vb.y+ME.vb.h/2);return}
   if(a==="fit"){meFit();meDraw();return}
-  if(a==="tool"){ME.tool=b.dataset.v;ME.draw=null;if(ME.tool!=="select")ME.sel=null;meChrome();meDraw();return}
+  if(a==="tool"){ME.tool=b.dataset.v;if(ME.tool.startsWith("head:"))ME.lastHeadTool=ME.tool;ME.draw=null;if(ME.tool!=="select")ME.sel=null;meChrome();meDraw();return}
   if(a==="layers"){ME.layers=!ME.layers;meChrome();return}
   if(a==="hide"){S.mapHide[b.dataset.v]=!S.mapHide[b.dataset.v];if(ME.sel)ME.sel=null;meChrome();meDraw();return}
   if(a==="finish"){const l=j.map.lines.find(x=>x.id===ME.draw);if(l&&l.pts.length<2){mePush();j.map.lines=j.map.lines.filter(x=>x!==l)}ME.draw=null;ME.sel=l&&l.pts.length>=2?{kind:"line",id:l.id}:null;ME.tool="select";scheduleSave(S.cur);meChrome();meDraw();return}
@@ -897,8 +905,8 @@ function meClick(ev){
   if(a==="desel"){ME.sel=null;meChrome();meDraw();return}
   const sel=meSelItem();if(!sel)return;
   if(a==="sub"){mePush();sel.sub=b.dataset.v;scheduleSave(S.cur);meChrome();meDraw();return}
-  if(a==="del"){mePush();if(ME.sel.kind==="item")j.map.items=j.map.items.filter(i=>i!==sel);else j.map.lines=j.map.lines.filter(l=>l!==sel);ME.sel=null;scheduleSave(S.cur);meChrome();meDraw();return}
-  if(a==="dup"){mePush();const c=Object.assign({},sel,{id:uid("i"),x:Math.min(1000,sel.x+40),y:Math.min(700,sel.y+30)});j.map.items.push(c);ME.sel={kind:"item",id:c.id};scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="del"){mePush();if(ME.sel.kind==="item"){unlinkItem(j,sel.id,true);j.map.items=j.map.items.filter(i=>i!==sel)}else j.map.lines=j.map.lines.filter(l=>l!==sel);ME.sel=null;scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="dup"){mePush();const c=Object.assign({},sel,{id:uid("i"),x:Math.min(1000,sel.x+40),y:Math.min(700,sel.y+30)});delete c.zone;if(c.t==="zv")c.label="";j.map.items.push(c);if(c.t==="head"&&sel.zone)connectHead(j,c,sel.zone);ME.sel={kind:"item",id:c.id};scheduleSave(S.cur);meChrome();meDraw();return}
   if(a==="extend"){ME.tool=sel.t;ME.draw=sel.id;meChrome();meDraw();return}
 }
 function meInput(ev){const t=ev.target;if(!t.dataset.mel)return;const sel=meSelItem();if(!sel)return;sel[t.dataset.mel]=t.value;scheduleSave(S.cur);meReq()}
@@ -926,7 +934,7 @@ function meMove(ev){
   if(!g.moved&&Math.hypot(ev.clientX-g.sx,ev.clientY-g.sy)>7){g.moved=true;
     if(g.item||g.vtx){mePush();g.type="drag";if(g.item)ME.sel={kind:"item",id:g.item.id}}else g.type="pan"}
   if(g.type==="drag"){const p=mePt(ev.clientX,ev.clientY);const q=clampPt([p[0]+g.off[0],p[1]+g.off[1]]);
-    if(g.item){g.item.x=q[0];g.item.y=q[1]}else{g.vtx[0].pts[g.vtx[1]]=q}meReq()}
+    if(g.item){g.item.x=q[0];g.item.y=q[1];followLinks(job(),g.item)}else{g.vtx[0].pts[g.vtx[1]]=q}meReq()}
   if(g.type==="pan"){const r=meEl("me-stage").getBoundingClientRect();ME.vb.x=g.vb0.x-(ev.clientX-g.sx)*g.vb0.w/r.width;ME.vb.y=g.vb0.y-(ev.clientY-g.sy)*g.vb0.h/r.height;meReq()}
 }
 function meUp(ev){
@@ -937,6 +945,30 @@ function meUp(ev){
   if(g.type!=="pending"||ev.type==="pointercancel")return;
   meTap(g);
 }
+/* ---- Valve branches: heads placed while a valve is active connect to it automatically ----
+   Each new head joins the nearest point already on that valve's branch (the valve or one of its heads),
+   so pipe branches the way it would in the ground. Auto lines remember their two ends and follow when moved. */
+const isValve=it=>it&&(it.t==="zv"||it.t==="valve");
+function valveName(v){return v?(v.label||(v.t==="zv"?"zone valve":"valve")):""}
+function connectHead(j,head,vid,exclude){
+  const v=j.map.items.find(i=>i.id===vid);if(!v)return;head.zone=vid;
+  const nodes=[v].concat(j.map.items.filter(i=>i.zone===vid&&i.id!==head.id&&i.id!==exclude));
+  let best=v,bd=Infinity;nodes.forEach(n=>{const d=(n.x-head.x)**2+(n.y-head.y)**2;if(d<bd){bd=d;best=n}});
+  j.map.lines.push({id:uid("l"),t:head.sub==="drip"?"drip":"lateral",pts:[[best.x,best.y],[head.x,head.y]],label:"",auto:true,zone:vid,from:best.id,to:head.id});
+}
+/* Remove an item's links; anything that was fed through it reconnects to the nearest remaining point */
+function unlinkItem(j,id,deleting){
+  const it=j.map.items.find(i=>i.id===id);if(!it)return;
+  if(isValve(it)&&deleting){j.map.lines=j.map.lines.filter(l=>!(l.auto&&l.zone===id));j.map.items.forEach(i=>{if(i.zone===id)delete i.zone});if(ME.branch===id)ME.branch=null;return}
+  const kids=j.map.lines.filter(l=>l.auto&&l.from===id).map(l=>l.to);
+  j.map.lines=j.map.lines.filter(l=>!(l.auto&&(l.from===id||l.to===id)));
+  const vid=it.zone;if(!deleting)delete it.zone;
+  kids.forEach(k=>{const h=j.map.items.find(i=>i.id===k);if(h&&vid)connectHead(j,h,vid,id)});
+}
+function followLinks(j,it){j.map.lines.forEach(l=>{if(!l.auto)return;if(l.from===it.id)l.pts[0]=[it.x,it.y];if(l.to===it.id)l.pts[l.pts.length-1]=[it.x,it.y]})}
+function meBranchBar(){const j=job();const v=ME.branch&&j.map.items.find(i=>i.id===ME.branch);if(!v)return "";
+  const n=j.map.items.filter(i=>i.zone===v.id).length;
+  return `<div class="me-row branchbar"><span class="small spacer">Adding to <b>${esc(valveName(v))}</b>: ${n} head${n===1?"":"s"}. New heads connect automatically.</span><button class="btn quiet sm" data-me="branchstop">Stop</button></div>`}
 function meTap(g){
   const j=job();const isLine=MAP_LINES.some(l=>l[0]===ME.tool);
   if(isLine){let p=clampPt(g.p0);if(g.item)p=[g.item.x,g.item.y];
@@ -950,7 +982,12 @@ function meTap(g){
   const p=clampPt(g.p0);mePush();
   let it;if(ME.tool.startsWith("head:"))it={id:uid("i"),t:"head",sub:ME.tool.slice(5),x:p[0],y:p[1],label:"",notes:""};
   else it={id:uid("i"),t:ME.tool,sub:"",x:p[0],y:p[1],label:"",notes:""};
-  j.map.items.push(it);ME.sel={kind:"item",id:it.id};scheduleSave(S.cur);meChrome();meDraw();
+  j.map.items.push(it);
+  if(it.t==="zv"){const nums=j.map.items.filter(i=>i.t==="zv"&&/^Z\d+$/.test(i.label||"")).map(i=>+i.label.slice(1));let n=1;while(nums.includes(n))n++;it.label="Z"+n}
+  if(isValve(it)){ME.branch=it.id;toast(`${valveName(it)} placed. Pick a head type and its heads will connect to it.`)}
+  else if(it.t==="head"&&ME.branch&&j.map.items.some(i=>i.id===ME.branch))connectHead(j,it,ME.branch);
+  /* heads go down in quick succession, so keep the edit panel closed; tap a head later to edit it */
+  ME.sel=it.t==="head"?null:{kind:"item",id:it.id};scheduleSave(S.cur);meChrome();meDraw();
 }
 
 /* ---- mainline ---- */
