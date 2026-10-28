@@ -250,6 +250,10 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .me-btn.dark{color:var(--ink);border-color:var(--line);background:var(--surface)}
 .gpsbar{border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:var(--bg)}
 .gpsdot{width:12px;height:12px;border-radius:50%;background:#2F7BFF;box-shadow:0 0 0 3px rgba(47,123,255,.25);flex:none}
+body.training .bar,body.training::before{background:var(--warn)}
+body.training .bar{color:#fff}
+.trainbar{border:2px solid var(--warn);background:var(--warn-soft);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.trainstamp{border:3px dashed var(--bad);color:var(--bad);font-family:var(--display);font-weight:700;font-size:1.3rem;letter-spacing:.06em;text-align:center;padding:8px;border-radius:8px}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -406,6 +410,8 @@ const IDB=(()=>{let dbp=null;
     async set(k,v){const ok=await tx("readwrite",st=>st.put(v,k));return ok!==undefined||LS.set(k,v)},
     async del(k){await tx("readwrite",st=>st.delete(k));try{localStorage.removeItem(k)}catch(e){}}
   };})();
+/* Storage prefix: training mode keeps its practice data separate on this phone */
+function KP(){return S.training?"irr.train.":"irr."}
 const LS={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 function scheduleSave(id){
   const j=S.jobs[id];if(!j)return;j.updatedAt=Date.now();dirty[id]=true;
@@ -415,7 +421,7 @@ async function flush(id){
   if(saving[id]){return}
   const j=S.jobs[id];if(!j){dirty[id]=false;return}
   dirty[id]=false;
-  if(S.mode==="local"){const all=LS.get("irr.jobs")||{};all[id]=j;if(!LS.set("irr.jobs",all))toast("This device is out of storage space");return}
+  if(S.mode==="local"){const all=LS.get(KP()+"jobs")||{};all[id]=j;if(!LS.set(KP()+"jobs",all))toast("This device is out of storage space");return}
   if(S.mode!=="db"||S.ro)return;
   saving[id]=true;
   try{await db.doc("jobs/"+id).set(JSON.parse(JSON.stringify(j)))}
@@ -430,28 +436,28 @@ function handleWriteErr(e){
 }
 async function deleteJob(id){
   delete S.jobs[id];
-  if(S.mode==="local"){const all=LS.get("irr.jobs")||{};delete all[id];LS.set("irr.jobs",all);IDB.del("irr.bg."+id)}
+  if(S.mode==="local"){const all=LS.get(KP()+"jobs")||{};delete all[id];LS.set(KP()+"jobs",all);IDB.del(KP()+"bg."+id)}
   else if(S.mode==="db"&&!S.ro){try{await db.doc("jobs/"+id).delete();await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 /* Admins (owner + developer) change prices; technicians only read them */
-function isAdmin(){return !sb||!!(S.me&&S.me.admin)}
+function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 let pTimer=null;
-function savePricing(){if(!isAdmin())return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
-  if(S.mode==="local")LS.set("irr.pricing",S.pricing);
+function savePricing(){if(!isAdmin()||S.training)return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
+  if(S.mode==="local")LS.set(KP()+"pricing",S.pricing);
   else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing})}catch(e){handleWriteErr(e)}}
 pTimer=null},700)}
 async function loadBg(id){
   if(S.bg[id]!==undefined)return;S.bg[id]=null;
-  if(S.mode==="local"){S.bg[id]=(await IDB.get("irr.bg."+id))||null;ME.open?meDraw():render();return}
+  if(S.mode==="local"){S.bg[id]=(await IDB.get(KP()+"bg."+id))||null;ME.open?meDraw():render();return}
   if(S.mode==="db"){try{const s=await db.doc("jobmedia/"+id).get();S.bg[id]=s.exists?(s.data().img||null):null;ME.open?meDraw():render()}catch(e){}}
 }
 async function saveBg(id,img){
   S.bg[id]=img;const j=S.jobs[id];j.map.hasBg=!!img;scheduleSave(id);render();
-  if(S.mode==="local"){if(img){if(!(await IDB.set("irr.bg."+id,img)))toast("This device is out of space for photos")}else{await IDB.del("irr.bg."+id)}}
+  if(S.mode==="local"){if(img){if(!(await IDB.set(KP()+"bg."+id,img)))toast("This device is out of space for photos")}else{await IDB.del(KP()+"bg."+id)}}
   else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 function startLocal(){
-  S.mode="local";S.jobs=LS.get("irr.jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.pricing=LS.get("irr.pricing")||{};render();
+  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.pricing=LS.get(KP()+"pricing")||{};render();
 }
 async function boot(){
   render();
@@ -576,6 +582,7 @@ function render(){
   hydratePhotos(app);
 }
 function banner(){
+  if(S.training)return `<div class="trainbar"><b>Training mode.</b> Practice jobs stay on this phone only. They never reach the team or customers. <span class="row" style="gap:6px;margin-top:6px"><button class="btn sm" data-exittrain="1">Exit training</button>${delBtn("trainreset","Reset practice jobs")}</span></div>`;
   if(S.mode==="local")return `<div class="banner">Jobs are saved on this device only. Open this page from the Claude app to keep jobs synced across devices.</div>`;
   if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. ${sb?"Your account doesn't have technician access.":"Ask the owner to share this page with you as an Editor."}</div>`;
   if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This phone has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Review them to choose which, if any, go to the server.</span><button class="btn sm" data-home="import">Review</button></div>`;
@@ -1125,6 +1132,10 @@ function findings(j,tech){
   return out.map(([h,it])=>[h,it,tl.filter(t=>t.sec===h)]);
 }
 function reportHtml(j,rev){
+  if(S.training)return TRAIN_STAMP+reportHtmlReal(j,rev);
+  return reportHtmlReal(j,rev);
+}
+function reportHtmlReal(j,rev){
   const e=buildEstimate(j);const d=j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
   const f=findings(j,!!j.est.showTech);const hasMap=j.map.items.length||j.map.lines.length;
   const work=e.lines.filter(l=>!["Service","Additional items","Upgrades"].includes(l.sec));
@@ -1220,6 +1231,9 @@ function upsellPipeline(){
 /* ---- invoice ---- */
 function invNo(){const d=new Date();return "INV-"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
 function invoiceHtml(j){
+  return (S.training?TRAIN_STAMP:"")+invoiceHtmlReal(j);
+}
+function invoiceHtmlReal(j){
   const e=buildEstimate(j);const b=bizInfo();const inv=j.inv||{};const cur=currentRev(j);const kind=inv.kind==="invoice"?"Invoice":"Estimate";
   return `<div class="lh"><div><div class="eyebrow">${kind}</div><h1>${esc(b.name||"Your business name")}</h1>
     <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
@@ -1306,12 +1320,12 @@ async function issueRev(j){
 }
 async function putRevHtml(j,n,html){
   const key=j.id+"_"+revNo(n);
-  if(S.mode==="local"){if(!(await IDB.set("irr.rev."+key,html)))toast("This device is out of storage for revision copies");return}
+  if(S.mode==="local"){if(!(await IDB.set(KP()+"rev."+key,html)))toast("This device is out of storage for revision copies");return}
   if(S.mode==="db"&&!S.ro){try{await db.doc("revisions/"+key).set({job:j.id,n,html})}catch(e){handleWriteErr(e)}}
 }
 async function getRevHtml(j,rv){
   const key=j.id+"_"+revNo(rv.n);
-  if(S.mode==="local")return await IDB.get("irr.rev."+key);
+  if(S.mode==="local")return await IDB.get(KP()+"rev."+key);
   if(S.mode==="db"){try{const d=await db.doc("revisions/"+key).get();return d.exists?d.data().html:null}catch(e){return null}}
   return null;
 }
@@ -1366,7 +1380,7 @@ function revertTrouble(j,path){
   scheduleSave(S.cur);rr();
 }
 S.ph={};
-function phKeyLocal(id){return "irr.ph."+id}
+function phKeyLocal(id){return KP()+"ph."+id}
 async function loadPhoto(id){
   if(S.ph[id]!==undefined)return S.ph[id];S.ph[id]=null;
   if(S.mode==="local")S.ph[id]=(await IDB.get(phKeyLocal(id)))||null;
@@ -1485,6 +1499,7 @@ function makeSupaDb(){
 function startDb(d){
   db=d;S.mode="db";S.loaded=false;
   db.collection("jobs").onSnapshot(snap=>{
+    if(S.training)return;
     let changedCur=false;
     for(const ch of snap.docChanges()){
       const id=ch.doc.id;
@@ -1618,7 +1633,21 @@ async function signOut(){S.acctOpen=false;
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.admin?"Admin":"Technician"}</span></div>
-    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button><button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+
+/* ---------- Training mode: practice jobs on this phone only ---------- */
+function trainingSample(){const j=withDefaults(newJob());j.training=true;
+  Object.assign(j.info,{customer:"Practice Customer",address:"123 Training Ln",city:"Frisco, TX",phone:"555-0100",email:"practice@example.com",propType:"residential",notes:"Practice job: customer says zone 3 isn't watering."});
+  j.mainline[0].meters[0]={num:"00000000",reading:"1000",flow:"",side:""};return j}
+function enterTraining(){S.acctOpen=false;S.training=true;document.body.classList.add("training");
+  S.cur=null;S.home="jobs";S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);
+  if(!Object.keys(S.jobs).length){const j=trainingSample();S.jobs[j.id]=j;LS.set(KP()+"jobs",S.jobs)}
+  render();window.scrollTo(0,0);toast("Training mode on")}
+function exitTraining(){S.acctOpen=false;try{sessionStorage.setItem("sw.exitTraining","1")}catch(e){}location.reload()}
+async function resetTraining(){const all=LS.get(KP()+"jobs")||{};
+  for(const id of Object.keys(all)){const j=all[id];JSON.stringify(j).replace(/"(ph[a-z0-9]{6,})"/g,(m,p)=>{IDB.del(KP()+"ph."+p)});IDB.del(KP()+"bg."+id);(j.revs||[]).forEach(r=>IDB.del(KP()+"rev."+id+"_"+revNo(r.n)))}
+  const j=trainingSample();S.jobs={[j.id]:j};LS.set(KP()+"jobs",S.jobs);S.cur=null;S.home="jobs";render();toast("Practice jobs reset")}
+const TRAIN_STAMP=`<div class="trainstamp">TRAINING — NOT A REAL ESTIMATE</div>`;
 
 /* ---------- jobs saved on this phone before sign-in: review, then upload or discard ----------
    Protections: nothing uploads automatically; each job is opt-in; a job whose ID already exists on
@@ -1759,11 +1788,13 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam]");
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain]");
   if(ab){const d=ab.dataset;
     if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
     if(d.acct){S.acctOpen=!S.acctOpen;render();return}
+    if(d.entertrain){enterTraining();return}
+    if(d.exittrain){exitTraining();return}
     if(d.accteam){S.acctOpen=false;S.cur=null;S.home="team";render();window.scrollTo(0,0);return}
     if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
     if(d.pback){S.portal.view=null;render();return}
@@ -1844,6 +1875,7 @@ function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
   if(k==="impdiscard"){discardLocal();return}
+  if(k==="trainreset"){resetTraining();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
