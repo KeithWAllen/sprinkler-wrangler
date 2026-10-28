@@ -10,6 +10,8 @@
 <meta name="description" content="Field app for evaluating irrigation jobs: inspections, property map, photos, reports and invoices.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231D6B47'/%3E%3Cpath d='M32 12s-13 15-13 24a13 13 0 0 0 26 0c0-9-13-24-13-24z' fill='%23fff'/%3E%3C/svg%3E">
 <title>Sprinkler Wrangler</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
@@ -132,6 +134,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;
 .ohm b{font-family:var(--mono);font-size:.78rem}
 .ohm input{min-height:36px;padding:6px;font-family:var(--mono)}
 .ohm.short,.ohm.open{border-color:var(--bad);background:var(--bad-soft)}
+.ohm.float{border-color:var(--bad);background:var(--bad-soft)}
+.ohm .ohst{font-size:.7rem;font-weight:700;color:var(--muted);min-height:1em}
+.ohm.short .ohst,.ohm.open .ohst,.ohm.float .ohst{color:var(--bad)}.ohm.high .ohst{color:var(--warn)}
+.olbtn{border:1px solid var(--line);background:var(--surface);border-radius:6px;font-size:.7rem;font-weight:700;padding:2px 6px;justify-self:start}
+.ohmtest{border:2px solid var(--water);border-radius:10px;padding:12px;display:grid;gap:8px;background:var(--bg)}
 .ohm.high{border-color:var(--warn);background:var(--warn-soft)}
 .rt{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px}
 .rt label{display:grid;gap:2px;font-size:.74rem;color:var(--muted);font-weight:600}
@@ -221,6 +228,13 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
   .isec,.rph,.up{break-inside:avoid}
   @page{margin:14mm}
 }
+.authwrap{min-height:100%;display:flex;align-items:flex-start;justify-content:center;padding-block:max(32px,6vh) 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.authcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 20px;width:100%;max-width:420px;display:grid;gap:14px}
+.authcard h2{font-size:1.4rem}
+.authf{display:grid;gap:12px}
+.authf .btn{min-height:48px;font-size:1.05rem}
+.codein{font-family:var(--mono);font-size:1.5rem;letter-spacing:.3em;text-align:center}
+.linkbtn{background:none;border:0;padding:6px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -348,7 +362,7 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hid
 
 function newJob(){
   return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),
-    info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
+    info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
     map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:"Estimate valid for 30 days."}};
 }
 /* Default layout for a new job: one controller, zones 1–4 spray (4" & 6"), zone 5 drip */
@@ -424,7 +438,7 @@ function startLocal(){
 }
 async function boot(){
   render();
-  if(!window.claude||!window.claude.use){startLocal();return}
+  if(!window.claude||!window.claude.use){if(window.SW_CONFIG&&window.SW_CONFIG.url){cloudBoot();return}startLocal();return}
   let d=null;try{d=await window.claude.use("db")}catch(e){d=null}
   window.claude.use("downloads").then(x=>{downloads=x;if(S.tab==="report")render()}).catch(()=>{});
   if(!d){startLocal();return}
@@ -454,10 +468,17 @@ function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTARE
 /* ---------------- estimate ---------------- */
 function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
 function hasLeak(m){return (m.meters||[]).some(x=>x.flow==="yes"&&x.side==="irrigation")}
-function ohmState(v){if(v===""||v==null)return "";const n=num(v);if(n<15)return "short";if(n>80)return "open";if(n>60)return "high";return "ok"}
+/* Ohm bands (Bradley): under 24 short · 24–60 normal · 61–90 high → valve rebuild · over 90 floating common · OL/infinite open.
+   Team can correct the cut-offs; stored with the price sheet settings. */
+function ohmCuts(){const p=S.pricing;const g=(k,d)=>{const v=p[k];return v==null||v===""?d:num(v)};return {short:g("_ohm_short",24),high:g("_ohm_high",60),float:g("_ohm_float",90)}}
+const OHM_TXT={short:"Short",high:"High · rebuild valve",float:"Floating common",open:"Open circuit",ok:"OK"};
+const OHM_LONG={short:"short circuit",high:"high resistance, valve needs a rebuild",float:"floating common, likely a bad wire-nut connection",open:"open circuit, wire repair needed"};
+function ohmState(v){if(v===""||v==null)return "";const t=String(v).trim();if(/^(ol|o\.l\.?|open|inf|∞)/i.test(t))return "open";const n=parseFloat(t);if(isNaN(n))return "";const c=ohmCuts();
+  if(n<c.short)return "short";if(n>c.float)return "float";if(n>c.high)return "high";return "ok"}
 function ctlFlags(c){
   const f={ohm:[],decoders:[],failedMods:0};
   if(c.wiring==="conventional"){for(let z=1;z<=num(c.zones);z++){const st=ohmState((c.ohms||{})[z]);if(st&&st!=="ok")f.ohm.push({z,st,v:c.ohms[z]})}}
+  f.wire=f.ohm.filter(x=>x.st!=="high");f.rebuild=f.ohm.filter(x=>x.st==="high");
   if(c.wiring==="2wire"){f.decoders=String(c.badDecoders||"").split(/[,\s]+/).filter(Boolean)}
   if(c.modular==="yes")f.failedMods=(c.modules||[]).filter(m=>m.status==="Failed").length;
   return f;
@@ -478,7 +499,8 @@ function buildEstimate(j){
     if(a.replace)add(sec,"ctl_replace",1,[c.brand,c.model].filter(Boolean).join(" "));
     if(c.power==="no"&&c.powerIssue==="transformer"&&a.transformer!==false&&!a.replace)add(sec,"transformer",1);
     if(c.rain==="no"&&a.rainAdd)add(sec,"rain_add",1);
-    if(f.ohm.length&&a.wire!==false)add(sec,"wire_trouble",f.ohm.length,"zones "+f.ohm.map(x=>x.z).join(", "));
+    if(f.wire.length&&a.wire!==false)add(sec,"wire_trouble",f.wire.length,"zones "+f.wire.map(x=>x.z).join(", "));
+    if(f.rebuild.length&&a.rebuild!==false)add(sec,"valve_rebuild",f.rebuild.length,"zones "+f.rebuild.map(x=>x.z).join(", "));
     if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,"#"+f.decoders.join(", #"));
     if(f.failedMods&&a.module!==false)add(sec,"module",f.failedMods);
   });
@@ -523,21 +545,22 @@ function delBtn(id,label){const armed=S.armed===id;return `<button type="button"
 function render(){
   const app=document.getElementById("app");
   const sy=window.scrollY;const keepScroll=render.keep;render.keep=false;
-  app.innerHTML=S.cur&&job()?jobView():homeView();
+  app.innerHTML=S.mode==="auth"?authView():S.mode==="portal"?portalView():S.mode==="error"?`<div class="authwrap"><div class="authcard"><h2>Can't connect</h2><p>${esc(S.err)}</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`:S.cur&&job()?jobView():homeView();
   if(keepScroll)window.scrollTo(0,sy);
   hydratePhotos(app);
 }
 function banner(){
   if(S.mode==="local")return `<div class="banner">Jobs are saved on this device only. Open this page from the Claude app to keep jobs synced across devices.</div>`;
-  if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. Ask the owner to share this page with you as an Editor.</div>`;
+  if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. ${sb?"Your account doesn't have technician access.":"Ask the owner to share this page with you as an Editor."}</div>`;
+  if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This phone has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Upload them to the server so the whole team sees them.</span><button class="btn sm" data-import="1">Upload jobs</button></div>`;
   return "";
 }
 function homeView(){
-  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
+  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"],...(sb?[["team","Team"]]:[])];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
-  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else body=pricesView();
-  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":"Jobs"}</h1></div>
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else body=pricesView();
+  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?"Team":"Jobs"}</h1></div>
     <button class="iconbtn" data-new="1">+ New job</button></div></header>
   <nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav></div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
@@ -600,7 +623,7 @@ function jobView(){
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");return m}
 function customerFields(){return `<div class="grid2">${fld("Customer name *","info.customer","text",'autocomplete="name"')}${fld("Phone","info.phone","tel")}${fld("Email","info.email","email")}${fld("Gate / access code","info.gate")}</div>
-  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div><p class="small muted">* Required, plus a phone or email, before the report can be produced.</p>`}
+  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div><p class="small muted">* Required, plus a phone or email, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
   <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
@@ -857,9 +880,7 @@ function controllersTab(){const j=job();
   ${seg("Modular?",b+".modular",YN)}
   ${c.modular==="yes"?`<div class="combo"><h4>Modules</h4>${(c.modules||[]).map((mo,mi)=>`<div class="row"><span class="mono small">#${mi+1}</span><div style="flex:1;min-width:110px">${fld("Stations",`${b}.modules.${mi}.size`,"text",'placeholder="4"')}</div><div style="flex:1;min-width:120px">${sel("Status",`${b}.modules.${mi}.status`,["OK","Failed","Missing","Unknown"])}</div>${delBtn("mod:"+ci+":"+mi,"✕")}</div>`).join("")}
     <div><button class="btn ghost sm" data-add="${b}.modules" data-tpl="module">+ Add module</button></div></div>`:""}
-  ${c.wiring==="conventional"?`<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted">Typical solenoid 20–60 Ω. Under 15 flags a short, 61–80 high, over 80 open.</p>
-    <div class="ohms">${Array.from({length:zn},(_,i)=>{const z=i+1;const st=ohmState((c.ohms||{})[z]);return `<label class="ohm ${st}"><b>Zone ${z}</b><input type="number" inputmode="decimal" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" data-ohm="1" value="${esc((c.ohms||{})[z])}" aria-label="Zone ${z} ohms"></label>`}).join("")}</div></div>`
-  :`<div class="combo"><h4>2-wire path</h4>${seg("Overcurrent on the path?",b+".overcurrent",YN,{yes:"bad"})}
+  ${c.wiring==="conventional"?ohmBlock(c,b,zn):`<div class="combo"><h4>2-wire path</h4>${seg("Overcurrent on the path?",b+".overcurrent",YN,{yes:"bad"})}
     ${c.overcurrent==="yes"?fld("Zones affected",b+".ocZones","number"):""}
     ${fld("Decoders not communicating",b+".badDecoders","text",'placeholder="e.g. 3, 7, 12" data-rr="1"')}</div>`}
   <details class="combo" ${c.programs.length?"open":""}><summary>Programming · ${c.programs.length} program${c.programs.length===1?"":"s"}</summary>
@@ -873,12 +894,24 @@ function controllersTab(){const j=job();
     ${chk(b+".act.replace","Replace controller","ctl_replace")}
     ${c.power==="no"&&c.powerIssue==="transformer"?chk(b+".act.transformer","Replace transformer","transformer",true):""}
     ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add"):""}
-    ${f.ohm.length?chk(b+".act.wire",`Wire troubleshooting · zones ${f.ohm.map(x=>x.z).join(", ")}`,"wire_trouble",true):""}
+    ${f.wire.length?chk(b+".act.wire",`Wire troubleshooting · zones ${f.wire.map(x=>x.z).join(", ")}`,"wire_trouble",true):""}
+    ${f.rebuild.length?chk(b+".act.rebuild",`Rebuild valve · zones ${f.rebuild.map(x=>x.z).join(", ")}`,"valve_rebuild",true):""}
     ${f.decoders.length?chk(b+".act.decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"decoder",true):""}
     ${f.failedMods?chk(b+".act.module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"module",true):""}
   </div></div>
   ${fld("Notes",b+".notes","textarea")}
   <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+`<div><button class="btn ghost" data-addctl="1">+ Add controller</button></div>`;
+}
+function ohmBlock(c,b,zn){
+  const cut=ohmCuts();const ans=S.pricing._ohm_ok;const edit=ans==="no"||S.ohmEdit;
+  const bands=`Under ${cut.short} Ω = short · ${cut.short}–${cut.high} Ω = normal · ${cut.high+1}–${cut.float} Ω = high, rebuild valve · over ${cut.float} Ω = floating common · OL / infinite = open circuit`;
+  const test=`<div class="ohmtest"><div class="eyebrow">Function test</div><b>Are these ohm ranges correct?</b><p class="small" style="margin:0">${bands}</p>
+    ${edit?`<div class="grid3"><label class="f"><span>Short below (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_short" data-price="_ohm_short" data-ohmcut="1" value="${cut.short}"></label><label class="f"><span>High above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_high" data-price="_ohm_high" data-ohmcut="1" value="${cut.high}"></label><label class="f"><span>Floating above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_float" data-price="_ohm_float" data-ohmcut="1" value="${cut.float}"></label></div>
+      <div class="row"><button class="btn sm" data-ohmans="yes">Save, these are correct now</button></div>`
+    :`<div class="row"><button class="btn sm" data-ohmans="yes">Yes</button><button class="btn danger sm" data-ohmans="no">No</button></div>`}</div>`;
+  if(ans!=="yes")return `<div class="combo"><h4>Zone wire readings (ohms)</h4>${test}<p class="small muted" style="margin:0">Answer the question above to enter readings.</p></div>`;
+  return `<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted" style="margin:0">${bands}. Type OL for an open reading. <button class="linkbtn" data-ohmans="edit">Change ranges</button></p>
+    <div class="ohms">${Array.from({length:zn},(_,i)=>{const z=i+1;const v=(c.ohms||{})[z];const st=ohmState(v);return `<label class="ohm ${st}"><b>Zone ${z}</b><input type="text" inputmode="decimal" autocomplete="off" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" data-ohm="1" value="${esc(v)}" aria-label="Zone ${z} ohms"><span class="ohst">${st?OHM_TXT[st]:"&nbsp;"}</span><button type="button" class="olbtn" data-ol="${b}.ohms.${z}">OL</button></label>`}).join("")}</div></div>`;
 }
 function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==false:!!v;
   return `<div class="act ${on?"on":""}"><div class="al">${esc(label)}<div class="ap num">${money(price(pk))}${PRICE_DEFAULTS[pk].u!=="each"?" / "+PRICE_DEFAULTS[pk].u:""}</div></div><button type="button" class="chip" data-chk="${path}" data-def="${defOn?1:0}" aria-pressed="${on}">${on?"On estimate":"Add"}</button></div>`}
@@ -957,7 +990,7 @@ function findings(j,tech){
     it.push(`${[c.brand,c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
     if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":"transformer failed"}`:""}`);
     if(c.rain==="no")it.push("No rain sensor installed");else if(c.rain==="yes")it.push("Rain sensor installed");
-    if(f.ohm.length)it.push(`<span class="flag">Wiring problem on zone${f.ohm.length>1?"s":""} ${f.ohm.map(x=>x.z).join(", ")}</span>${tech?" ("+f.ohm.map(x=>`Z${x.z} ${x.v} Ω ${x.st}`).join("; ")+")":""}`);
+    f.ohm.forEach(x=>it.push(`<span class="flag">Zone ${x.z}: ${OHM_LONG[x.st]}</span>${tech?` (${esc(String(x.v))}${/^\d/.test(String(x.v))?" Ω":""})`:""}`));
     if(c.overcurrent==="yes")it.push(`<span class="flag">Overcurrent on the 2-wire path</span>${c.ocZones?`, affecting ${esc(c.ocZones)} zones`:""}`);
     if(f.decoders.length)it.push(`Decoder${f.decoders.length>1?"s":""} not communicating: #${f.decoders.map(esc).join(", #")}`);
     if(f.failedMods)it.push(`${f.failedMods} failed module${f.failedMods>1?"s":""}`);
@@ -1149,7 +1182,7 @@ async function issueRev(j){
   const note=String(j.est.revNote||"").trim();
   if(last&&!note){toast("Describe what changed before issuing");const el=document.getElementById("f-est.revNote");if(el)el.focus();return}
   const n=last?last.n+1:0;const at=Date.now();
-  const rev={n,at,by:j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total};
+  const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total};
   const html=reportHtml(j,rev);
   delete j.est.revNote;
   rev.fp=jobPrint(j);revs.push(rev);
@@ -1255,6 +1288,284 @@ function addPhoto(path,file){
   };img.onerror=()=>toast("That file isn't a photo we can read");img.src=fr.result};fr.readAsDataURL(file);
 }
 
+/* =====================================================================
+   Server mode (Supabase): sign-in, synced jobs, photo storage, owner portal
+   ===================================================================== */
+let sb=null;
+/* Owner portal is built but switched off until the technician side is finished */
+const SHOW_PORTAL=false;
+function sbErr(e){const m=(e&&e.message)||String(e||"");const c=(e&&e.code)||"";
+  return {code:/quota|exceed|too large|payload/i.test(m)?"quota_exceeded":(c==="42501"||/row-level|permission|not allowed/i.test(m))?"invalid_argument":"unavailable",message:m}}
+function dataUrlToBlob(u){const [h,b]=u.split(",");const mime=(h.match(/data:([^;]+)/)||[])[1]||"image/jpeg";const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:mime})}
+function blobToDataUrl(b){return new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.onerror=()=>r(null);f.readAsDataURL(b)})}
+function makeSupaDb(){
+  const BUCKET="photos";
+  const snap=(id,data)=>({id,exists:data!=null,data:()=>data==null?undefined:data,metadata:{fromCache:false,hasPendingWrites:false}});
+  async function up(path,url){const {error}=await sb.storage.from(BUCKET).upload(path,dataUrlToBlob(url),{upsert:true,contentType:"image/jpeg"});if(error)throw sbErr(error)}
+  async function down(path){const {data,error}=await sb.storage.from(BUCKET).download(path);if(error||!data)return null;return await blobToDataUrl(data)}
+  const custOf=j=>({customer_email:String((j.info||{}).email||"").trim().toLowerCase()||null,customer_name:(j.info||{}).customer||null,address:[(j.info||{}).address,(j.info||{}).city].filter(Boolean).join(", ")||null});
+  const lastEmail={};
+  async function afterJobSave(id,j){
+    const c=custOf(j);
+    if(lastEmail[id]!==undefined&&lastEmail[id]!==c.customer_email){await sb.from("reports").update({customer_email:c.customer_email,customer_name:c.customer_name,address:c.address}).eq("job_id",id)}
+    lastEmail[id]=c.customer_email;
+    if(j.inv&&j.inv.no){const e=buildEstimate(j);
+      const {error}=await sb.from("invoices").upsert(Object.assign({job_id:id,no:j.inv.no,kind:j.inv.kind||"estimate",status:j.inv.kind==="invoice"?(j.inv.status||"unpaid"):"estimate",total:e.total,html:invoiceHtml(j),updated_at:new Date().toISOString()},c));
+      if(error)throw sbErr(error)}
+  }
+  function doc(path){const [col,id]=path.split("/");
+    return {id,path,
+      async get(){
+        if(col==="jobs"){const {data,error}=await sb.from("jobs").select("data").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
+        if(col==="settings"){const {data,error}=await sb.from("settings").select("data").eq("key",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
+        if(col==="jobmedia"){const img=await down("bg/"+id+".jpg");return snap(id,img?{img}:null)}
+        if(col==="photos"){const img=await down("ph/"+id+".jpg");return snap(id,img?{img}:null)}
+        if(col==="revisions"){const {data,error}=await sb.from("reports").select("html").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data?{html:data.html}:null)}
+        return snap(id,null);
+      },
+      async set(d){
+        if(col==="jobs"){const {error}=await sb.from("jobs").upsert(Object.assign({id,data:d,updated_at:new Date().toISOString()},{customer_email:custOf(d).customer_email}));if(error)throw sbErr(error);try{await afterJobSave(id,d)}catch(e){console.warn("invoice sync",e)}return}
+        if(col==="settings"){const {error}=await sb.from("settings").upsert({key:id,data:d,updated_at:new Date().toISOString()});if(error)throw sbErr(error);return}
+        if(col==="jobmedia")return up("bg/"+id+".jpg",d.img);
+        if(col==="photos")return up("ph/"+id+".jpg",d.img);
+        if(col==="revisions"){const j=S.jobs[d.job]||{info:{},revs:[]};const r=(j.revs||[]).find(x=>x.n===d.n)||{};
+          const html=await inlinePhotos(d.html);
+          const {error}=await sb.from("reports").upsert(Object.assign({id,job_id:d.job,rev:d.n,html,total:r.total||0,issued_at:new Date(r.at||Date.now()).toISOString(),issued_by:r.by||""},custOf(j)));
+          if(error)throw sbErr(error);return}
+      },
+      async delete(){
+        if(col==="jobs"){await sb.from("invoices").delete().eq("job_id",id);await sb.from("reports").delete().eq("job_id",id);const {error}=await sb.from("jobs").delete().eq("id",id);if(error)throw sbErr(error);return}
+        if(col==="jobmedia"){await sb.storage.from(BUCKET).remove(["bg/"+id+".jpg"]);return}
+        if(col==="photos"){await sb.storage.from(BUCKET).remove(["ph/"+id+".jpg"]);return}
+      },
+      onSnapshot(next,err){
+        let alive=true;const deliver=async()=>{try{const s=await doc(path).get();if(alive)next(s)}catch(e){if(alive&&err)err(e)}};
+        deliver();
+        const ch=sb.channel("doc-"+path.replace(/[^a-z0-9]/gi,"-")).on("postgres_changes",{event:"*",schema:"public",table:col,filter:(col==="settings"?"key":"id")+"=eq."+id},()=>deliver()).subscribe();
+        return ()=>{alive=false;sb.removeChannel(ch)};
+      }
+    }}
+  function collection(name){return {
+    doc:id=>doc(name+"/"+id),
+    onSnapshot(next,err){
+      let alive=true;const known=new Set();
+      const mk=(type,id,data)=>({type,doc:snap(id,data),oldIndex:-1,newIndex:-1});
+      (async()=>{
+        const {data,error}=await sb.from(name).select("id,data");
+        if(!alive)return;if(error){if(err)err(sbErr(error));return}
+        const ch=(data||[]).map(r=>{known.add(r.id);return mk("added",r.id,r.data)});
+        next({docs:[],size:ch.length,empty:!ch.length,docChanges:()=>ch,metadata:{fromCache:false,hasPendingWrites:false}});
+      })();
+      const channel=sb.channel("col-"+name).on("postgres_changes",{event:"*",schema:"public",table:name},p=>{
+        if(!alive)return;let c;
+        if(p.eventType==="DELETE"){const id=(p.old||{}).id;if(!id)return;known.delete(id);c=mk("removed",id,null)}
+        else{const id=p.new.id;c=mk(known.has(id)?"modified":"added",id,p.new.data);known.add(id)}
+        next({docs:[],size:1,empty:false,docChanges:()=>[c],metadata:{fromCache:false,hasPendingWrites:false}});
+      }).subscribe();
+      return ()=>{alive=false;sb.removeChannel(channel)};
+    }}}
+  return {doc,collection};
+}
+
+/* ---------- start the synced app once a technician is signed in ---------- */
+function startDb(d){
+  db=d;S.mode="db";S.loaded=false;
+  db.collection("jobs").onSnapshot(snap=>{
+    let changedCur=false;
+    for(const ch of snap.docChanges()){
+      const id=ch.doc.id;
+      if(ch.type==="removed"){delete S.jobs[id];if(id===S.cur)changedCur=true;continue}
+      if(saving[id]||dirty[id])continue;
+      const data=ch.doc.data();const prev=S.jobs[id];
+      if(prev&&prev.updatedAt>=data.updatedAt&&ch.type!=="added")continue;
+      S.jobs[id]=JSON.parse(JSON.stringify(data));
+      if(id===S.cur&&prev)changedCur=true;
+    }
+    S.loaded=true;
+    const ae=document.activeElement;
+    if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+    if(ME.open)return;
+    render();
+  },()=>toast("Lost connection to saved jobs. Check your signal."));
+  db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},8000);
+  render();
+}
+
+/* ---------- sign-in ---------- */
+S.auth={step:"signin",email:"",busy:false,msg:"",err:""};
+async function cloudBoot(){
+  const cfg=window.SW_CONFIG;
+  if(!window.supabase||!window.supabase.createClient){S.mode="error";S.err="Couldn't load the sign-in system. Check your internet connection and reload.";render();return}
+  sb=window.supabase.createClient(cfg.url,cfg.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  sb.auth.onAuthStateChange((ev,session)=>{if(ev==="SIGNED_OUT"){resetToSignIn()}else if(ev==="PASSWORD_RECOVERY"){S.mode="auth";S.auth.step="newpass";render()}});
+  const {data}=await sb.auth.getSession();
+  if(data&&data.session)await afterSignIn(data.session);else{S.mode="auth";render()}
+}
+function resetToSignIn(){S.jobs={};S.cur=null;S.me=null;S.portal=null;S.team=null;S.home="jobs";S.tab="mainline";S.pricing={};db=null;S.mode="auth";S.auth=Object.assign(S.auth,{step:"signin",busy:false,msg:"",err:""});render()}
+async function afterSignIn(session){
+  const u=session.user;S.mode="loading";render();
+  let {data:p,error}=await sb.from("profiles").select("*").eq("id",u.id).maybeSingle();
+  if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
+  const metaName=((u.user_metadata||{}).name||"").trim();
+  if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role};
+  if(p.role==="tech"){startDb(makeSupaDb());checkLocalImport()}
+  else if(SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
+  else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
+}
+function authView(){
+  const a=S.auth;const busy=a.busy?"disabled":"";
+  const msg=(a.err?`<div class="note bad">${esc(a.err)}</div>`:"")+(a.msg?`<div class="note info">${esc(a.msg)}</div>`:"");
+  const logo=`<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" style="fill:var(--accent)"/><path d="M32 12s-13 15-13 24a13 13 0 0 0 26 0c0-9-13-24-13-24z" style="fill:var(--accent-ink)"/></svg>`;
+  let body="";
+  if(a.step==="signin")body=`<h2>Sign in</h2>${msg}
+    <form data-authform="signin" class="authf"><label class="f"><span>Email</span><input id="au-email" type="email" autocomplete="email" inputmode="email" required value="${esc(a.email)}"></label>
+    <label class="f"><span>Password</span><input id="au-pass" type="password" autocomplete="current-password" required></label>
+    <button class="btn" ${busy}>${a.busy?"Signing in…":"Sign in"}</button></form>
+    <div class="row"><button class="linkbtn" data-auth="signup">Create an account</button><span class="spacer"></span><button class="linkbtn" data-auth="forgot">Forgot password?</button></div>`;
+  if(a.step==="signup")body=`<h2>Create your account</h2>${msg}
+    <form data-authform="signup" class="authf"><label class="f"><span>Your name</span><input id="au-name" type="text" autocomplete="name" required></label>
+    <label class="f"><span>Email</span><input id="au-email" type="email" autocomplete="email" inputmode="email" required value="${esc(a.email)}"></label>
+    <label class="f"><span>Password (at least 8 characters)</span><input id="au-pass" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button class="btn" ${busy}>${a.busy?"Creating…":"Create account"}</button></form>
+    ${SHOW_PORTAL?'<p class="small muted">Property owners: use the email address your technician has on file, so your reports appear automatically.</p>':""}
+    <button class="linkbtn" data-auth="signin">I already have an account</button>`;
+  if(a.step==="code")body=`<h2>Check your email</h2>${msg}
+    <p>We sent a code to <b>${esc(a.email)}</b>. Enter it below to confirm your account.</p>
+    <form data-authform="code" class="authf"><label class="f"><span>Code</span><input id="au-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required class="codein"></label>
+    <button class="btn" ${busy}>${a.busy?"Checking…":"Confirm"}</button></form>
+    <div class="row"><button class="linkbtn" data-auth="resend">Send a new code</button><span class="spacer"></span><button class="linkbtn" data-auth="signin">Back to sign in</button></div>
+    <p class="small muted">Don't see it? Check your spam folder. It comes from Sprinkler Wrangler.</p>`;
+  if(a.step==="forgot")body=`<h2>Reset your password</h2>${msg}
+    <form data-authform="forgot" class="authf"><label class="f"><span>Email</span><input id="au-email" type="email" autocomplete="email" inputmode="email" required value="${esc(a.email)}"></label>
+    <button class="btn" ${busy}>${a.busy?"Sending…":"Email me a code"}</button></form>
+    <button class="linkbtn" data-auth="signin">Back to sign in</button>`;
+  if(a.step==="reset")body=`<h2>Choose a new password</h2>${msg}
+    <p>Enter the code we sent to <b>${esc(a.email)}</b> and your new password.</p>
+    <form data-authform="reset" class="authf"><label class="f"><span>Code</span><input id="au-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required class="codein"></label>
+    <label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button class="btn" ${busy}>${a.busy?"Saving…":"Save new password"}</button></form>
+    <button class="linkbtn" data-auth="signin">Back to sign in</button>`;
+  if(a.step==="waiting")body=`<h2>Waiting for access</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>, but this account doesn't have technician access yet.</p><p class="muted small">Ask a technician to add your email on their Team page, then sign in again.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
+  if(a.step==="newpass")body=`<h2>Choose a new password</h2>${msg}
+    <form data-authform="newpass" class="authf"><label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button class="btn" ${busy}>Save new password</button></form>`;
+  return `<div class="authwrap"><div class="authcard"><div class="row" style="gap:12px">${logo}<div><div class="eyebrow">Irrigation field app</div><h1 style="font-size:1.7rem">Sprinkler Wrangler</h1></div></div>${body}</div></div>`;
+}
+function authMsg(e){const m=(e&&e.message)||"";
+  if(/invalid login/i.test(m))return "That email and password don't match. Try again, or reset your password.";
+  if(/not confirmed/i.test(m))return "confirm";
+  if(/already registered|already been registered/i.test(m))return "An account with that email already exists. Sign in instead.";
+  if(/expired|invalid.*(otp|token)|token.*invalid/i.test(m))return "That code is wrong or has expired. Check the newest email or send a new code.";
+  if(/rate|seconds|too many/i.test(m))return "Please wait a minute before asking for another code.";
+  if(/password/i.test(m)&&/(short|least|weak)/i.test(m))return "Choose a password with at least 8 characters.";
+  if(/fetch|network/i.test(m))return "Can't reach the server. Check your signal and try again.";
+  return m||"Something went wrong. Try again.";
+}
+async function authSubmit(kind){
+  const a=S.auth;const v=id=>{const el=document.getElementById(id);return el?el.value.trim():""};
+  const go=(patch)=>{Object.assign(a,{busy:false},patch);render();const f=document.querySelector(".authf input:not([value]),.authf input[value='']");if(f)f.focus()};
+  a.err="";a.msg="";a.busy=true;
+  try{
+    if(kind==="signin"){const pw=(document.getElementById("au-pass")||{}).value||"";a.email=v("au-email").toLowerCase();render();
+      const {data,error}=await sb.auth.signInWithPassword({email:a.email,password:pw});
+      if(error){const m=authMsg(error);if(m==="confirm"){await sb.auth.resend({type:"signup",email:a.email});return go({step:"code",msg:"Your email isn't confirmed yet. We sent you a new code."})}return go({err:m})}
+      a.busy=false;return afterSignIn(data.session)}
+    if(kind==="signup"){const name=v("au-name"),pass=document.getElementById("au-pass").value;a.email=v("au-email").toLowerCase();render();
+      const {data,error}=await sb.auth.signUp({email:a.email,password:pass,options:{data:{name},emailRedirectTo:location.origin}});
+      if(error)return go({err:authMsg(error)});
+      if(data.user&&Array.isArray(data.user.identities)&&data.user.identities.length===0)return go({step:"signin",err:"An account with that email already exists. Sign in instead."});
+      if(data.session){a.busy=false;return afterSignIn(data.session)}
+      return go({step:"code"})}
+    if(kind==="code"){const token=v("au-code").replace(/\s/g,"");render();
+      const {data,error}=await sb.auth.verifyOtp({email:a.email,token,type:"signup"});
+      if(error){const r=await sb.auth.verifyOtp({email:a.email,token,type:"email"});if(r.error)return go({err:authMsg(error)});a.busy=false;return afterSignIn(r.data.session)}
+      a.busy=false;return afterSignIn(data.session)}
+    if(kind==="resend"){const {error}=await sb.auth.resend({type:"signup",email:a.email});return go(error?{err:authMsg(error)}:{msg:"New code sent. Use the newest email."})}
+    if(kind==="forgot"){a.email=v("au-email").toLowerCase();render();
+      const {error}=await sb.auth.resetPasswordForEmail(a.email,{redirectTo:location.origin});
+      if(error)return go({err:authMsg(error)});return go({step:"reset",msg:"If that email has an account, a code is on its way."})}
+    if(kind==="reset"){const token=v("au-code").replace(/\s/g,""),np=document.getElementById("au-newpass").value;render();
+      const {error}=await sb.auth.verifyOtp({email:a.email,token,type:"recovery"});if(error)return go({err:authMsg(error)});
+      const r=await sb.auth.updateUser({password:np});if(r.error)return go({err:authMsg(r.error)});
+      const {data}=await sb.auth.getSession();a.busy=false;toast("Password updated");return afterSignIn(data.session)}
+    if(kind==="newpass"){const np=document.getElementById("au-newpass").value;
+      const r=await sb.auth.updateUser({password:np});if(r.error)return go({err:authMsg(r.error)});
+      const {data}=await sb.auth.getSession();a.busy=false;toast("Password updated");return afterSignIn(data.session)}
+  }catch(e){go({err:authMsg(e)})}
+}
+async function signOut(){try{await sb.auth.signOut()}catch(e){}resetToSignIn()}
+
+/* ---------- move jobs saved on this phone (before sign-in existed) up to the server ---------- */
+function checkLocalImport(){const loc=LS.get("irr.jobs")||{};const n=Object.keys(loc).length;S.localCount=n&&!LS.get("irr.imported")?n:0;if(S.localCount)render()}
+async function importLocal(){
+  const loc=LS.get("irr.jobs")||{};const ids=Object.keys(loc);let done=0;toast("Uploading "+ids.length+" job"+(ids.length===1?"":"s")+"…");
+  for(const id of ids){const j=loc[id];
+    const phs=new Set();JSON.stringify(j).replace(/"(ph[a-z0-9]+)"/g,(m,p)=>phs.add(p));
+    for(const p of phs){const u=await IDB.get("irr.ph."+p);if(u)try{await db.doc("photos/"+p).set({img:u})}catch(e){}}
+    const bg=await IDB.get("irr.bg."+id);if(bg)try{await db.doc("jobmedia/"+id).set({img:bg})}catch(e){}
+    for(const r of (j.revs||[])){const h=await IDB.get("irr.rev."+id+"_"+revNo(r.n));S.jobs[id]=j;if(h)try{await db.doc("revisions/"+id+"_"+revNo(r.n)).set({job:id,n:r.n,html:h})}catch(e){}}
+    S.jobs[id]=j;try{await db.doc("jobs/"+id).set(j);done++}catch(e){}
+  }
+  const pr=LS.get("irr.pricing");if(pr&&Object.keys(pr).length&&!Object.keys(S.pricing).length){S.pricing=pr;try{await db.doc("settings/pricing").set({prices:pr})}catch(e){}}
+  LS.set("irr.imported",true);S.localCount=0;render();toast(done+" job"+(done===1?"":"s")+" uploaded");
+}
+
+/* ---------- Team & account (technicians) ---------- */
+async function loadTeam(){
+  const [p,s]=await Promise.all([sb.from("profiles").select("id,email,name,role,created_at").order("created_at"),sb.from("staff_emails").select("email")]);
+  S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.home==="team"&&!S.cur)render();
+}
+function teamView(){
+  if(!S.team){loadTeam();return `<div class="card"><p class="muted">Loading team…</p></div>`}
+  const me=S.me;const techs=S.team.people.filter(p=>p.role==="tech");const owners=S.team.people.filter(p=>p.role==="owner");
+  const pending=S.team.staff.filter(e=>!S.team.people.some(p=>p.email===e));
+  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">Technician</span></div>
+    <div class="grid2"><label class="f"><span>Your name (shown on reports you issue)</span><input id="me-name" type="text" data-mename="1" value="${esc(me.name)}"></label><label class="f"><span>Email</span><input type="email" value="${esc(me.email)}" disabled></label></div>
+    <div><button class="btn quiet" data-signout="1">Sign out</button></div></div>
+  <div class="card"><h2>Technicians</h2><p class="small muted" style="margin:0">Technicians can see and edit every job, prices and reports.</p>
+    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${p.id===me.id?"":delBtn("staff:"+p.email,"Remove")}</div>`).join("")}
+    ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${delBtn("staff:"+e,"Remove")}</div>`).join("")}</div>
+    <form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
+    <p class="small muted" style="margin:0">They create their own account on the sign-in screen using this email. If they already have one, they become a technician right away.</p></div>
+  ${SHOW_PORTAL?"":"<!--"}<div class="card"><h2>Property owners</h2><p class="small muted" style="margin:0">Owners see only the issued reports and invoices for jobs where their email is the customer email.</p>
+    ${owners.length?`<div class="acts">${owners.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}</div></div></div>`).join("")}</div>`:'<p class="muted" style="margin:0">No owners have signed up yet.</p>'}</div>${SHOW_PORTAL?"":"-->"}`;
+}
+async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_email:email,p_staff:on});if(error){toast(error.message.replace(/^.*?:\s*/,""));return}toast(on?"Technician added":"Technician removed");loadTeam()}
+
+/* ---------- Owner portal ---------- */
+async function loadPortal(){
+  const [r,i]=await Promise.all([sb.from("reports").select("id,job_id,rev,total,customer_name,address,issued_at,issued_by").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at")]);
+  const by={};(r.data||[]).forEach(x=>{(by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.issued_at}).reports.push(x)});
+  (i.data||[]).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
+  S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));render();
+}
+async function openPortalDoc(kind,id){
+  S.portal.view={kind,id,html:null};render();window.scrollTo(0,0);
+  const q=kind==="report"?sb.from("reports").select("html").eq("id",id).maybeSingle():sb.from("invoices").select("html").eq("job_id",id).maybeSingle();
+  const {data}=await q;S.portal.view.html=data?data.html:'<p class="muted">This document isn\'t available.</p>';render();
+}
+function portalView(){
+  const p=S.portal;const me=S.me;
+  const head=`<div class="top"><header class="bar"><div class="wrap">${p.view?`<button class="iconbtn" data-pback="1">‹ Back</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${p.view?(p.view.kind==="report"?"Inspection report":"Invoice"):"Your properties"}</h1></div>${p.view?"":`<button class="iconbtn" data-signout="1">Sign out</button>`}</div></header></div>`;
+  if(p.view){const g=(p.list||[]).find(x=>x.job===(p.view.kind==="report"?(x.reports.find(r=>r.id===p.view.id)||{}).job_id:p.view.id));
+    const revs=g&&p.view.kind==="report"?g.reports:[];
+    return head+`<div class="wrap"><main>
+      <div class="card"><div class="row">${revs.length>1?`<label class="f" style="flex:1;min-width:160px"><span>Revision</span><select data-prev="1">${revs.map(r=>`<option value="${esc(r.id)}" ${r.id===p.view.id?"selected":""}>Rev ${revNo(r.rev)} · ${esc(new Date(r.issued_at).toLocaleDateString("en-US"))}</option>`).join("")}</select></label>`:""}
+      <button class="btn" data-pprint="1" ${p.view.html?"":"disabled"}>Print</button></div>
+      ${p.view.kind==="invoice"&&g&&g.inv&&g.inv.kind==="invoice"&&g.inv.status!=="paid"?`<div class="note info">Online payment is coming soon. To pay now, use the contact details on this invoice.</div>`:""}</div>
+      <article class="sheet">${p.view.html||'<p class="muted">Loading…</p>'}</article></main></div>`}
+  let body;
+  if(!p.list)body=`<div class="card"><p class="muted">Loading your reports…</p></div>`;
+  else if(!p.list.length)body=`<div class="card empty"><h2>No reports yet</h2><p class="muted" style="max-width:40ch">Your inspection reports and invoices appear here after your technician issues them to <b>${esc(me.email)}</b>.</p></div>`;
+  else body=p.list.map(g=>{const r=g.reports[0];const inv=g.inv;
+    return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
+      ${r?`<div class="act"><div class="al">Inspection report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
+      ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button></div>`:""}</div>`}).join("");
+  return head+`<div class="wrap"><main><p class="muted small" style="margin:0">Signed in as ${esc(me.email)}</p>${body}</main></div>`;
+}
+
 /* ---------------- events ---------------- */
 const app=document.getElementById("app");
 function rr(){render.keep=true;render()}
@@ -1267,16 +1578,34 @@ app.addEventListener("input",ev=>{
   let v=t.value;if(t.dataset.num)v=v===""?0:Math.max(0,num(v));
   setP(job(),p,v);scheduleSave(S.cur);
   if(/^info\./.test(p))liveMissing();
-  if(t.dataset.ohm){const st=ohmState(v);const box=t.closest(".ohm");if(box)box.className="ohm "+st}
+  if(t.dataset.ohm){const st=ohmState(v);const box=t.closest(".ohm");if(box){box.className="ohm "+st;const sp=box.querySelector(".ohst");if(sp)sp.innerHTML=st?OHM_TXT[st]:"&nbsp;"}}
 });
 app.addEventListener("change",ev=>{
   const t=ev.target;
+  if(t.dataset.prev){openPortalDoc("report",t.value);return}
+  if(t.dataset.mename){const nm=t.value.trim();S.me.name=nm;sb.from("profiles").update({name:nm}).eq("id",S.me.id).then(({error})=>toast(error?"Couldn't save your name":"Name saved"));return}
   if(t.dataset.bgfile&&t.files&&t.files[0]){readBg(t.files[0]);return}
   if(t.dataset.photofor&&t.files&&t.files[0]){addPhoto(t.dataset.photofor,t.files[0]);t.value="";return}
   const p=t.dataset.f;if(!p||!job())return;
   if(t.tagName==="SELECT"){setP(job(),p,t.value);scheduleSave(S.cur);rr();return}
   if(t.dataset.rr||t.dataset.num)rr();
 });
+app.addEventListener("submit",ev=>{
+  const f=ev.target;
+  if(f.dataset.authform){ev.preventDefault();if(!S.auth.busy)authSubmit(f.dataset.authform);return}
+  if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
+});
+app.addEventListener("click",ev=>{
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-import]");
+  if(ab){const d=ab.dataset;
+    if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
+    if(d.signout){signOut();return}
+    if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
+    if(d.pback){S.portal.view=null;render();return}
+    if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
+    if(d.import){importLocal();return}
+  }
+},true);
 app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
@@ -1310,6 +1639,10 @@ app.addEventListener("click",ev=>{
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
   if(d.quoted){j.info.status="Quoted";scheduleSave(S.cur);rr();toast("Marked as quoted");return}
   if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else printDoc(invoiceHtml(j));return}
+  if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
+    if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
+    S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
+  if(d.ol){setP(j,d.ol,"OL");scheduleSave(S.cur);rr();return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
   if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
@@ -1343,6 +1676,7 @@ async function printDoc(html){
 function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(e){}ta.remove();toast(ok?"Report copied":"Copy isn't available here. Select the report text instead.")}
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
+  if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
   if(k==="job"){deleteJob(a);S.cur=null;render();toast("Job deleted");return}
   if(!j)return;
