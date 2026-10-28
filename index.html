@@ -17,6 +17,7 @@
 <style>
 /* Layout: one-column field app — sticky job bar + scrolling section tabs, stacked inspection cards, thumb-sized controls */
 :root{
+  --tl-r:#D32F2F;--tl-y:#F2B705;--tl-g:#2E9E5B;
   --bg:#EEF2EE; --surface:#FFFFFF; --sunk:#E3E9E4; --ink:#16211A; --muted:#58665C; --line:#CDD6CF;
   --accent:#1D6B47; --accent-ink:#FFFFFF; --accent-soft:#DCEDE3;
   --water:#2A6C99; --reclaim:#6B4C9A; --soil:#8A5A2B;
@@ -266,6 +267,18 @@ body.training .bar{color:#fff}
 .gsteps{display:flex;gap:4px;flex-wrap:wrap}
 .gstep{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
 .gstep.done{background:var(--accent-soft);color:var(--good)}.gstep.now{background:var(--water);color:#fff}
+.tl{display:inline-block;width:.8em;height:.8em;border-radius:50%;vertical-align:-.05em;border:1px solid rgba(0,0,0,.25)}
+.tl-r{background:var(--tl-r)}.tl-y{background:var(--tl-y)}.tl-g{background:var(--tl-g)}
+.tlbtn{border:0;background:none;padding:2px;cursor:pointer}
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:10px}
+.sc{display:flex;gap:10px;align-items:flex-start;border-radius:8px;padding:8px 10px;border:2px solid}
+.sc-r{border-color:var(--tl-r)}.sc-y{border-color:var(--tl-y)}.sc-g{border-color:var(--tl-g)}
+.scn{font-family:var(--display);font-size:1.8rem;font-weight:700;line-height:1;min-width:1.2em;text-align:center}
+.sc-r .scn{color:var(--tl-r)}.sc-y .scn{color:#B98A00}.sc-g .scn{color:var(--tl-g)}
+.isec-r{border-left:6px solid var(--tl-r)}.isec-y{border-left:6px solid var(--tl-y)}.isec-g{border-left:6px solid var(--tl-g)}
+.tlp-r{background:var(--tl-r);color:#fff}.tlp-y{background:var(--tl-y);color:#2B2100}.tlp-g{background:var(--tl-g);color:#fff}
+ul.soltl li::before{content:none}ul.soltl{padding-left:0}ul.soltl li{display:flex;gap:6px;align-items:baseline}
+tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px solid var(--tl-y)}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -1159,7 +1172,7 @@ function estTable(e,editable){
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div></div>`;
 }
 function estimateTab(){const j=job();const e=buildEstimate(j);
-  return `<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTable(e)}</div>
+  return `<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTableTL(j,e,true)}</div>
   <div class="card"><h2>Adjustments</h2><div class="acts">${chk("est.trip","Service call / trip charge","trip",true)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
   <div class="grid3">${fld("Discount ($)","est.discount","number",'data-rr="1"')}${fld("Sales tax %","est.tax","number",'data-rr="1"')}</div>
   <p class="small muted">Texas charges sales tax on most residential lawn sprinkler repair; 8.25% is the common combined rate. Check your local rate.</p>
@@ -1174,7 +1187,8 @@ function findings(j,tech){
     (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
       if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
     if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
-    const bf=m.bf;if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="no")s+=", not insulated";if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    const bf=m.bf;if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    if(bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`)});
     if(m.notes)it.push(esc(m.notes));
     if(it.length)out.push([m.name||"Mainline",it]);
@@ -1219,13 +1233,13 @@ function reportHtmlReal(j,rev){
   return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
   <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
   <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
-  ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p></section>
+  ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p>${scorecard(j)}</section>
   ${hasMap?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
     <p class="small muted">${MAP_POINTS.filter(p=>j.map.items.some(i=>i.t===p[0])).map(p=>`${p[2]} = ${p[1]}`).concat(MAP_LINES.filter(l=>j.map.lines.some(x=>x.t===l[0])).map(l=>l[1]+" shown as "+(l[4]?(l[0]==="drip"?"dotted":"dashed"):"solid")+" line")).join(" · ")}</p></section>`:""}
-  <section><h2>Issues and solutions</h2>${f.length?f.map(([h,it,ph])=>{const sol=work.filter(l=>l.sec===h);const zz=j.zones.find(z=>zoneSecName(j,z)===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':zz&&zz.works==="no"?'<span class="pill bad">Not working</span>':zz&&!zz.works?'<span class="pill neutral">Not checked</span>':'<span class="pill ok">OK</span>';
-    return `<div class="isec"><div class="row"><h3 class="spacer">${esc(h)}</h3>${st}</div>
+  <section><h2>Issues and solutions</h2>${f.length?(()=>{const SC=sectionColors(j);const ord={r:0,y:1,g:2,n:3,"":3};return f.slice().sort((a,b)=>(ord[SC[a[0]]||""])-(ord[SC[b[0]]||""]))})().map(([h,it,ph])=>{const sc=sectionColors(j)[h]||"";const sol=work.filter(l=>l.sec===h);const zz=j.zones.find(z=>zoneSecName(j,z)===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':zz&&zz.works==="no"?'<span class="pill bad">Not working</span>':zz&&!zz.works?'<span class="pill neutral">Not checked</span>':'<span class="pill ok">OK</span>';
+    return `<div class="isec isec-${sc||"n"}"><div class="row"><h3 class="spacer">${sc&&sc!=="n"?tlDot(sc)+" ":""}${esc(h)}</h3>${sc&&sc!=="n"?`<span class="pill tlp-${sc}">${TL[sc][0]}</span>`:st}</div>
       <div class="isgrid"><div><div class="eyebrow">What we found</div>${it.length?`<ul>${it.map(x=>`<li>${x}</li>`).join("")}</ul>`:'<p class="muted small">Nothing noted.</p>'}</div>
-      <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol">${sol.map(l=>`<li>${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:'<p class="muted small">No work needed.</p>'}</div></div>
+      <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
   ${equipmentSection(j)}
@@ -1316,7 +1330,7 @@ function invoiceHtmlReal(j){
     ${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div class="mono">Rev ${revNo(cur.n)}</div>`:""}</div></div>
   <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
-  <section>${estTable(e)}</section>
+  <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
   ${inv.kind==="invoice"?`<section>${inv.status==="paid"?`<div class="paid">PAID${inv.paidAt?" · "+esc(new Date(inv.paidAt).toLocaleDateString("en-US")):""}${inv.method?" · "+esc(inv.method):""}</div>`:`<p><b>Amount due: ${money(e.total)}</b></p>`}</section>`:""}
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
@@ -1415,6 +1429,42 @@ function standaloneReport(j,html){
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>${css}
   body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
 }
+
+/* ---------------- Traffic-light audit (Red / Yellow / Green) ----------------
+   Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
+   Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
+const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
+const RED_KEYS=new Set(["main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+function lineKey(l){return l.sec+"|"+(l.key||l.label)}
+function lineColor(j,l){if(l.sec==="Service")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
+  if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
+function tlDot(c,title){return c?`<span class="tl tl-${c}" title="${esc(title||TL[c][0])}" aria-label="${esc(TL[c][0])}"></span>`:""}
+const worst=(a,b)=>{const o={r:3,y:2,g:1,"":0,n:0};return (o[a]||0)>=(o[b]||0)?a:b};
+/* section color from the recorded data plus its estimate lines */
+function sectionColors(j){const e=buildEstimate(j);const C={};const bump=(sec,c)=>{C[sec]=worst(C[sec]||"",c)};
+  e.lines.forEach(l=>{const c=lineColor(j,l);if(c)bump(l.sec,c)});
+  (j.mainline||[]).forEach(m=>{const sec=m.name||"Mainline";const parts=[m.bf,m.prv,m.iso,m.mv].filter(Boolean);
+    if(hasLeak(m)||parts.some(p=>p.condition==="Failed"))bump(sec,"r");else if(parts.some(p=>p.condition==="Poor"||p.condition==="Fair")||m.bf.insulated==="no")bump(sec,"y");else bump(sec,"g")});
+  (j.controllers||[]).forEach(c=>{const sec=c.name||"Controller";const f=ctlFlags(c);
+    if(c.power==="no"||f.wire.length||c.overcurrent==="yes"||f.decoders.length||f.failedMods)bump(sec,"r");
+    else if(f.rebuild.length||c.rain==="no"||c.rainStatus==="notworking"||c.rainStatus==="bypassed")bump(sec,"y");else bump(sec,"g")});
+  (j.zones||[]).forEach(z=>{const sec=zoneSecName(j,z);if(z.works==="no"||(z.laterals||[]).length)bump(sec,"r");else if(z.works==="yes")bump(sec,C[sec]||"g");else if(!C[sec])C[sec]="n"});
+  return C}
+function scorecard(j){const C=sectionColors(j);const n={r:0,y:0,g:0,n:0};Object.values(C).forEach(c=>n[c||"n"]=(n[c||"n"]||0)+1);
+  return `<div class="score">${["r","y","g"].map(c=>`<div class="sc sc-${c}"><div class="scn">${n[c]}</div><div><b>${TL[c][0]}</b><div class="small">${esc(TL[c][1])}</div></div></div>`).join("")}</div>
+  ${n.n?`<p class="small muted" style="margin:4px 0 0">${n.n} area${n.n===1?"":"s"} not checked on this visit.</p>`:""}`}
+/* estimate table split into Fix now / Recommended (audit) */
+function estTableTL(j,e,editable){
+  const groups={r:[],y:[],s:[]};e.lines.forEach(l=>{const c=lineColor(j,l);(c?groups[c]:groups.s).push(l)});
+  const sub=ls=>ls.reduce((a,l)=>a+l.total,0);
+  const row=l=>{const c=lineColor(j,l);return `<tr><td>${editable&&c?`<button class="tlbtn" data-tl="${esc(lineKey(l))}" aria-label="Change color">${tlDot(c)}</button>`:tlDot(c)} ${esc(l.label)}<div class="small muted">${esc(l.sec)}</div></td><td class="r">${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`};
+  const block=(k,title,ls)=>ls.length?`<tr class="sec tlsec-${k}"><td colspan="3">${k!=="s"?tlDot(k)+" ":""}${title}</td><td class="r">${money(sub(ls))}</td></tr>${ls.map(row).join("")}`:"";
+  if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
+  return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
+    ${block("s","Service",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
+  <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div>
+  ${groups.r.length&&groups.y.length?`<div class="small"><span>Fix now only (service + red, before tax)</span><span>${money(sub(groups.s)+sub(groups.r))}</span></div>`:""}</div>
+  ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
 
 /* ---------------- Equipment brands & company quality ratings ----------------
    Brand lists per part. Ratings are the company's own call, set by an admin on the Price sheet,
@@ -2067,6 +2117,7 @@ app.addEventListener("click",ev=>{
     if(kind==="sol"||kind==="rebuild"){z.valve=Object.assign({},z.valve,{action:kind});toast(kind==="sol"?"Solenoid replacement added":"Valve rebuild added")}
     if(kind==="lat"){z.laterals=z.laterals||[];z.laterals.push(TPL.lateral());toast("Lateral break added. Fill in its size and length below")}
     scheduleSave(S.cur);rr();return}
+  if(d.tl){j.est.tl=Object.assign({},j.est.tl||{});const l=buildEstimate(j).lines.find(x=>lineKey(x)===d.tl);if(l){j.est.tl[d.tl]=lineColor(j,l)==="r"?"y":"r"}scheduleSave(S.cur);rr();return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
   if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
