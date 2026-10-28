@@ -243,6 +243,7 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .linkbtn{background:none;border:0;padding:6px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .imp.dim{opacity:.6}
 .acct{position:relative;flex:none}
+.jobmenubtn{font-size:1.3rem;line-height:1;padding:4px 12px}
 .acctbtn{display:flex;align-items:center;gap:6px;background:transparent;border:1.5px solid currentColor;color:inherit;border-radius:999px;padding:3px 10px 3px 3px;min-height:40px}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--accent-ink);color:var(--accent);display:grid;place-items:center;font-weight:800;font-size:.8rem}
 .acctname{font-weight:700;font-size:.9rem;max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -696,7 +697,7 @@ function jobView(){
     <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`}
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
-    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
+    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
   <div class="wrap"><main>${banner()}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
@@ -711,7 +712,7 @@ function dispatchTab(){const j=job();const miss=missingCustomer(j);
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
   ${seg("Status","info.status",STATUSES)}
   ${fld("Problem reported / dispatch notes","info.notes","textarea")}</div>
-  <div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`;
+  ${isAdmin()?`<div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}`;
 }
 
 /* ---- map ---- */
@@ -2077,6 +2078,10 @@ async function signOut(){S.acctOpen=false;
   try{Object.keys(localStorage).filter(k=>/^sb-.*-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(e){}
   resetToSignIn();toast("Signed out")}
 /* Who's signed in: shown in the top bar on every screen */
+/* Job options menu (admins): delete the job */
+function jobMenu(j){if(!isAdmin())return "";
+  return `<div class="acct"><button class="iconbtn jobmenubtn" data-jobmenu="1" aria-expanded="${!!S.jobMenu}" aria-label="Job options">⋯</button>
+  ${S.jobMenu?`<div class="acctmenu" role="menu"><b>Job options</b><p class="small muted" style="margin:0">Deleting removes this job, its photos' links, reports and invoice for everyone. It can't be undone.</p>${delBtn("job:"+j.id,"Delete job")}</div>`:""}</div>`}
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.admin?"Admin":"Technician"}</span></div>
@@ -2232,18 +2237,19 @@ app.addEventListener("change",ev=>{
   if(/^controllers\.\d+\.zones$/.test(p)){syncZones(job(),+p.split(".")[1]);scheduleSave(S.cur)}
   if(t.dataset.rr||t.dataset.num)rr();
 });
-document.addEventListener("click",ev=>{if(S.acctOpen&&!ev.target.closest(".acct")){S.acctOpen=false;render()}});
+document.addEventListener("click",ev=>{if((S.acctOpen||S.jobMenu)&&!ev.target.closest(".acct")){S.acctOpen=false;S.jobMenu=false;render()}});
 app.addEventListener("submit",ev=>{
   const f=ev.target;
   if(f.dataset.authform){ev.preventDefault();if(!S.auth.busy)authSubmit(f.dataset.authform);return}
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain]");
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
-    if(d.acct){S.acctOpen=!S.acctOpen;render();return}
+    if(d.acct){S.acctOpen=!S.acctOpen;S.jobMenu=false;render();return}
+    if(d.jobmenu){S.jobMenu=!S.jobMenu;S.acctOpen=false;render();return}
     if(d.entertrain){enterTraining();return}
     if(d.exittrain){exitTraining();return}
     if(d.accteam){S.acctOpen=false;S.cur=null;S.home="team";render();window.scrollTo(0,0);return}
@@ -2350,7 +2356,7 @@ function doRemove(key){
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
-  if(k==="job"){deleteJob(a);S.cur=null;render();toast("Job deleted");return}
+  if(k==="job"){if(!isAdmin())return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
   const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
