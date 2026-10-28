@@ -235,6 +235,7 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .authf .btn{min-height:48px;font-size:1.05rem}
 .codein{font-family:var(--mono);font-size:1.5rem;letter-spacing:.3em;text-align:center}
 .linkbtn{background:none;border:0;padding:6px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.imp.dim{opacity:.6}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -436,7 +437,7 @@ async function saveBg(id,img){
   else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 function startLocal(){
-  S.mode="local";S.jobs=LS.get("irr.jobs")||{};S.pricing=LS.get("irr.pricing")||{};render();
+  S.mode="local";S.jobs=LS.get("irr.jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.pricing=LS.get("irr.pricing")||{};render();
 }
 async function boot(){
   render();
@@ -454,7 +455,7 @@ async function boot(){
       const data=ch.doc.data();
       const prev=S.jobs[id];
       if(prev&&prev.updatedAt>=data.updatedAt&&ch.type!=="added")continue;
-      S.jobs[id]=JSON.parse(JSON.stringify(data));
+      S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
     S.loaded=true;
@@ -468,6 +469,15 @@ async function boot(){
 function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA/.test(ae.tagName))return;render()}
 
 /* ---------------- estimate ---------------- */
+/* Fill in any missing pieces so an older or partial job can never break a screen */
+function normalizeJob(j){if(!j||typeof j!=="object")return j;
+  j.info=Object.assign({customer:"",phone:"",email:"",address:"",city:"",date:"",status:"Scheduled"},j.info||{});
+  j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
+  j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
+  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
+  j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.modules=c.modules||[]});
+  j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
+  return j}
 function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
 function hasLeak(m){return (m.meters||[]).some(x=>x.flow==="yes"&&x.side==="irrigation")}
 /* Ohm bands (Bradley): under 24 short · 24–60 normal · 61–90 high → valve rebuild · over 90 floating common · OL/infinite open.
@@ -554,15 +564,15 @@ function render(){
 function banner(){
   if(S.mode==="local")return `<div class="banner">Jobs are saved on this device only. Open this page from the Claude app to keep jobs synced across devices.</div>`;
   if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. ${sb?"Your account doesn't have technician access.":"Ask the owner to share this page with you as an Editor."}</div>`;
-  if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This phone has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Upload them to the server so the whole team sees them.</span><button class="btn sm" data-import="1">Upload jobs</button></div>`;
+  if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This phone has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Review them to choose which, if any, go to the server.</span><button class="btn sm" data-home="import">Review</button></div>`;
   return "";
 }
 function homeView(){
   const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"],...(sb?[["team","Team"]]:[])];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
-  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else body=pricesView();
-  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?"Team":"Jobs"}</h1></div>
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
+  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?"Team":S.home==="import"?"Review phone jobs":"Jobs"}</h1></div>
     <button class="iconbtn" data-new="1">+ New job</button></div></header>
   <nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav></div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
@@ -1380,7 +1390,7 @@ function startDb(d){
       if(saving[id]||dirty[id])continue;
       const data=ch.doc.data();const prev=S.jobs[id];
       if(prev&&prev.updatedAt>=data.updatedAt&&ch.type!=="added")continue;
-      S.jobs[id]=JSON.parse(JSON.stringify(data));
+      S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
     S.loaded=true;
@@ -1499,19 +1509,51 @@ async function authSubmit(kind){
 }
 async function signOut(){try{await sb.auth.signOut()}catch(e){}resetToSignIn()}
 
-/* ---------- move jobs saved on this phone (before sign-in existed) up to the server ---------- */
-function checkLocalImport(){const loc=LS.get("irr.jobs")||{};const n=Object.keys(loc).length;S.localCount=n&&!LS.get("irr.imported")?n:0;if(S.localCount)render()}
-async function importLocal(){
-  const loc=LS.get("irr.jobs")||{};const ids=Object.keys(loc);let done=0;toast("Uploading "+ids.length+" job"+(ids.length===1?"":"s")+"…");
+/* ---------- jobs saved on this phone before sign-in: review, then upload or discard ----------
+   Protections: nothing uploads automatically; each job is opt-in; a job whose ID already exists on
+   the server is never uploaded (no overwrite); phone-saved prices are never uploaded. */
+function localJobs(){const l=LS.get("irr.jobs")||{};Object.values(l).forEach(normalizeJob);return l}
+function checkLocalImport(){const n=Object.keys(localJobs()).length;S.localCount=n&&!LS.get("irr.imported")?n:0;S.impSel={};if(S.localCount)render()}
+function importView(){
+  const loc=localJobs();const ids=Object.keys(loc).sort((a,b)=>(loc[b].updatedAt||0)-(loc[a].updatedAt||0));
+  const sel=S.impSel||{};const nSel=ids.filter(id=>sel[id]&&!S.jobs[id]).length;
+  return `<div class="card"><div class="cardhead"><h2>Jobs saved on this phone</h2><span class="pill neutral">${ids.length}</span></div>
+    <p class="small" style="margin:0">These were saved on this phone before sign-in, so the team can't see them. Tick only real jobs you want on the server. Anything already on the server is skipped, so nothing gets overwritten.</p></div>
+  ${ids.map(id=>{const j=loc[id];const on=!!S.jobs[id];const d=j.info&&j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date";
+    const zones=(j.zones||[]).length,photos=(JSON.stringify(j).match(/"ph[a-z0-9]{6,}"/g)||[]).length,revs=(j.revs||[]).length;
+    return `<label class="card imp ${on?"dim":""}" style="cursor:${on?"default":"pointer"}"><div class="row" style="align-items:flex-start;gap:12px">
+      <input type="checkbox" data-impsel="${esc(id)}" ${sel[id]&&!on?"checked":""} ${on?"disabled":""} style="width:22px;height:22px;margin-top:2px">
+      <div style="flex:1;min-width:0"><b>${esc((j.info||{}).customer||"No customer name")}</b>${on?' <span class="pill ok">Already on server</span>':""}
+      <div class="small muted">${esc([(j.info||{}).address,(j.info||{}).city].filter(Boolean).join(", ")||"No address")}</div>
+      <div class="small muted">${esc(d)} · ${zones} zone${zones===1?"":"s"} · ${photos} photo${photos===1?"":"s"}${revs?` · report Rev ${revNo(j.revs[revs-1].n)}`:""} · last edited ${esc(j.updatedAt?new Date(j.updatedAt).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"unknown")}</div></div></div></label>`}).join("")}
+  <div class="card"><div class="row"><button class="btn" data-impgo="1" ${nSel?"":"disabled"}>Upload ${nSel||""} selected</button><span class="spacer"></span>${delBtn("impdiscard","Remove all from this phone")}</div>
+    <p class="small muted" style="margin:0">Removing deletes only the copies on this phone. Jobs already on the server aren't touched.</p>
+    <div><button class="btn quiet sm" data-home="jobs">Decide later</button></div></div>`;
+}
+async function importSelected(){
+  const loc=localJobs();const ids=Object.keys(S.impSel||{}).filter(id=>S.impSel[id]&&loc[id]);let done=0,skipped=0;
+  toast("Uploading…");
   for(const id of ids){const j=loc[id];
-    const phs=new Set();JSON.stringify(j).replace(/"(ph[a-z0-9]+)"/g,(m,p)=>phs.add(p));
+    let exists=!!S.jobs[id];if(!exists){try{exists=(await db.doc("jobs/"+id).get()).exists}catch(e){exists=true}}
+    if(exists){skipped++;continue}
+    const phs=new Set();JSON.stringify(j).replace(/"(ph[a-z0-9]{6,})"/g,(m,p)=>phs.add(p));
     for(const p of phs){const u=await IDB.get("irr.ph."+p);if(u)try{await db.doc("photos/"+p).set({img:u})}catch(e){}}
     const bg=await IDB.get("irr.bg."+id);if(bg)try{await db.doc("jobmedia/"+id).set({img:bg})}catch(e){}
-    for(const r of (j.revs||[])){const h=await IDB.get("irr.rev."+id+"_"+revNo(r.n));S.jobs[id]=j;if(h)try{await db.doc("revisions/"+id+"_"+revNo(r.n)).set({job:id,n:r.n,html:h})}catch(e){}}
-    S.jobs[id]=j;try{await db.doc("jobs/"+id).set(j);done++}catch(e){}
+    S.jobs[id]=j;
+    for(const r of (j.revs||[])){const h=await IDB.get("irr.rev."+id+"_"+revNo(r.n));if(h)try{await db.doc("revisions/"+id+"_"+revNo(r.n)).set({job:id,n:r.n,html:h})}catch(e){}}
+    try{await db.doc("jobs/"+id).set(j);done++;delete loc[id]}catch(e){delete S.jobs[id]}
   }
-  const pr=LS.get("irr.pricing");if(pr&&Object.keys(pr).length&&!Object.keys(S.pricing).length){S.pricing=pr;try{await db.doc("settings/pricing").set({prices:pr})}catch(e){}}
-  LS.set("irr.imported",true);S.localCount=0;render();toast(done+" job"+(done===1?"":"s")+" uploaded");
+  LS.set("irr.jobs",loc);S.impSel={};
+  if(!Object.keys(loc).length){LS.set("irr.imported",true);S.localCount=0;S.home="jobs"}else S.localCount=Object.keys(loc).length;
+  render();toast(`${done} uploaded${skipped?`, ${skipped} skipped (already on server)`:""}`);
+}
+async function discardLocal(){
+  const loc=localJobs();
+  for(const id of Object.keys(loc)){const j=loc[id];
+    JSON.stringify(j).replace(/"(ph[a-z0-9]{6,})"/g,(m,p)=>{IDB.del("irr.ph."+p)});IDB.del("irr.bg."+id);
+    (j.revs||[]).forEach(r=>IDB.del("irr.rev."+id+"_"+revNo(r.n)));}
+  try{localStorage.removeItem("irr.jobs");localStorage.removeItem("irr.pricing")}catch(e){}
+  LS.set("irr.imported",true);S.localCount=0;S.home="jobs";render();toast("Removed from this phone");
 }
 
 /* ---------- Team & account (technicians) ---------- */
@@ -1586,6 +1628,7 @@ app.addEventListener("input",ev=>{
 });
 app.addEventListener("change",ev=>{
   const t=ev.target;
+  if(t.dataset.impsel){S.impSel=S.impSel||{};S.impSel[t.dataset.impsel]=t.checked;rr();return}
   if(t.dataset.prev){openPortalDoc("report",t.value);return}
   if(t.dataset.mename){const nm=t.value.trim();S.me.name=nm;sb.from("profiles").update({name:nm}).eq("id",S.me.id).then(({error})=>toast(error?"Couldn't save your name":"Name saved"));return}
   if(t.dataset.bgfile&&t.files&&t.files[0]){readBg(t.files[0]);return}
@@ -1600,14 +1643,14 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-import],[data-mkadmin]");
+  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin]");
   if(ab){const d=ab.dataset;
     if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
     if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
     if(d.pback){S.portal.view=null;render();return}
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
-    if(d.import){importLocal();return}
+    if(d.impgo){importSelected();return}
     if(d.mkadmin){setAdmin(d.mkadmin,true);return}
   }
 },true);
@@ -1681,6 +1724,7 @@ async function printDoc(html){
 function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(e){}ta.remove();toast(ok?"Report copied":"Copy isn't available here. Select the report text instead.")}
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
+  if(k==="impdiscard"){discardLocal();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
