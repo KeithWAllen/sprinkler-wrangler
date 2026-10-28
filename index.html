@@ -353,6 +353,7 @@ const PRICE_DEFAULTS=(()=>{
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
   add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
+  add("rain_replace","Controller","Replace rain/freeze sensor","each",125,1);
   add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
   add("decoder","Controller","Replace 2-wire decoder","each",120,1);
   add("module","Controller","Replace controller module","each",95,1);
@@ -504,6 +505,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
+  if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.modules=c.modules||[]});
   j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
   return j}
@@ -537,9 +539,10 @@ function buildEstimate(j){
   });
   (j.controllers||[]).forEach(c=>{
     const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
-    if(a.replace)add(sec,"ctl_replace",1,[c.brand,c.model].filter(Boolean).join(" "));
+    if(a.replace)add(sec,"ctl_replace",1,[ctlBrand(c),c.model].filter(Boolean).join(" "));
     if(c.power==="no"&&c.powerIssue==="transformer"&&a.transformer!==false&&!a.replace)add(sec,"transformer",1);
-    if(c.rain==="no"&&a.rainAdd)add(sec,"rain_add",1);
+    if(c.rain==="no"&&a.rainAdd!==false)add(sec,"rain_add",1);
+    if(c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")&&a.rainFix!==false)add(sec,"rain_replace",1);
     if(f.wire.length&&a.wire!==false)add(sec,"wire_trouble",f.wire.length,"zones "+f.wire.map(x=>x.z).join(", "));
     if(f.rebuild.length&&a.rebuild!==false)add(sec,"valve_rebuild",f.rebuild.length,"zones "+f.rebuild.map(x=>x.z).join(", "));
     if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,"#"+f.decoders.join(", #"));
@@ -657,6 +660,10 @@ function jobView(){
     <div class="grid2"><button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="residential">Residential<div class="small" style="font-weight:400;opacity:.85">Homes, HOA single lots</div></button>
     <button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="commercial">Commercial<div class="small" style="font-weight:400;opacity:.85">Businesses, HOA common areas, multi-family</div></button></div></div>
     <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`;
+  if(!j.setupDone&&!j.controllers.length){if(!S.ctlDraft)S.ctlDraft=newDraft();return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
+    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · Start of job</div><h1>Controller setup</h1></div>${acctChip()}</div></header></div>
+  <div class="wrap"><main>${banner()}${ctlSetupForm("What controller is on site?",true)}
+    <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`}
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
@@ -1033,16 +1040,16 @@ function mainlineTab(){const j=job();
 
 /* ---- controllers ---- */
 function controllersTab(){const j=job();
-  if(!j.controllers.length)return `<div class="card empty"><h2>No controllers yet</h2><p class="muted">Add each controller on the property. Zones are tied to a controller.</p><button class="btn" data-addctl="1">+ Add controller</button></div>`;
+  if(!j.controllers.length){if(!S.ctlDraft)S.ctlDraft=newDraft();return ctlSetupForm("Controller setup",true)}
   return j.controllers.map((c,ci)=>{const b=`controllers.${ci}`;const f=ctlFlags(c);const zn=Math.min(Math.max(num(c.zones),0),200);
   const flags=[];if(c.power==="no")flags.push('<span class="pill bad">No power</span>');if(f.ohm.length)flags.push(`<span class="pill bad">${f.ohm.length} wiring fault${f.ohm.length>1?"s":""}</span>`);if(c.overcurrent==="yes")flags.push('<span class="pill bad">Overcurrent</span>');if(f.decoders.length)flags.push(`<span class="pill warn">${f.decoders.length} decoder${f.decoders.length>1?"s":""} down</span>`);
   return `<div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${flags.join("")}</div>
-  <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${fld("Brand",b+".brand","text",'placeholder="Hunter, Rain Bird…"')}${fld("Model",b+".model")}</div>
+  <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${sel("Brand",b+".brandPick",[["",c.brand?"(entered: "+c.brand+")":"Choose…"]].concat(CTL_BRANDS))}${c.brandPick==="Other"?fld("Brand name",b+".brandOther"):""}${fld("Model",b+".model")}</div>
   <div class="grid3">${fld("Number of zones",b+".zones","number",'data-rr="1" min="1" max="200"')}</div>
   ${seg("Power to controller?",b+".power",YN,{no:"bad"})}
   ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"]]):""}
   ${seg("Wiring",b+".wiring",[["conventional","Conventional"],["2wire","2-wire"]])}
-  ${seg("Rain sensor present?",b+".rain",YN)}
+  ${rainBlock(c,b)}
   ${seg("Modular?",b+".modular",YN)}
   ${c.modular==="yes"?`<div class="combo"><h4>Modules</h4>${(c.modules||[]).map((mo,mi)=>`<div class="row"><span class="mono small">#${mi+1}</span><div style="flex:1;min-width:110px">${fld("Stations",`${b}.modules.${mi}.size`,"text",'placeholder="4"')}</div><div style="flex:1;min-width:120px">${sel("Status",`${b}.modules.${mi}.status`,["OK","Failed","Missing","Unknown"])}</div>${delBtn("mod:"+ci+":"+mi,"✕")}</div>`).join("")}
     <div><button class="btn ghost sm" data-add="${b}.modules" data-tpl="module">+ Add module</button></div></div>`:""}
@@ -1059,14 +1066,15 @@ function controllersTab(){const j=job();
   <div class="combo"><h4>Recommend</h4><div class="acts">
     ${chk(b+".act.replace","Replace controller","ctl_replace")}
     ${c.power==="no"&&c.powerIssue==="transformer"?chk(b+".act.transformer","Replace transformer","transformer",true):""}
-    ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add"):""}
+    ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add",true):""}
+    ${c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")?chk(b+".act.rainFix","Replace rain/freeze sensor","rain_replace",true):""}
     ${f.wire.length?chk(b+".act.wire",`Wire troubleshooting · zones ${f.wire.map(x=>x.z).join(", ")}`,"wire_trouble",true):""}
     ${f.rebuild.length?chk(b+".act.rebuild",`Rebuild valve · zones ${f.rebuild.map(x=>x.z).join(", ")}`,"valve_rebuild",true):""}
     ${f.decoders.length?chk(b+".act.decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"decoder",true):""}
     ${f.failedMods?chk(b+".act.module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"module",true):""}
   </div></div>
   ${fld("Notes",b+".notes","textarea")}
-  <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+`<div><button class="btn ghost" data-addctl="1">+ Add controller</button></div>`;
+  <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+(S.addingCtl&&S.ctlDraft?ctlSetupForm("Add another controller",false):`<div><button class="btn ghost" data-addctl="1">+ Add another controller</button></div>`);
 }
 function ohmBlock(c,b,zn){
   const cut=ohmCuts();const ans=S.pricing._ohm_ok;const edit=ans==="no"||S.ohmEdit;
@@ -1155,9 +1163,9 @@ function findings(j,tech){
     if(it.length)out.push([m.name||"Mainline",it]);
   });
   (j.controllers||[]).forEach(c=>{const it=[];const f=ctlFlags(c);
-    it.push(`${[c.brand,c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
+    it.push(`${[ctlBrand(c),c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
     if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":"transformer failed"}`:""}`);
-    if(c.rain==="no")it.push("No rain sensor installed");else if(c.rain==="yes")it.push("Rain sensor installed");
+    if(c.rain==="no")it.push("No rain/freeze sensor installed. One is recommended.");else if(c.rain==="yes")it.push(c.rainStatus==="working"?"Rain/freeze sensor installed and working":c.rainStatus==="notworking"?`<span class="flag">Rain/freeze sensor not working</span>`:c.rainStatus==="bypassed"?`<span class="flag">Rain/freeze sensor bypassed or disconnected</span>`:"Rain/freeze sensor installed");
     f.ohm.forEach(x=>it.push(`<span class="flag">Zone ${x.z}: ${OHM_LONG[x.st]}</span>${tech?` (${esc(String(x.v))}${/^\d/.test(String(x.v))?" Ω":""})`:""}`));
     if(c.overcurrent==="yes")it.push(`<span class="flag">Overcurrent on the 2-wire path</span>${c.ocZones?`, affecting ${esc(c.ocZones)} zones`:""}`);
     if(f.decoders.length)it.push(`Decoder${f.decoders.length>1?"s":""} not communicating: #${f.decoders.map(esc).join(", #")}`);
@@ -1390,6 +1398,46 @@ function standaloneReport(j,html){
   body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
 }
 
+/* ---------------- Controller-first setup ----------------
+   A job starts with a few controller questions; the app then builds exactly that many zones. */
+const CTL_BRANDS=["Hunter","Rain Bird","Toro","Weathermatic","Irritrol","Orbit","Rachio","Other"];
+function ctlBrand(c){return c.brandPick==="Other"?(c.brandOther||""):(c.brandPick||c.brand||"")}
+function newDraft(){return {brand:"",brandOther:"",model:"",wiring:"conventional",zones:6,drip:[]}}
+function ctlSetupForm(title,isFirst){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
+  const ready=!!d.brand;
+  return `<div class="card"><div class="eyebrow">${isFirst?"Step 2":"New controller"}</div><h2>${esc(title)}</h2>
+    <p class="muted small" style="margin:0">Look at the customer's controller. The app builds the zones from these answers.</p>
+    <div class="q"><span class="ql">Brand *</span><div class="chips">${CTL_BRANDS.map(x=>`<button type="button" class="chip" data-csbrand="${esc(x)}" aria-pressed="${d.brand===x}">${esc(x)}</button>`).join("")}</div></div>
+    ${d.brand==="Other"?`<label class="f"><span>Brand name</span><input id="cs-brandOther" data-cs="brandOther" type="text" value="${esc(d.brandOther)}"></label>`:""}
+    <label class="f"><span>Model (optional)</span><input id="cs-model" data-cs="model" type="text" value="${esc(d.model)}" placeholder="e.g. Pro-C, ESP-TM2"></label>
+    <div class="q"><span class="ql">Wiring</span><div class="chips">${[["conventional","Conventional"],["2wire","2-wire"]].map(([v,l])=>`<button type="button" class="chip" data-cswire="${v}" aria-pressed="${d.wiring===v}">${l}</button>`).join("")}</div></div>
+    <div class="q"><span class="ql">Number of zones *</span><div class="row"><div class="step"><button type="button" data-cszn="-1" aria-label="Fewer zones">−</button><input id="cs-zones" data-cs="zones" type="number" inputmode="numeric" value="${n}" aria-label="Number of zones"><button type="button" data-cszn="1" aria-label="More zones">+</button></div></div></div>
+    <div class="q"><span class="ql">Which zones are drip? (tap any; the rest start as spray)</span><div class="chips">${Array.from({length:n},(_,i)=>i+1).map(z=>`<button type="button" class="chip" data-csdrip="${z}" aria-pressed="${d.drip.includes(z)}">${z}</button>`).join("")}</div></div>
+    <div class="row"><button class="btn" data-csbuild="1" ${ready?"":"disabled"} style="min-height:48px">Build ${n} zone${n===1?"":"s"}</button>${isFirst?"":`<button class="btn quiet" data-cscancel="1">Cancel</button>`}</div>
+    ${ready?"":`<p class="small muted" style="margin:0">Pick the brand to continue.</p>`}</div>`}
+function buildController(j){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
+  const c=newController(j.controllers.length+1);Object.assign(c,{brandPick:d.brand,brandOther:d.brandOther.trim(),brand:"",model:d.model.trim(),wiring:d.wiring,zones:n,rain:"",power:"yes"});
+  j.controllers.push(c);
+  for(let i=1;i<=n;i++){const z=newZone(j);z.ctl=c.id;z.num=String(i);
+    if(d.drip.includes(i)){z.types=["drip"];z.sizes=[]}else{z.types=["spray"];z.sizes=["4","6"]}
+    z.valve=Object.assign(z.valve||{},{size:'1"'});j.zones.push(z)}
+  j.setupDone=true;S.ctlDraft=null;S.addingCtl=false;return {c,n}}
+function zoneUntouched(z){return !z.works&&!(z.symptoms||[]).length&&!Object.values(z.acts||{}).some(v=>num(v))&&!(z.laterals||[]).length&&!(z.adds||[]).length&&!(z.custom||[]).length&&!z.notes&&!z.mapValve&&(!z.valve||!z.valve.action||z.valve.action==="none")}
+/* Zone count changed on the controller: add missing zones, remove only untouched extra ones */
+function syncZones(j,ci){const c=j.controllers[ci];if(!c)return;const n=Math.max(1,Math.min(200,num(c.zones)||1));c.zones=n;
+  const mine=j.zones.filter(z=>z.ctl===c.id);let added=0;const kept=[];
+  for(let i=1;i<=n;i++)if(!mine.some(z=>num(z.num)===i)){const z=newZone(j);z.ctl=c.id;z.num=String(i);z.types=["spray"];z.sizes=["4","6"];j.zones.push(z);added++}
+  const extra=mine.filter(z=>num(z.num)>n);
+  extra.forEach(z=>{if(zoneUntouched(z))j.zones.splice(j.zones.indexOf(z),1);else kept.push(z.num)});
+  if(kept.length)toast(`Zone${kept.length>1?"s":""} ${kept.join(", ")} kept because work is recorded on ${kept.length>1?"them":"it"}.`);
+  else if(added)toast(`Added ${added} zone${added===1?"":"s"}`);
+  else if(extra.length)toast(`Removed ${extra.length} empty zone${extra.length===1?"":"s"}`)}
+function rainBlock(c,b){const done=c.rain==="no"||(c.rain==="yes"&&c.rainStatus);
+  return `<div class="zcheck ${done?"":"need"}"><div class="eyebrow">Required</div>
+    ${seg("Rain / freeze sensor present?",b+".rain",YN)}
+    ${c.rain==="yes"?seg("Is it working?",b+".rainStatus",[["working","Working"],["notworking","Not working"],["bypassed","Bypassed / disconnected"]],{notworking:"bad",bypassed:"bad"}):""}
+    ${done?"":`<p class="small" style="margin:0">Check for a rain or freeze sensor. This must be answered before the controller is done.</p>`}</div>`}
+
 /* ---------------- Guided workflow ----------------
    Map valves become zones, every zone gets a "fully working?" check, and a Next-step strip leads the job. */
 const SYMPTOMS=[["noon","Won't turn on"],["nooff","Won't shut off"],["lowpress","Low pressure / poor coverage"],["broken","Broken or missing heads"],["leak","Leak or soggy area"],["mist","Misting / overspray"],["other","Other"]];
@@ -1439,7 +1487,7 @@ function jobSteps(j){
   const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
   return [
     {k:"mainline",label:"Mainline",done:ml,todo:"Check the water meter with the system off: is it moving?"},
-    {k:"controllers",label:"Controller",done:j.controllers.length>0,todo:"Add the controller and check power and wiring."},
+    {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>c.rain==="no"||(c.rain==="yes"&&c.rainStatus)),todo:j.controllers.length?"Controller: answer the rain/freeze sensor question.":"Set up the controller."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
     {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the report."}];
@@ -1879,6 +1927,7 @@ app.addEventListener("input",ev=>{
 });
 app.addEventListener("change",ev=>{
   const t=ev.target;
+  if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
   if(t.dataset.impsel){S.impSel=S.impSel||{};S.impSel[t.dataset.impsel]=t.checked;rr();return}
   if(t.dataset.prev){openPortalDoc("report",t.value);return}
   if(t.dataset.mename){const nm=t.value.trim();S.me.name=nm;sb.from("profiles").update({name:nm}).eq("id",S.me.id).then(({error})=>toast(error?"Couldn't save your name":"Name saved"));return}
@@ -1886,6 +1935,7 @@ app.addEventListener("change",ev=>{
   if(t.dataset.photofor&&t.files&&t.files[0]){addPhoto(t.dataset.photofor,t.files[0]);t.value="";return}
   const p=t.dataset.f;if(!p||!job())return;
   if(t.tagName==="SELECT"){setP(job(),p,t.value);scheduleSave(S.cur);rr();return}
+  if(/^controllers\.\d+\.zones$/.test(p)){syncZones(job(),+p.split(".")[1]);scheduleSave(S.cur)}
   if(t.dataset.rr||t.dataset.num)rr();
 });
 document.addEventListener("click",ev=>{if(S.acctOpen&&!ev.target.closest(".acct")){S.acctOpen=false;render()}});
@@ -1915,7 +1965,7 @@ app.addEventListener("click",ev=>{
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
   if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
-  if(d.new){const nj=withDefaults(newJob());S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="mainline";scheduleSave(nj.id);render();window.scrollTo(0,0);return}
+  if(d.new){const nj=newJob();S.ctlDraft=null;S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="mainline";scheduleSave(nj.id);render();window.scrollTo(0,0);return}
   if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;render();return}
   if(d.filter){S.filter=d.filter;rr();return}
@@ -1928,7 +1978,7 @@ app.addEventListener("click",ev=>{
   if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
   if(d.add){const arr=getP(j,d.add)||[];arr.push(TPL[d.tpl]());setP(j,d.add,arr);scheduleSave(S.cur);rr();return}
   if(d.addmain){j.mainline.push(newMainline(j.mainline.length+1));scheduleSave(S.cur);rr();return}
-  if(d.addctl){j.controllers.push(newController(j.controllers.length+1));scheduleSave(S.cur);if(S.tab!=="controllers"){S.tab="controllers";render()}else rr();return}
+  if(d.addctl){S.ctlDraft=newDraft();S.addingCtl=true;if(S.tab!=="controllers"){S.tab="controllers";render()}else rr();return}
   if(d.addprog!=null){const c=j.controllers[+d.addprog];const used=c.programs.map(p=>p.name);let n=PROGS.find(x=>!used.includes(x));if(!n){let k=1;while(used.includes(String(k))&&k<50)k++;n=String(k)}c.programs.push({id:uid("p"),name:n,starts:"",days:[],seasonal:100,runtimes:{}});scheduleSave(S.cur);rr();return}
   if(d.addzone){const z=newZone(j);if(S.zoneOpen){const cur=j.zones.find(x=>x.id===S.zoneOpen);if(cur){z.ctl=cur.ctl;const used=j.zones.filter(x=>x.ctl===cur.ctl).map(x=>+x.num);let n=1;while(used.includes(n))n++;z.num=String(n);z.soil=cur.soil}}j.zones.push(z);S.zoneOpen=z.id;scheduleSave(S.cur);rr();return}
   if(d.zone){S.zoneOpen=S.zoneOpen===d.zone?null:d.zone;rr();return}
@@ -1948,6 +1998,12 @@ app.addEventListener("click",ev=>{
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
     S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
   if(d.ol){setP(j,d.ol,"OL");scheduleSave(S.cur);rr();return}
+  if(d.csbrand){S.ctlDraft.brand=d.csbrand;rr();return}
+  if(d.cswire){S.ctlDraft.wiring=d.cswire;rr();return}
+  if(d.cszn){const dr=S.ctlDraft;dr.zones=Math.max(1,Math.min(99,(num(dr.zones)||1)+num(d.cszn)));dr.drip=dr.drip.filter(z=>z<=dr.zones);rr();return}
+  if(d.csdrip){const dr=S.ctlDraft;const z=num(d.csdrip);dr.drip=dr.drip.includes(z)?dr.drip.filter(x=>x!==z):dr.drip.concat(z);rr();return}
+  if(d.cscancel){S.ctlDraft=null;S.addingCtl=false;rr();return}
+  if(d.csbuild){const first=!j.controllers.length;const r=buildController(j);scheduleSave(S.cur);if(first)S.tab="mainline";render();window.scrollTo(0,0);toast(`${r.c.name}: built ${r.n} zone${r.n===1?"":"s"}`);return}
   if(d.gonext){S.tab=d.gonext;if(d.gonext==="zones"){const z=j.zones.find(z=>!z.works);if(z)S.zoneOpen=z.id}render();window.scrollTo(0,0);return}
   if(d.gozone){S.tab="zones";S.zoneOpen=d.gozone;render();window.scrollTo(0,0);return}
   if(d.zfix){const [zi,kind]=d.zfix.split("|");const z=j.zones[+zi];if(!z)return;
