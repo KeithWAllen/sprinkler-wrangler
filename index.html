@@ -63,6 +63,11 @@ button{cursor:pointer}
 .tabs .inner{display:flex;gap:2px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));margin:0 auto;max-width:780px;width:100%}
 .tab{border:0;background:transparent;padding:12px 12px 10px;font-family:var(--display);font-size:1.02rem;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap;letter-spacing:.02em}
 .tab[aria-current="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab.tab-done{color:var(--good)}
+.tab.tab-need{color:var(--warn);background:var(--warn-soft);border-radius:8px 8px 0 0}
+.tab.tab-need[aria-current="true"]{border-bottom-color:var(--warn);color:var(--warn)}
+.tab.tab-done[aria-current="true"]{color:var(--good)}
+.tabdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warn);margin-right:5px;vertical-align:.1em}
 .tab .ct{font-family:var(--mono);font-size:.72rem;margin-left:4px;opacity:.75}
 
 main{padding-block:16px 80px;display:grid;gap:14px}
@@ -384,7 +389,7 @@ const MAP_POINTS=[
   ["ctl","Controller","C","--accent"],["sensor","Sensor","S","--accent"],["zv","Zone valve","Z","--soil"],["valve","Valve","V","--soil"],
   ["pump","Pump","P","--water"],["head","Head","•","--ink"]];
 const MAP_LINES=[["main","Mainline","--water",7,""],["lateral","Lateral","--water",3.5,"10 7"],["drip","Dripline","--soil",3,"2 6"]];
-const STATUSES=["Scheduled","In progress","Inspected","Quoted","Approved","Completed"];
+const STATUSES=["Scheduled","In progress","Audited","Approved","Declined","Completed"];
 const PROGS=["A","B","C","D"];
 const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
 
@@ -520,6 +525,7 @@ function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTARE
 /* Fill in any missing pieces so an older or partial job can never break a screen */
 function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info=Object.assign({customer:"",phone:"",email:"",address:"",city:"",date:"",status:"Scheduled"},j.info||{});
+  if(j.info.status==="Inspected"||j.info.status==="Quoted")j.info.status="Audited";
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
@@ -600,7 +606,7 @@ const YN=[["yes","Yes"],["no","No"]];
 function stepRow(label,path,pk,unit){const q=num(getP(job(),path));const p=pk?price(pk):null;
   return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${p!=null?`<div class="ap num">${money(p)}${unit&&unit!=="each"?" / "+unit:""}</div>`:""}</div>
   <div class="step"><button type="button" data-step="${path}" data-d="-1" aria-label="Less">−</button><input type="number" inputmode="numeric" id="f-${path}" data-f="${path}" data-num="1" value="${q||""}" placeholder="0" aria-label="${esc(label)} quantity"><button type="button" data-step="${path}" data-d="1" aria-label="More">+</button></div></div>`}
-function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Inspected:"warn",Quoted:"ok",Approved:"ok",Completed:"ok"};return `<span class="pill ${m[status]||"neutral"}">${esc(status)}</span>`}
+function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Approved:"ok",Declined:"bad",Completed:"ok"};return `<span class="pill ${m[status]||"neutral"}">${esc(status)}</span>`}
 function delBtn(id,label){const armed=S.armed===id;return `<button type="button" class="btn danger sm ${armed?"armed":""}" data-arm="${esc(id)}">${armed?"Tap again to remove":label||"Remove"}</button>`}
 
 /* ---------------- views ---------------- */
@@ -631,7 +637,7 @@ function homeView(){
 }
 function jobsList(){
   const all=Object.values(S.jobs).sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||b.updatedAt-a.updatedAt);
-  const open=all.filter(j=>j.info.status!=="Completed");
+  const open=all.filter(j=>j.info.status!=="Completed"&&j.info.status!=="Declined");
   const list=S.filter==="open"?open:all;
   if(!all.length)return `<div class="card empty">
     <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 6c0 0-14 16-14 26a14 14 0 0 0 28 0C42 22 28 6 28 6z" fill="none" stroke="currentColor" stroke-width="3"/><path d="M21 33a7 7 0 0 0 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
@@ -671,7 +677,7 @@ function jobView(){
   const j=job();const e=buildEstimate(j);
   const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
   const miss=missingCustomer(j);
-  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer",miss.length?"!":""],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
+  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer"],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
   if(!j.info.propType)return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">Start of job</div><h1>New job</h1></div></div></header></div>
   <div class="wrap"><main>${banner()}<div class="card"><div class="eyebrow">Step 1</div><h2>What kind of property is this?</h2>
@@ -686,7 +692,7 @@ function jobView(){
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${acctChip()}</div></header>
-  <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${dn[k]?'<span class="tabok" aria-label="done">✓</span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")})()}</div></nav></div>
+  <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
   <div class="wrap"><main>${banner()}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
@@ -1377,7 +1383,7 @@ function reportTab(){const j=job();loadBg(j.id);
     <button class="chip" data-tech="1" aria-pressed="${!!j.est.showTech}">Include technical readings</button></div>
     ${status}${issueBox}
     ${cur?`<div class="row">${CAN_PRINT?`<button class="btn" data-print="report">Print Rev ${revNo(cur.n)}</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-copy="1">Copy Rev ${revNo(cur.n)} as text</button>${downloads?`<button class="btn ghost" data-save="1">Save Rev ${revNo(cur.n)} file</button>`:""}
-    <span class="spacer"></span>${j.info.status!=="Quoted"&&j.info.status!=="Approved"&&j.info.status!=="Completed"?`<button class="btn quiet sm" data-quoted="1">Mark as quoted</button>`:""}</div>`:""}</div>
+    <span class="spacer"></span></div>`:""}</div>
   ${viewing?`<div class="card sunk"><div class="row"><h3 class="spacer">Viewing Rev ${revNo(viewing.n)} (locked copy)</h3><button class="btn quiet sm" data-viewrev="-1">Close</button></div><article class="sheet">${viewing.html||'<p class="muted">Loading…</p>'}</article></div>`:""}
   <article class="sheet" id="sheet">${reportHtml(j,cur||{n:nextN,draft:true})}</article>
   ${hist}`;
@@ -1404,7 +1410,7 @@ async function issueRev(j){
   const html=reportHtml(j,rev);
   delete j.est.revNote;
   rev.fp=jobPrint(j);revs.push(rev);
-  if(j.info.status==="Scheduled"||j.info.status==="In progress"||j.info.status==="Inspected")j.info.status="Quoted";
+  if(j.info.status==="Scheduled"||j.info.status==="In progress")j.info.status="Audited";
   await putRevHtml(j,n,html);
   scheduleSave(S.cur);rr();toast("Rev "+revNo(n)+" issued");
 }
@@ -1497,12 +1503,17 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
     ${items.map(i=>`<tr><td>${esc(i.label)}<div class="small muted">${esc(i.sec)}${i.note?" · "+esc(i.note):""}</div></td><td>${tlDot(i.c)} ${TL[i.c][0]}</td><td>${nowCell(i)}</td></tr>`).join("")}</tbody></table></div></section>
   ${n.declined?`<section><p class="small"><b>Declined items:</b> the customer chose not to have ${n.declined===1?"this item":"these items"} done at this time. ${n.declined===1?"It was":"They were"} explained on the audit report (Rev ${revNo(c.rev)}, ${esc(d(rv.at))}).</p></section>`:""}
   ${figs.length?`<section><h2>After photos</h2><div class="rphs">${figs.join("")}</div></section>`:""}`}
+function outcomeCard(j){const biz=bizInfo().name||"us";
+  return `<div class="card"><div class="cardhead"><h2>Outcome</h2>${j.outcome==="approved"?'<span class="pill ok">Approved</span>':j.outcome==="declined"?'<span class="pill bad">Audit only</span>':'<span class="pill warn">Waiting</span>'}</div>
+    <div class="q"><span class="ql">Did the customer hire ${esc(biz)} for the work?</span><div class="chips">${[["approved","Yes, approved"],["declined","No, audit only"],["waiting","Waiting to hear"]].map(([v,l])=>`<button class="chip ${v==="declined"?"bad":""}" data-outcome="${v}" aria-pressed="${(j.outcome||"waiting")===v}">${l}</button>`).join("")}</div></div>
+    ${j.outcome==="declined"?`<p class="small" style="margin:0">The invoice bills the service call only, so the audit is still paid for. The audit report stays on file.</p>`:j.outcome==="approved"?"":`<p class="small muted" style="margin:0">Follow up with the customer. The job stays on the open list until you know.</p>`}</div>`}
 function completionTab(){const j=job();const s=syncCompletion(j);
   if(!s)return `<div class="card"><h2>Completion</h2><p>Issue the audit report first. The completion report compares the work done against it.</p><div><button class="btn" data-tab="report">Go to Report</button></div></div>`;
   if(s.changed)scheduleSave(S.cur);
+  if(j.outcome!=="approved")return outcomeCard(j);
   const c=j.completion;const n=compCounts(c.items);const answered=c.items.filter(i=>i.status).length;const issued=c.issuedAt&&c.fp===compPrint(j);
   const ord={r:0,y:1};const rows=c.items.map((i,ix)=>[i,ix]).sort((a,b)=>ord[a[0].c]-ord[b[0].c]);
-  return `<div class="card"><div class="cardhead"><h2>Completion</h2><span class="muted small">Audit Rev ${revNo(c.rev)}</span></div>
+  return outcomeCard(j)+`<div class="card"><div class="cardhead"><h2>Completed work</h2><span class="muted small">Audit Rev ${revNo(c.rev)}</span></div>
     <p class="small muted" style="margin:0">Mark each audit item once the work is finished. The invoice bills only items marked Done.</p>
     <div class="row">${tlDot("r")} ${n.r} fix now · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
   ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)} · ${money(i.total)}</div></div></div>
@@ -1519,7 +1530,8 @@ function completionText(j){const c=j.completion;const n=compCounts(c.items);cons
   `Before: ${n.r} fix now, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} fix now, ${n.yLeft} recommended`,""];
   c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
 /* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
-function invoiceEstimate(j){const e=buildEstimate(j);const c=j.completion;if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
+function invoiceEstimate(j){const e=buildEstimate(j);const c=j.completion;
+  if((j.inv||{}).kind==="invoice"&&j.outcome==="declined"){const lines=e.lines.filter(l=>l.sec==="Service");const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
   const inAudit=new Set(c.items.map(i=>i.k)),done=new Set(c.items.filter(i=>i.status==="done").map(i=>i.k));
   const lines=e.lines.filter(l=>l.sec==="Service"||!inAudit.has(lineKey(l))||done.has(lineKey(l)));
   const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}
@@ -1654,12 +1666,14 @@ function jobSteps(j){
     {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>c.rain==="no"||(c.rain==="yes"&&c.rainStatus)),todo:j.controllers.length?"Controller: answer the rain/freeze sensor question.":"Set up the controller."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
     {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
-    {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the report."}];
+    {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the audit report."},
+    {k:"completion",label:"Outcome",done:j.outcome==="declined"||(j.outcome==="approved"&&!!(j.completion&&j.completion.issuedAt&&j.completion.fp===compPrint(j))),
+     todo:!j.outcome||j.outcome==="waiting"?"Ask if the customer is hiring us for the work.":"Mark the completed work and issue the completion report."}];
 }
 function guideBar(j){const st=jobSteps(j);const nx=st.find(s=>!s.done);const done=st.filter(s=>s.done).length;
   return `<div class="guide"><div class="gprog" role="progressbar" aria-valuemin="0" aria-valuemax="${st.length}" aria-valuenow="${done}"><span style="width:${Math.round(done/st.length*100)}%"></span></div>
   ${nx?`<div class="row"><span class="spacer small"><b>${done} of ${st.length} steps done.</b> Next: ${esc(nx.todo)}</span>${S.tab===nx.k&&nx.k!=="zones"?"":`<button class="btn sm" data-gonext="${nx.k}">Go</button>`}</div>`
-    :`<div class="row"><span class="spacer small"><b>All ${st.length} steps done.</b> Report Rev ${revNo(currentRev(j).n)} is ready to send.</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
+    :`<div class="row"><span class="spacer small"><b>All ${st.length} steps done.</b> ${j.outcome==="declined"?"Audit only. Invoice the service call.":"Job complete. Send the invoice."}</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
 
 /* ---------------- trouble photos ---------------- */
 const BADCOND=["Poor","Failed"];
@@ -2157,7 +2171,6 @@ app.addEventListener("click",ev=>{
   if(d.satopen){satOpen();return}
   if(d.mkreport){render();window.scrollTo(0,0);return}
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
-  if(d.quoted){j.info.status="Quoted";scheduleSave(S.cur);rr();toast("Marked as quoted");return}
   if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else printDoc(invoiceHtml(j));return}
   if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
@@ -2176,6 +2189,7 @@ app.addEventListener("click",ev=>{
     if(kind==="lat"){z.laterals=z.laterals||[];z.laterals.push(TPL.lateral());toast("Lateral break added. Fill in its size and length below")}
     scheduleSave(S.cur);rr();return}
   if(d.tl){j.est.tl=Object.assign({},j.est.tl||{});const l=buildEstimate(j).lines.find(x=>lineKey(x)===d.tl);if(l){j.est.tl[d.tl]=lineColor(j,l)==="r"?"y":"r"}scheduleSave(S.cur);rr();return}
+  if(d.outcome){j.outcome=d.outcome;if(d.outcome==="approved"&&j.info.status!=="Completed")j.info.status="Approved";if(d.outcome==="declined")j.info.status="Declined";if(d.outcome==="waiting"&&j.info.status!=="Completed")j.info.status="Audited";scheduleSave(S.cur);rr();return}
   if(d.compissue){const c=j.completion;if(!c)return;c.issuedAt=Date.now();c.by=(S.me&&S.me.name)||j.info.tech||"";c.fp=compPrint(j);c.html=completionHtml(j);j.info.status="Completed";scheduleSave(S.cur);rr();toast("Completion report issued");return}
   if(d.compprint){printDoc(j.completion.html||completionHtml(j));return}
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
