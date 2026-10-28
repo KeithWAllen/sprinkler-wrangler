@@ -1,0 +1,1369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1D6B47">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sprinkler Wrangler">
+<meta name="description" content="Field app for evaluating irrigation jobs: inspections, property map, photos, reports and invoices.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231D6B47'/%3E%3Cpath d='M32 12s-13 15-13 24a13 13 0 0 0 26 0c0-9-13-24-13-24z' fill='%23fff'/%3E%3C/svg%3E">
+<title>Sprinkler Wrangler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-column field app — sticky job bar + scrolling section tabs, stacked inspection cards, thumb-sized controls */
+:root{
+  --bg:#EEF2EE; --surface:#FFFFFF; --sunk:#E3E9E4; --ink:#16211A; --muted:#58665C; --line:#CDD6CF;
+  --accent:#1D6B47; --accent-ink:#FFFFFF; --accent-soft:#DCEDE3;
+  --water:#2A6C99; --reclaim:#6B4C9A; --soil:#8A5A2B;
+  --good:#2A7A4B; --warn:#A86B0C; --bad:#B42C22; --warn-soft:#FBF0DC; --bad-soft:#F8E1DE;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1411; --surface:#17201B; --sunk:#111915; --ink:#E4ECE6; --muted:#98A79C; --line:#2A3830;
+  --accent:#4DB080; --accent-ink:#06140D; --accent-soft:#1C3328;
+  --water:#6AAAD8; --reclaim:#A98BD8; --soil:#C99563;
+  --good:#5CC08A; --warn:#E3AA4C; --bad:#EF6E64; --warn-soft:#33281A; --bad-soft:#3A1F1C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1411; --surface:#17201B; --sunk:#111915; --ink:#E4ECE6; --muted:#98A79C; --line:#2A3830;
+  --accent:#4DB080; --accent-ink:#06140D; --accent-soft:#1C3328;
+  --water:#6AAAD8; --reclaim:#A98BD8; --soil:#C99563;
+  --good:#5CC08A; --warn:#E3AA4C; --bad:#EF6E64; --warn-soft:#33281A; --bad-soft:#3A1F1C; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--accent)}
+.wrap{max-width:780px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);letter-spacing:.01em;text-wrap:balance;margin:0;line-height:1.1}
+h1{font-size:1.6rem} h2{font-size:1.35rem} h3{font-size:1.12rem}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.86rem}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--water);outline-offset:2px}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.bar{background:var(--accent);color:var(--accent-ink)}
+.bar .wrap{display:flex;align-items:center;gap:10px;padding-block:10px}
+.bar h1{font-size:1.35rem;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .sub{font-size:.8rem;opacity:.85;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.iconbtn{background:transparent;border:1.5px solid currentColor;color:inherit;border-radius:8px;padding:6px 10px;font-weight:600;font-size:.9rem;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;background:var(--surface);border-bottom:1px solid var(--line)}
+.tabs::-webkit-scrollbar{display:none}
+.tabs .inner{display:flex;gap:2px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));margin:0 auto;max-width:780px;width:100%}
+.tab{border:0;background:transparent;padding:12px 12px 10px;font-family:var(--display);font-size:1.02rem;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap;letter-spacing:.02em}
+.tab[aria-current="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab .ct{font-family:var(--mono);font-size:.72rem;margin-left:4px;opacity:.75}
+
+main{padding-block:16px 80px;display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:12px;min-width:0}
+.card.sunk{background:var(--sunk)}
+.cardhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cardhead h2,.cardhead h3{flex:1;min-width:0}
+.eyebrow{font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+label.f{display:grid;gap:4px;min-width:0}
+label.f>span{font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.03em}
+input[type=text],input[type=number],input[type=date],input[type=tel],input[type=email],select,textarea{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 10px;min-height:44px}
+textarea{min-height:70px;resize:vertical}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.q{display:grid;gap:6px}
+.q>.ql{font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.03em}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 13px;font-weight:600;font-size:.92rem;min-height:38px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip.bad[aria-pressed="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn{border:0;background:var(--accent);color:var(--accent-ink);font-weight:700;border-radius:9px;padding:11px 16px;min-height:44px}
+.btn.ghost{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+.btn.quiet{background:var(--sunk);color:var(--ink)}
+.btn.danger{background:transparent;color:var(--bad);border:1.5px solid var(--bad)}
+.btn.danger.armed{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:6px 11px;min-height:34px;font-size:.88rem}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+
+/* steppers / action list */
+.acts{display:grid;gap:2px}
+.act{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.act:last-child{border-bottom:0}
+.act .al{flex:1;min-width:0}
+.act .ap{font-size:.78rem;color:var(--muted)}
+.step{display:flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.step button{width:38px;height:38px;border:0;background:var(--sunk);font-size:1.2rem;font-weight:700}
+.step input{width:52px;border:0;border-radius:0;text-align:center;min-height:38px;padding:4px;background:var(--surface);font-family:var(--mono)}
+.act.on .al{font-weight:700}
+.combo{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:grid;gap:4px;background:var(--bg)}
+.combo h4{margin:0;font-family:var(--display);font-size:1rem;letter-spacing:.03em}
+
+/* status pills */
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.pill.ok{background:var(--accent-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.neutral{background:var(--sunk);color:var(--muted)}
+.note{border-left:4px solid var(--warn);background:var(--warn-soft);padding:9px 12px;border-radius:0 8px 8px 0;font-size:.92rem}
+.note.bad{border-color:var(--bad);background:var(--bad-soft)}
+.note.info{border-color:var(--water);background:var(--sunk)}
+
+/* job list */
+.jobs{display:grid;gap:10px}
+.job{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-align:left;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.job .date{font-family:var(--display);text-align:center;line-height:1;min-width:44px}
+.job .date b{display:block;font-size:1.5rem}
+.job .date small{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.job .who{min-width:0}
+.job .who strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .who span{display:block;font-size:.88rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .amt{text-align:right;display:grid;gap:4px;justify-items:end}
+
+/* ohm grid */
+.ohms{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.ohm{border:1px solid var(--line);border-radius:8px;padding:6px;display:grid;gap:3px;background:var(--bg)}
+.ohm b{font-family:var(--mono);font-size:.78rem}
+.ohm input{min-height:36px;padding:6px;font-family:var(--mono)}
+.ohm.short,.ohm.open{border-color:var(--bad);background:var(--bad-soft)}
+.ohm.high{border-color:var(--warn);background:var(--warn-soft)}
+.rt{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px}
+.rt label{display:grid;gap:2px;font-size:.74rem;color:var(--muted);font-weight:600}
+.rt input{min-height:36px;padding:6px;font-family:var(--mono)}
+
+/* map */
+.mapbox{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface);touch-action:manipulation}
+.mapbox svg{display:block;width:100%;height:auto;max-width:100%;user-select:none;-webkit-user-select:none}
+.tools{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.tool{flex:none;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line);border-radius:9px;background:var(--surface);padding:6px 10px;font-weight:600;font-size:.86rem;min-height:40px}
+.tool[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent);background:var(--accent-soft)}
+.sw{width:14px;height:14px;border-radius:50%;flex:none}
+.sw.line{width:18px;height:4px;border-radius:2px}
+
+/* estimate / report tables */
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.r,th.r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.sec td{background:var(--sunk);font-family:var(--display);font-weight:700;font-size:.98rem;letter-spacing:.03em}
+.totals{display:grid;gap:4px;justify-content:end;font-variant-numeric:tabular-nums}
+.totals div{display:flex;gap:24px;justify-content:space-between;min-width:230px}
+.totals .grand{font-family:var(--display);font-size:1.5rem;border-top:2px solid var(--ink);padding-top:6px;margin-top:4px}
+
+/* report sheet */
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:22px 18px;display:grid;gap:18px}
+.sheet .lh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:3px solid var(--accent);padding-bottom:12px}
+.sheet .lh h1{font-size:1.9rem}
+.sheet h2{font-size:1.15rem;border-bottom:1px solid var(--line);padding-bottom:4px}
+.sheet ul{margin:6px 0 0;padding-left:20px;display:grid;gap:4px}
+.flag{color:var(--bad);font-weight:700}
+.banner{padding:8px 12px;border-radius:8px;font-size:.9rem;background:var(--sunk);border:1px solid var(--line)}
+.empty{text-align:center;padding:36px 16px;display:grid;gap:10px;justify-items:center}
+.empty svg{color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:.92rem;z-index:20;max-width:calc(100% - 32px)}
+
+/* full-screen map editor */
+.mapprev{position:relative;display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+.mapprev svg{display:block;width:100%;height:auto}
+.mapopen{position:absolute;right:10px;bottom:10px;background:var(--accent);color:var(--accent-ink);font-weight:700;border-radius:999px;padding:7px 14px;font-size:.9rem}
+.me{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+.me-top{display:flex;align-items:center;gap:6px;padding-block:8px;padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px));background:var(--accent);color:var(--accent-ink)}
+.me-title{flex:1;min-width:0;font-family:var(--display);font-size:1.15rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.me-btn{border:1.5px solid currentColor;background:transparent;color:inherit;border-radius:8px;min-width:40px;min-height:40px;padding:4px 10px;font-weight:700;font-size:1rem}
+.me-btn.strong{background:var(--accent-ink);color:var(--accent);border-color:var(--accent-ink)}
+.me-btn:disabled{opacity:.4}
+.me-stage{flex:1;min-height:0;position:relative;touch-action:none;overflow:hidden;cursor:grab}
+.me-stage svg{position:absolute;inset:0;width:100%;height:100%;display:block;user-select:none;-webkit-user-select:none}
+.me-bottom{background:var(--surface);border-top:1px solid var(--line);display:grid;gap:8px;padding-top:8px;padding-bottom:max(10px,env(safe-area-inset-bottom,0px));padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}
+.me-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.me-sheet{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.me-sheet input{min-height:40px}
+.me-pal{display:flex;gap:6px;overflow-x:auto;align-items:center;padding-bottom:2px;scrollbar-width:thin}
+.me-sep{flex:none;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 2px 0 6px}
+.me-pal .tool{min-height:44px}
+.phstrip{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:-2px}
+.phthumb{position:relative}
+.phimg{padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:72px;height:72px;background:var(--sunk);display:block}
+.phimg img{width:100%;height:100%;object-fit:cover;display:block}
+.phx{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);font-size:.75rem;font-weight:700}
+.phadd{display:inline-flex;align-items:center;gap:6px;border:1.5px dashed var(--line);border-radius:8px;min-height:44px;padding:6px 12px;font-weight:700;font-size:.9rem;cursor:pointer}
+.phadd.req{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.phmodal{position:fixed;inset:0;z-index:25;background:color-mix(in srgb,var(--ink) 55%,transparent);display:flex;align-items:flex-end;justify-content:center;padding:16px max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.phcard{background:var(--surface);border-radius:14px;padding:18px;display:grid;gap:10px;max-width:520px;width:100%;border-top:5px solid var(--bad)}
+.phcard p{margin:0}
+.phbig{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px}
+.phbig img{max-width:100%;max-height:80vh;border-radius:6px}
+.rphs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
+.rph{margin:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--sunk)}
+.rph img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}
+.rph figcaption{font-size:.78rem;padding:5px 7px;color:var(--muted)}
+.isec{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:10px;display:grid;gap:8px}
+.isgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.isec ul{margin:4px 0 0}
+ul.sol{list-style:none;padding-left:0}
+ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
+.ups{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.up{border:1px dashed var(--line);border-radius:8px;padding:10px}
+.paid{display:inline-block;border:3px solid var(--good);color:var(--good);font-family:var(--display);font-size:1.6rem;font-weight:700;padding:4px 14px;border-radius:6px;letter-spacing:.08em}
+#printarea{display:none}
+@media print{
+  #app,#toast,#me,#phbig,.phmodal,body::before{display:none!important}
+  #printarea{display:block}
+  body{background:#fff}
+  #printarea .sheet{border:0;padding:0}
+  .isec,.rph,.up{break-inside:avoid}
+  @page{margin:14mm}
+}
+details summary{cursor:pointer;font-weight:600}
+@media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
+</style>
+<style>[hidden]{display:none!important}body{margin:0;font-size:14px}:root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}img{max-width:100%}</style>
+</head>
+<body>
+
+
+<div id="app"><div class="wrap"><main><div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div></main></div></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(function(){
+"use strict";
+/* ---------------- constants ---------------- */
+const HEAD_TYPES=[["spray","Spray"],["mp","MP rotator"],["rotor","Rotor"],["shrub","Shrub riser"],["drip","Drip"],["cap","Cap"],["bubbler","Bubbler"]];
+const SIZED=["spray","mp","rotor"];
+/* Pop-up body heights for spray, MP and rotor heads. Anything taller is a shrub riser. */
+const SIZES=["4","6","12"];
+const ACT_L={raise:"Raise",lower:"Lower",rhead:"Replace head",rnoz:"Replace nozzle",cnozmp:"Convert nozzle to MP",chead6:"Convert to 6\" head",cheadmp:"Convert head to MP"};
+const BASIC=["raise","lower","rhead","rnoz"];
+function headActs(t,s){
+  if(t==="spray"){ if(s==="4")return [...BASIC,"cnozmp","chead6"]; if(s==="6"||s==="12")return [...BASIC,"cnozmp"]; return BASIC;}
+  if(t==="mp"){ if(s==="4")return [...BASIC,"chead6"]; return BASIC;}
+  if(t==="rotor"){ if(["4","6","12"].includes(s))return [...BASIC,"cheadmp"]; return BASIC;}
+  return [];
+}
+function headPriceKey(t,s,a){
+  return {raise:"head_raise",lower:"head_lower",rhead:`rhead_${t}_${s}`,rnoz:`rnoz_${t}`,cnozmp:"cnoz_mp",chead6:`chead6_${t}`,cheadmp:`rotor_to_mp_${s}`}[a];
+}
+const OTHER_ACTS={
+  shrub:[["sh_replace","Replace shrub riser"],["sh_extend","Extend riser"],["sh_noz","Replace nozzle"],["sh_mp","Convert to MP nozzle"]],
+  bubbler:[["bub_replace","Replace bubbler"],["bub_add","Add tree bubbler"]],
+  drip:[["drip_repair","Repair dripline"],["drip_replace","Replace dripline (ft)"],["drip_new","Run new dripline (ft)"],["drip_ind","Add indicator"],["drip_flush","Add flush valve"],["drip_retro","Retrofit zone to drip"]],
+  cap:[["cap","Heads to cap"]]
+};
+/* Texas sample rates — compiled from DFW/Texas published repair ranges; edit on the Price sheet */
+const PRICE_DEFAULTS=(()=>{
+  const P={};const add=(k,g,l,u,p,m)=>P[k]={g,l,u,p,m:!!m};
+  add("trip","Service","Service call / trip charge","each",85);
+  add("labor_hour","Service","Additional labor","hour",80);
+  add("head_raise","Heads","Raise head to grade","each",25);
+  add("head_lower","Heads","Lower head to grade","each",25);
+  const rh={spray:[35,42,55],mp:[48,55,68],rotor:[45,55,70]};
+  const tn={spray:"spray",mp:"MP rotator",rotor:"rotor"};
+  for(const t of SIZED)SIZES.forEach((s,i)=>add(`rhead_${t}_${s}`,"Replace heads",`Replace ${s}" ${tn[t]} head`,"each",rh[t][i],1));
+  add("rnoz_spray","Nozzles & conversions","Replace spray nozzle","each",12,1);
+  add("rnoz_mp","Nozzles & conversions","Replace MP rotator nozzle","each",24,1);
+  add("rnoz_rotor","Nozzles & conversions","Replace rotor nozzle","each",18,1);
+  add("cnoz_mp","Nozzles & conversions","Convert spray nozzle to MP rotator","each",24,1);
+  add("chead6_spray","Nozzles & conversions","Convert 4\" spray to 6\" body","each",45,1);
+  add("chead6_mp","Nozzles & conversions","Convert 4\" MP to 6\" body","each",58,1);
+  [["4",55],["6",62],["12",75]].forEach(([s,p])=>add(`rotor_to_mp_${s}`,"Nozzles & conversions",`Convert ${s}" rotor to MP head`,"each",p,1));
+  add("sh_replace","Shrub & bubblers","Replace shrub riser","each",30,1);
+  add("sh_extend","Shrub & bubblers","Extend shrub riser","each",22,1);
+  add("sh_noz","Shrub & bubblers","Replace shrub nozzle","each",12,1);
+  add("sh_mp","Shrub & bubblers","Convert shrub to MP nozzle","each",24,1);
+  add("bub_replace","Shrub & bubblers","Replace tree bubbler","each",25,1);
+  add("bub_add","Shrub & bubblers","Add tree bubbler","each",45,1);
+  add("cap","Shrub & bubblers","Cap head","each",18,1);
+  add("drip_repair","Drip","Dripline repair","each",45,1);
+  add("drip_replace","Drip","Replace dripline","ft",3,1);
+  add("drip_new","Drip","Run new dripline","ft",4,1);
+  add("drip_ind","Drip","Drip indicator","each",20,1);
+  add("drip_flush","Drip","Drip flush valve","each",35,1);
+  add("drip_retro","Drip","Drip retrofit kit (per zone)","zone",295,1);
+  add("valve_1","Valves","Replace 1\" zone valve","each",165,1);
+  add("valve_15","Valves","Replace 1.5\" zone valve","each",210,1);
+  add("valve_2","Valves","Replace 2\" zone valve","each",260,1);
+  add("valve_rebuild","Valves","Rebuild valve (diaphragm)","each",95,1);
+  add("valve_sol","Valves","Replace solenoid","each",75,1);
+  add("valve_locate","Valves","Locate buried valve","each",95);
+  add("lat_repair","Pipe","Lateral line break repair","each",125,1);
+  add("lat_ft","Pipe","Additional lateral pipe","ft",8,1);
+  add("lat_tree","Pipe","Tree root work surcharge","each",45);
+  add("add_head","Pipe","Add head","each",65,1);
+  add("add_ft","Pipe","Trench & pipe to new head","ft",8,1);
+  add("main_repair","Mainline","Mainline leak repair","each",325,1);
+  add("bf_repair","Mainline","Backflow preventer repair","each",190,1);
+  add("bf_replace","Mainline","Replace backflow preventer","each",395,1);
+  add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
+  add("prv_repair","Mainline","PRV repair","each",110,1);
+  add("prv_replace","Mainline","Replace PRV","each",325,1);
+  add("iso_repair","Mainline","Isolation valve repair","each",75,1);
+  add("iso_replace","Mainline","Replace isolation valve","each",165,1);
+  add("mv_repair","Mainline","Master valve repair","each",95,1);
+  add("mv_replace","Mainline","Replace master valve","each",245,1);
+  add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
+  add("transformer","Controller","Replace controller transformer","each",65,1);
+  add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
+  add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
+  add("decoder","Controller","Replace 2-wire decoder","each",120,1);
+  add("module","Controller","Replace controller module","each",95,1);
+  return P;
+})();
+const GROUP_ORDER=["Service","Heads","Replace heads","Nozzles & conversions","Shrub & bubblers","Drip","Valves","Pipe","Mainline","Controller"];
+
+const MAP_POINTS=[
+  ["meter","Water meter","WM","--water"],["bf","Backflow","BF","--reclaim"],["prv","PRV","PR","--reclaim"],["mv","Master valve","MV","--reclaim"],
+  ["ctl","Controller","C","--accent"],["sensor","Sensor","S","--accent"],["zv","Zone valve","Z","--soil"],["valve","Valve","V","--soil"],
+  ["pump","Pump","P","--water"],["head","Head","•","--ink"]];
+const MAP_LINES=[["main","Mainline","--water",7,""],["lateral","Lateral","--water",3.5,"10 7"],["drip","Dripline","--soil",3,"2 6"]];
+const STATUSES=["Scheduled","In progress","Inspected","Quoted","Approved","Completed"];
+const PROGS=["A","B","C","D"];
+const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+/* ---------------- state ---------------- */
+const S={jobs:{},pricing:{},cur:null,tab:"dispatch",home:"jobs",mode:"loading",ro:false,
+  mapTool:"select",mapHide:{},mapSel:null,drawLine:null,bg:{},docketDate:today(),showTech:false,armed:null,filter:"open"};
+let db=null,downloads=null;
+const saving={},dirty={},timers={};
+
+function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function uid(p){return (p||"x")+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function getP(o,p){return p.split(".").reduce((a,k)=>a==null?undefined:a[k],o)}
+function setP(o,p,v){const ks=p.split(".");let a=o;for(let i=0;i<ks.length-1;i++){const k=ks[i];if(a[k]==null)a[k]=/^\d+$/.test(ks[i+1])?[]:{};a=a[k]}a[ks[ks.length-1]]=v}
+function money(n){return "$"+(Math.round(n*100)/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function num(v){const n=parseFloat(v);return isNaN(n)?0:n}
+function basePrice(k){const d=PRICE_DEFAULTS[k];if(!d)return 0;const o=S.pricing[k];return o==null||o===""?d.p:num(o)}
+function commPct(){const v=S.pricing._commercial;return v==null||v===""?25:num(v)}
+function price(k,j){j=j||job();const b=basePrice(k);return j&&j.info&&j.info.propType==="commercial"?Math.round(b*(1+commPct()/100)*100)/100:b}
+function job(){return S.jobs[S.cur]}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2400)}
+
+function newJob(){
+  return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),
+    info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
+    map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:"Estimate valid for 30 days."}};
+}
+/* Default layout for a new job: one controller, zones 1–4 spray (4" & 6"), zone 5 drip */
+const DEFAULT_ZONES=[{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["drip"],sizes:[]}];
+function withDefaults(j){const c=newController(1);c.zones=DEFAULT_ZONES.length;j.controllers.push(c);
+  DEFAULT_ZONES.forEach((d,i)=>{const z=newZone(j);z.ctl=c.id;z.num=String(i+1);z.types=d.types.slice();z.sizes=d.sizes.slice();z.valve.size='1"';j.zones.push(z)});return j}
+function nextFree(j,src){const used=j.zones.filter(x=>x.ctl===src.ctl).map(x=>+x.num);let n=+src.num+1;while(used.includes(n))n++;return n}
+function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.id=uid("z");
+  const used=j.zones.filter(x=>x.ctl===src.ctl).map(x=>+x.num);let n=+src.num+1;while(used.includes(n))n++;z.num=String(n);
+  if(!withRepairs){z.acts={};z.laterals=[];z.adds=[];z.custom=[];z.notes="";z.valve=Object.assign({},z.valve,{condition:"",action:"none"})}
+  const c=j.controllers.find(x=>x.id===src.ctl);if(c&&n>num(c.zones))c.zones=n;
+  j.zones.push(z);return z}
+function comp(){return {present:"",pos:"",size:"",type:"",condition:"",action:"none"}}
+function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"yes",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},notes:""}}
+function newController(n){return {id:uid("c"),name:"Controller "+String.fromCharCode(64+(n||1)),brand:"",model:"",location:"",wiring:"conventional",modular:"no",modules:[],rain:"",zones:5,power:"yes",powerIssue:"",programs:[{id:uid("p"),name:"A",starts:"",days:[],seasonal:100,runtimes:{}}],ohms:{},overcurrent:"",ocZones:"",badDecoders:"",act:{},notes:""}}
+function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
+  return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
+const TPL={meter:()=>({num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""})};
+
+/* ---------------- storage ---------------- */
+const IDB=(()=>{let dbp=null;
+  function open(){if(dbp)return dbp;dbp=new Promise((res)=>{try{const r=indexedDB.open("sprinkler-wrangler",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}catch(e){res(null)}});return dbp}
+  async function tx(mode,fn){const d=await open();if(!d)return undefined;return new Promise(res=>{try{const t=d.transaction("kv",mode);const st=t.objectStore("kv");const rq=fn(st);t.oncomplete=()=>res(rq&&rq.result!==undefined?rq.result:true);t.onerror=()=>res(undefined);t.onabort=()=>res(undefined)}catch(e){res(undefined)}})}
+  return {
+    async get(k){const v=await tx("readonly",st=>st.get(k));if(v!==undefined&&v!==true)return v;return LS.get(k)},
+    async set(k,v){const ok=await tx("readwrite",st=>st.put(v,k));return ok!==undefined||LS.set(k,v)},
+    async del(k){await tx("readwrite",st=>st.delete(k));try{localStorage.removeItem(k)}catch(e){}}
+  };})();
+const LS={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
+function scheduleSave(id){
+  const j=S.jobs[id];if(!j)return;j.updatedAt=Date.now();dirty[id]=true;
+  clearTimeout(timers[id]);timers[id]=setTimeout(()=>flush(id),700);
+}
+async function flush(id){
+  if(saving[id]){return}
+  const j=S.jobs[id];if(!j){dirty[id]=false;return}
+  dirty[id]=false;
+  if(S.mode==="local"){const all=LS.get("irr.jobs")||{};all[id]=j;if(!LS.set("irr.jobs",all))toast("This device is out of storage space");return}
+  if(S.mode!=="db"||S.ro)return;
+  saving[id]=true;
+  try{await db.doc("jobs/"+id).set(JSON.parse(JSON.stringify(j)))}
+  catch(e){handleWriteErr(e)}
+  finally{saving[id]=false;if(dirty[id])flush(id)}
+}
+function handleWriteErr(e){
+  const c=e&&e.code;
+  if(c==="invalid_argument"&&!S.roWarned){S.ro=true;S.roWarned=true;render();}
+  else if(c==="quota_exceeded")toast("Storage is full. Delete old jobs to save new ones.");
+  else toast("Couldn't save. Check your connection.");
+}
+async function deleteJob(id){
+  delete S.jobs[id];
+  if(S.mode==="local"){const all=LS.get("irr.jobs")||{};delete all[id];LS.set("irr.jobs",all);IDB.del("irr.bg."+id)}
+  else if(S.mode==="db"&&!S.ro){try{await db.doc("jobs/"+id).delete();await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
+}
+let pTimer=null;
+function savePricing(){clearTimeout(pTimer);pTimer=setTimeout(async()=>{
+  if(S.mode==="local")LS.set("irr.pricing",S.pricing);
+  else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing})}catch(e){handleWriteErr(e)}}
+pTimer=null},700)}
+async function loadBg(id){
+  if(S.bg[id]!==undefined)return;S.bg[id]=null;
+  if(S.mode==="local"){S.bg[id]=(await IDB.get("irr.bg."+id))||null;ME.open?meDraw():render();return}
+  if(S.mode==="db"){try{const s=await db.doc("jobmedia/"+id).get();S.bg[id]=s.exists?(s.data().img||null):null;ME.open?meDraw():render()}catch(e){}}
+}
+async function saveBg(id,img){
+  S.bg[id]=img;const j=S.jobs[id];j.map.hasBg=!!img;scheduleSave(id);render();
+  if(S.mode==="local"){if(img){if(!(await IDB.set("irr.bg."+id,img)))toast("This device is out of space for photos")}else{await IDB.del("irr.bg."+id)}}
+  else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
+}
+function startLocal(){
+  S.mode="local";S.jobs=LS.get("irr.jobs")||{};S.pricing=LS.get("irr.pricing")||{};render();
+}
+async function boot(){
+  render();
+  if(!window.claude||!window.claude.use){startLocal();return}
+  let d=null;try{d=await window.claude.use("db")}catch(e){d=null}
+  window.claude.use("downloads").then(x=>{downloads=x;if(S.tab==="report")render()}).catch(()=>{});
+  if(!d){startLocal();return}
+  db=d;S.mode="db";
+  db.collection("jobs").onSnapshot(snap=>{
+    let changedCur=false;
+    for(const ch of snap.docChanges()){
+      const id=ch.doc.id;
+      if(ch.type==="removed"){delete S.jobs[id];if(id===S.cur)changedCur=true;continue}
+      if(saving[id]||dirty[id])continue;
+      const data=ch.doc.data();
+      const prev=S.jobs[id];
+      if(prev&&prev.updatedAt>=data.updatedAt&&ch.type!=="added")continue;
+      S.jobs[id]=JSON.parse(JSON.stringify(data));
+      if(id===S.cur&&prev)changedCur=true;
+    }
+    S.loaded=true;
+    const ae=document.activeElement;
+    if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+    render();
+  },err=>{toast("Lost connection to saved jobs");});
+  db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},6000);
+}
+function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA/.test(ae.tagName))return;render()}
+
+/* ---------------- estimate ---------------- */
+function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
+function hasLeak(m){return (m.meters||[]).some(x=>x.flow==="yes"&&x.side==="irrigation")}
+function ohmState(v){if(v===""||v==null)return "";const n=num(v);if(n<15)return "short";if(n>80)return "open";if(n>60)return "high";return "ok"}
+function ctlFlags(c){
+  const f={ohm:[],decoders:[],failedMods:0};
+  if(c.wiring==="conventional"){for(let z=1;z<=num(c.zones);z++){const st=ohmState((c.ohms||{})[z]);if(st&&st!=="ok")f.ohm.push({z,st,v:c.ohms[z]})}}
+  if(c.wiring==="2wire"){f.decoders=String(c.badDecoders||"").split(/[,\s]+/).filter(Boolean)}
+  if(c.modular==="yes")f.failedMods=(c.modules||[]).filter(m=>m.status==="Failed").length;
+  return f;
+}
+function buildEstimate(j){
+  const L=[];
+  const add=(sec,key,qty,note)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);L.push({sec,key,label:d.l+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
+  const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;L.push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
+  if(j.est.trip!==false)add("Service","trip",1);
+  (j.mainline||[]).forEach(m=>{
+    const sec=m.name||"Mainline";
+    if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
+    const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1);
+    [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k];if(c.present!=="yes")return;if(c.action==="repair")add(sec,p+"_repair",1);if(c.action==="replace")add(sec,p+"_replace",1)});
+  });
+  (j.controllers||[]).forEach(c=>{
+    const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
+    if(a.replace)add(sec,"ctl_replace",1,[c.brand,c.model].filter(Boolean).join(" "));
+    if(c.power==="no"&&c.powerIssue==="transformer"&&a.transformer!==false&&!a.replace)add(sec,"transformer",1);
+    if(c.rain==="no"&&a.rainAdd)add(sec,"rain_add",1);
+    if(f.ohm.length&&a.wire!==false)add(sec,"wire_trouble",f.ohm.length,"zones "+f.ohm.map(x=>x.z).join(", "));
+    if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,"#"+f.decoders.join(", #"));
+    if(f.failedMods&&a.module!==false)add(sec,"module",f.failedMods);
+  });
+  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));
+  zs.forEach(z=>{
+    const sec="Zone "+(z.num||"?")+(j.controllers.length>1?" · "+ctlName(j,z.ctl):"");
+    for(const t of SIZED)if(z.types.includes(t))for(const s of z.sizes)for(const a of headActs(t,s)){const q=z.acts[`${t}_${s}_${a}`];if(q){
+      const k=headPriceKey(t,s,a);const d=PRICE_DEFAULTS[k];if(d&&(a==="raise"||a==="lower"))add(sec,k,q,`${s}" ${t==="mp"?"MP":t}`);else add(sec,k,q)}}
+    for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))for(const [k] of OTHER_ACTS[t])add(sec,k,z.acts[k]);
+    const v=z.valve||{};
+    if(v.action==="replace")add(sec,v.size==="2\""?"valve_2":v.size==="1.5\""?"valve_15":"valve_1",1);
+    if(v.action==="rebuild")add(sec,"valve_rebuild",1);if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
+    (z.laterals||[]).forEach(b=>{add(sec,"lat_repair",1,b.size);const ft=num(b.ft)-3;if(ft>0)add(sec,"lat_ft",ft);if(b.tree==="yes")add(sec,"lat_tree",1)});
+    (z.adds||[]).forEach(h=>{add(sec,"add_head",1,`${h.size}" ${h.type==="mp"?"MP":h.type}`);add(sec,"add_ft",h.ft)});
+    (z.custom||[]).forEach(c=>addC(sec,c.desc,c.qty,c.price));
+  });
+  if(num(j.est.laborHours)>0)add("Service","labor_hour",j.est.laborHours);
+  (j.est.extra||[]).forEach(c=>addC("Additional items",c.desc,c.qty,c.price));
+  (SHOW_UPSELLS?(j.upsells||[]):[]).filter(u=>u.status==="accepted").forEach(u=>addC("Upgrades",u.desc||u.cat,Math.max(1,num(u.qty)||1),u.price));
+  const sub=L.reduce((s,l)=>s+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*num(j.est.tax)/100;
+  return {lines:L,sub,disc,tax,total:sub-disc+tax};
+}
+
+/* ---------------- UI helpers ---------------- */
+function fld(label,path,type,extra){const v=getP(job(),path);const t=type||"text";
+  if(t==="textarea")return `<label class="f"><span>${label}</span><textarea id="f-${path}" data-f="${path}" ${extra||""}>${esc(v)}</textarea></label>`;
+  return `<label class="f"><span>${label}</span><input id="f-${path}" type="${t}" ${t==="number"?'inputmode="decimal"':""} data-f="${path}" value="${esc(v)}" ${extra||""}></label>`}
+function sel(label,path,opts){const v=getP(job(),path);
+  return phWrap(path,`<label class="f"><span>${label}</span><select id="f-${path}" data-f="${path}" data-rr="1">${opts.map(o=>{const [val,l]=Array.isArray(o)?o:[o,o];return `<option value="${esc(val)}" ${String(v)===String(val)?"selected":""}>${esc(l)}</option>`}).join("")}</select></label>`)}
+function seg(label,path,opts,cls){const v=getP(job(),path);
+  return phWrap(path,`<div class="q"><span class="ql">${label}</span><div class="chips">${opts.map(o=>{const [val,l]=Array.isArray(o)?o:[o,o];return `<button type="button" class="chip ${cls&&cls[val]||""}" data-set="${path}" data-v="${esc(val)}" aria-pressed="${String(v)===String(val)}">${esc(l)}</button>`}).join("")}</div></div>`)}
+function multi(label,path,opts){const v=getP(job(),path)||[];
+  return `<div class="q"><span class="ql">${label}</span><div class="chips">${opts.map(o=>{const [val,l]=Array.isArray(o)?o:[o,o];return `<button type="button" class="chip" data-tog="${path}" data-v="${esc(val)}" aria-pressed="${v.includes(val)}">${esc(l)}</button>`}).join("")}</div></div>`}
+const YN=[["yes","Yes"],["no","No"]];
+function stepRow(label,path,pk,unit){const q=num(getP(job(),path));const p=pk?price(pk):null;
+  return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${p!=null?`<div class="ap num">${money(p)}${unit&&unit!=="each"?" / "+unit:""}</div>`:""}</div>
+  <div class="step"><button type="button" data-step="${path}" data-d="-1" aria-label="Less">−</button><input type="number" inputmode="numeric" id="f-${path}" data-f="${path}" data-num="1" value="${q||""}" placeholder="0" aria-label="${esc(label)} quantity"><button type="button" data-step="${path}" data-d="1" aria-label="More">+</button></div></div>`}
+function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Inspected:"warn",Quoted:"ok",Approved:"ok",Completed:"ok"};return `<span class="pill ${m[status]||"neutral"}">${esc(status)}</span>`}
+function delBtn(id,label){const armed=S.armed===id;return `<button type="button" class="btn danger sm ${armed?"armed":""}" data-arm="${esc(id)}">${armed?"Tap again to remove":label||"Remove"}</button>`}
+
+/* ---------------- views ---------------- */
+function render(){
+  const app=document.getElementById("app");
+  const sy=window.scrollY;const keepScroll=render.keep;render.keep=false;
+  app.innerHTML=S.cur&&job()?jobView():homeView();
+  if(keepScroll)window.scrollTo(0,sy);
+  hydratePhotos(app);
+}
+function banner(){
+  if(S.mode==="local")return `<div class="banner">Jobs are saved on this device only. Open this page from the Claude app to keep jobs synced across devices.</div>`;
+  if(S.ro)return `<div class="banner">You can view jobs but changes won't be saved. Ask the owner to share this page with you as an Editor.</div>`;
+  return "";
+}
+function homeView(){
+  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
+  let body="";
+  if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else body=pricesView();
+  return `<div class="top"><header class="bar"><div class="wrap"><div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":"Jobs"}</h1></div>
+    <button class="iconbtn" data-new="1">+ New job</button></div></header>
+  <nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav></div>
+  <div class="wrap"><main>${banner()}${body}</main></div>`;
+}
+function jobsList(){
+  const all=Object.values(S.jobs).sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||b.updatedAt-a.updatedAt);
+  const open=all.filter(j=>j.info.status!=="Completed");
+  const list=S.filter==="open"?open:all;
+  if(!all.length)return `<div class="card empty">
+    <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 6c0 0-14 16-14 26a14 14 0 0 0 28 0C42 22 28 6 28 6z" fill="none" stroke="currentColor" stroke-width="3"/><path d="M21 33a7 7 0 0 0 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+    <h2>No jobs yet</h2><p class="muted" style="max-width:36ch">Start a job when a call comes in. Walk the mainline, controllers and zones, and the estimate builds itself from the price sheet.</p>
+    <button class="btn" data-new="1">Start a new job</button></div>`;
+  return `<div class="row"><div class="chips">${[["open",`Open (${open.length})`],["all",`All (${all.length})`]].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`).join("")}</div></div>
+  <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
+    return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
+    <div class="who"><strong>${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.info.tech?" · "+esc(j.info.tech):""}</span></div>
+    <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${pillFor(j.info.status)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
+}
+function docketView(){
+  const day=Object.values(S.jobs).filter(j=>j.info.date===S.docketDate).sort((a,b)=>(a.info.window||"").localeCompare(b.info.window||""));
+  const load={};
+  day.forEach(j=>buildEstimate(j).lines.filter(l=>l.m).forEach(l=>{const k=l.key?PRICE_DEFAULTS[l.key].l:l.label;const u=l.unit;const key=k+"|"+u;load[key]=load[key]||{label:k,unit:u,qty:0,jobs:new Set()};load[key].qty+=l.qty;load[key].jobs.add(j.info.customer||"Unnamed")}));
+  const rows=Object.values(load).sort((a,b)=>a.label.localeCompare(b.label));
+  return `<div class="card"><div class="grid2"><label class="f"><span>Day</span><input type="date" id="docket-date" data-docket="1" value="${esc(S.docketDate)}"></label></div></div>
+  <div class="card"><div class="cardhead"><h2>Route</h2><span class="muted small">${day.length} job${day.length===1?"":"s"}</span></div>
+  ${day.length?`<div class="tbl"><table><thead><tr><th>Window</th><th>Customer</th><th>Tech / truck</th><th>Status</th></tr></thead><tbody>${day.map(j=>`<tr><td class="num">${esc(j.info.window||"—")}</td><td><a href="#" data-open="${j.id}">${esc(j.info.customer||"Unnamed")}</a><div class="small muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}${j.info.gate?" · Gate "+esc(j.info.gate):""}</div></td><td>${esc([j.info.tech,j.info.truck].filter(Boolean).join(" / ")||"—")}</td><td>${pillFor(j.info.status)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Nothing scheduled this day. Set a job's date on its Dispatch tab.</p>`}</div>
+  <div class="card"><div class="cardhead"><h2>Load docket</h2><span class="muted small">Parts to load from estimates</span></div>
+  ${rows.length?`<div class="tbl"><table><thead><tr><th>Part / material</th><th class="r">Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td class="r mono">${r.qty}${r.unit!=="each"?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
+}
+function pricesView(){
+  const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
+  return `<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
+  <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
+  <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
+  ${GROUP_ORDER.filter(g=>groups[g]).map(g=>`<div class="card"><h2>${esc(g)}</h2><div class="acts">${groups[g].map(([k,d])=>{const v=S.pricing[k];const changed=v!=null&&v!==""&&num(v)!==d.p;
+    return `<div class="act"><div class="al">${esc(d.l)}<div class="ap">per ${esc(d.u)}${changed?` · sample ${money(d.p)}`:""} · commercial ${money(basePrice(k)*(1+commPct()/100))}</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" value="${v!=null&&v!==""?esc(v):d.p}" aria-label="${esc(d.l)} price"></label></div>`}).join("")}</div></div>`).join("")}
+  <div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`;
+}
+
+function jobView(){
+  const j=job();const e=buildEstimate(j);
+  const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
+  const miss=missingCustomer(j);
+  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer",miss.length?"!":""],["report","Report"],["invoice","Invoice"]];
+  if(!j.info.propType)return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
+    <div style="flex:1;min-width:0"><div class="sub">Start of job</div><h1>New job</h1></div></div></header></div>
+  <div class="wrap"><main>${banner()}<div class="card"><div class="eyebrow">Step 1</div><h2>What kind of property is this?</h2>
+    <p class="muted">This sets pricing for the whole job. Commercial work is priced ${commPct()}% above residential rates.</p>
+    <div class="grid2"><button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="residential">Residential<div class="small" style="font-weight:400;opacity:.85">Homes, HOA single lots</div></button>
+    <button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="commercial">Commercial<div class="small" style="font-weight:400;opacity:.85">Businesses, HOA common areas, multi-family</div></button></div></div>
+    <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`;
+  const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab}[S.tab]();
+  return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
+    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div></div></header>
+  <nav class="tabs"><div class="inner">${tabs.map(([k,l,c])=>`<button class="tab" data-tab="${k}" aria-current="${S.tab===k}">${l}${c?`<span class="ct">${c}</span>`:""}</button>`).join("")}</div></nav></div>
+  <div class="wrap"><main>${banner()}${v}</main></div>${need.length?photoModal(need[0],need.length):""}`;
+}
+const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
+function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");return m}
+function customerFields(){return `<div class="grid2">${fld("Customer name *","info.customer","text",'autocomplete="name"')}${fld("Phone","info.phone","tel")}${fld("Email","info.email","email")}${fld("Gate / access code","info.gate")}</div>
+  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div><p class="small muted">* Required, plus a phone or email, before the report can be produced.</p>`}
+function dispatchTab(){const j=job();const miss=missingCustomer(j);
+  return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
+  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
+  <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
+  ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
+  ${seg("Status","info.status",STATUSES)}
+  ${fld("Problem reported / dispatch notes","info.notes","textarea")}</div>
+  <div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`;
+}
+
+/* ---- map ---- */
+function cvar(n){return `var(${n})`}
+function mapSvg(j,interactive,hideMap){
+  const bg=S.bg[j.id];
+  const hide=hideMap||{};
+  let s=`<svg viewBox="0 0 1000 700" ${interactive?'id="mapsvg"':""} role="img" aria-label="Property map">
+  <defs><pattern id="g${interactive?1:2}" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="var(--line)" stroke-width="1"/></pattern></defs>
+  <rect width="1000" height="700" fill="var(--bg)"/>${bg?`<image href="${bg}" x="0" y="0" width="1000" height="700" preserveAspectRatio="xMidYMid slice" opacity=".9"/>`:`<rect width="1000" height="700" fill="url(#g${interactive?1:2})"/>`}`;
+  for(const l of j.map.lines){if(hide[l.t])continue;const d=MAP_LINES.find(x=>x[0]===l.t);if(!d||!l.pts.length)continue;
+    const sel=interactive&&S.mapSel===l.id;
+    s+=`<polyline points="${l.pts.map(p=>p.join(",")).join(" ")}" fill="none" stroke="${sel?"var(--bad)":cvar(d[2])}" stroke-width="${d[3]}" stroke-linecap="round" stroke-linejoin="round" ${d[4]?`stroke-dasharray="${d[4]}"`:""}/>`;
+    if(interactive)s+=`<polyline data-mid="${l.id}" points="${l.pts.map(p=>p.join(",")).join(" ")}" fill="none" stroke="transparent" stroke-width="28"/>`;
+    if(interactive&&S.drawLine===l.id)l.pts.forEach(p=>s+=`<circle cx="${p[0]}" cy="${p[1]}" r="7" fill="var(--surface)" stroke="${cvar(d[2])}" stroke-width="3"/>`);
+  }
+  for(const it of j.map.items){if(hide[it.t])continue;const d=MAP_POINTS.find(x=>x[0]===it.t);if(!d)continue;
+    const sel=interactive&&S.mapSel===it.id;const head=it.t==="head";const r=head?11:19;
+    s+=`<g ${interactive?`data-mid="${it.id}"`:""} transform="translate(${it.x},${it.y})">${sel?`<circle r="${r+7}" fill="none" stroke="var(--bad)" stroke-width="3"/>`:""}
+      <circle r="${r}" fill="${head?"var(--surface)":cvar(d[3])}" stroke="${head?"var(--ink)":"var(--surface)"}" stroke-width="${head?3:2.5}"/>
+      <text text-anchor="middle" dy=".35em" font-family="IBM Plex Mono, monospace" font-size="${head?11:14}" font-weight="600" fill="${head?"var(--ink)":"var(--surface)"}">${esc(head?(it.sub||"").slice(0,2).toUpperCase():d[2])}</text>
+      ${it.label?`<text y="${r+17}" text-anchor="middle" font-family="Source Sans 3, sans-serif" font-size="15" font-weight="700" fill="var(--ink)" stroke="var(--surface)" stroke-width="4" paint-order="stroke">${esc(it.label)}</text>`:""}</g>`;
+  }
+  s+="</svg>";
+  return s.replace(/<(\w+)([^>]*)>/g,(m,tag,attrs)=>{const st=[];let self=/\/\s*$/.test(attrs);attrs=attrs.replace(/\/\s*$/,"").replace(/ (fill|stroke)="(var\([^)]*\))"/g,(mm,a,v)=>{st.push(a+":"+v);return ""});return st.length?`<${tag}${attrs} style="${st.join(";")}"${self?"/":""}>`:m});
+}
+function mapTab(){const j=job();loadBg(j.id);
+  const counts={};j.map.items.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);j.map.lines.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);
+  const n=j.map.items.length+j.map.lines.length;
+  return `<div class="card"><div class="cardhead"><h2>Property map</h2><span class="muted small">${n} item${n===1?"":"s"}</span></div>
+  <button type="button" class="mapprev" data-mapopen="1" aria-label="Open map editor">${mapSvg(j,false,S.mapHide)}<span class="mapopen">${n?"Edit map":"Start the map"}</span></button>
+  <div class="row"><button class="btn" data-mapopen="1">Open map editor</button>
+    <label class="btn quiet" style="cursor:pointer">${S.bg[j.id]?"Change site photo":"Add site photo"}<input type="file" accept="image/*" data-bgfile="1" hidden></label>
+    ${S.bg[j.id]?`<button class="btn quiet sm" data-bgclear="1">Remove photo</button>`:""}</div>
+  <div class="q"><span class="ql">Show on map and report</span><div class="chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-hide="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])} <span class="mono">${counts[p[0]]}</span></button>`).join("")||'<span class="small muted">Layers appear as you add items.</span>'}</div></div></div>`;
+}
+
+/* ---------------- full-screen map editor ---------------- */
+const ME={open:false,vb:{x:0,y:0,w:1000,h:700},tool:"select",sel:null,draw:null,ptrs:new Map(),g:null,undo:[],layers:false,raf:0};
+const HEAD_TOOLS=[["head:spray","Spray"],["head:mp","MP"],["head:rotor","Rotor"],["head:shrub","Shrub"],["head:bubbler","Bubbler"],["head:drip","Emitter"],["head:cap","Cap"]];
+function meEl(id){return document.getElementById(id)}
+function openMap(){
+  const j=job();if(!j)return;loadBg(j.id);
+  ME.open=true;ME.tool="select";ME.sel=null;ME.draw=null;ME.undo=[];ME.layers=false;
+  const el=document.createElement("div");el.id="me";el.className="me";el.setAttribute("role","dialog");el.setAttribute("aria-label","Map editor");
+  el.innerHTML=`<div class="me-top" id="me-top"></div><div class="me-stage" id="me-stage"><svg id="me-svg" preserveAspectRatio="none"></svg></div><div class="me-bottom" id="me-bottom"></div>`;
+  document.body.appendChild(el);document.body.style.overflow="hidden";
+  const st=meEl("me-stage");
+  st.addEventListener("pointerdown",meDown);st.addEventListener("pointermove",meMove);
+  st.addEventListener("pointerup",meUp);st.addEventListener("pointercancel",meUp);
+  st.addEventListener("wheel",meWheel,{passive:false});
+  el.addEventListener("click",meClick);el.addEventListener("input",meInput);
+  window.addEventListener("resize",meResize);
+  meChrome();meFit();meDraw();
+  if(window.ResizeObserver){ME.ro=new ResizeObserver(()=>meResize());ME.ro.observe(st)}
+}
+function closeMap(){ME.open=false;if(ME.ro){ME.ro.disconnect();ME.ro=null}const el=meEl("me");if(el)el.remove();document.body.style.overflow="";window.removeEventListener("resize",meResize);rr()}
+function meResize(){if(!ME.open)return;const r=meEl("me-stage").getBoundingClientRect();if(!r.width||!r.height)return;const v=ME.vb;const h=v.w*r.height/r.width;if(Math.abs(h-v.h)<0.5)return;ME.vb={x:v.x,y:v.y,w:v.w,h};meDraw()}
+function meFit(){const r=meEl("me-stage").getBoundingClientRect();const a=r.height/Math.max(1,r.width);
+  if(a>0.7){ME.vb={x:-20,w:1040,h:1040*a,y:350-1040*a/2}}else{const h=740;ME.vb={y:-20,h,w:h/a,x:500-h/a/2}}}
+function meK(){const r=meEl("me-stage").getBoundingClientRect();return ME.vb.w/Math.max(1,r.width)}
+function mePt(cx,cy){const r=meEl("me-stage").getBoundingClientRect();return [ME.vb.x+(cx-r.left)*ME.vb.w/r.width,ME.vb.y+(cy-r.top)*ME.vb.h/r.height]}
+function clampPt(p){return [Math.round(Math.max(0,Math.min(1000,p[0]))),Math.round(Math.max(0,Math.min(700,p[1])))]}
+function meReq(){if(ME.raf)return;ME.raf=requestAnimationFrame(()=>{ME.raf=0;meDraw()})}
+function mePush(){const j=job();ME.undo.push(JSON.stringify(j.map));if(ME.undo.length>40)ME.undo.shift()}
+function meUndo(){const j=job();if(!ME.undo.length)return;j.map=Object.assign(j.map,JSON.parse(ME.undo.pop()));ME.sel=null;ME.draw=null;scheduleSave(S.cur);meChrome();meDraw()}
+function meDraw(){
+  const j=job();if(!j||!ME.open)return;const svg=meEl("me-svg");const k=meK();const v=ME.vb;const hide=S.mapHide;const bg=S.bg[j.id];
+  svg.setAttribute("viewBox",`${v.x} ${v.y} ${v.w} ${v.h}`);
+  let s=`<rect x="${v.x-10}" y="${v.y-10}" width="${v.w+20}" height="${v.h+20}" style="fill:var(--sunk)"/>
+  <defs><pattern id="meg" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" style="stroke:var(--line)" stroke-width="${Math.min(1.5,k)}"/></pattern></defs>
+  <rect width="1000" height="700" style="fill:var(--bg)"/>${bg?`<image href="${bg}" width="1000" height="700" preserveAspectRatio="xMidYMid slice" opacity=".9"/>`:`<rect width="1000" height="700" fill="url(#meg)"/>`}
+  <rect width="1000" height="700" fill="none" style="stroke:var(--muted)" stroke-width="${1.5*k}" stroke-dasharray="${6*k} ${5*k}"/>`;
+  const selId=ME.sel&&ME.sel.id;
+  for(const l of j.map.lines){if(hide[l.t]||!l.pts.length)continue;const d=MAP_LINES.find(x=>x[0]===l.t);if(!d)continue;
+    const pts=l.pts.map(p=>p.join(",")).join(" ");const on=selId===l.id||ME.draw===l.id;
+    if(on)s+=`<polyline points="${pts}" fill="none" style="stroke:var(--accent-soft)" stroke-width="${(d[3]+10)*k}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s+=`<polyline points="${pts}" fill="none" style="stroke:var(${d[2]})" stroke-width="${d[3]*k}" stroke-linecap="round" stroke-linejoin="round" ${d[4]?`stroke-dasharray="${d[4].split(" ").map(x=>x*k).join(" ")}"`:""}/>`;
+    s+=`<polyline data-line="${l.id}" points="${pts}" fill="none" stroke="transparent" stroke-width="${30*k}" stroke-linecap="round"/>`;
+    if(on)l.pts.forEach((p,i)=>s+=`<circle data-vtx="${l.id}:${i}" cx="${p[0]}" cy="${p[1]}" r="${11*k}" style="fill:var(--surface);stroke:var(--accent)" stroke-width="${3*k}"/>`);
+  }
+  for(const it of j.map.items){if(hide[it.t])continue;const d=MAP_POINTS.find(x=>x[0]===it.t);if(!d)continue;
+    const head=it.t==="head";const r=(head?12:18)*k;const on=selId===it.id;
+    s+=`<g data-item="${it.id}" transform="translate(${it.x},${it.y})">
+      <circle r="${30*k}" fill="transparent"/>
+      ${on?`<circle r="${r+9*k}" fill="none" style="stroke:var(--accent)" stroke-width="${3.5*k}"/>`:""}
+      <circle r="${r}" style="fill:${head?"var(--surface)":`var(${d[3]})`};stroke:${head?"var(--ink)":"var(--surface)"}" stroke-width="${(head?3:2.5)*k}"/>
+      <text text-anchor="middle" dy=".35em" font-family="IBM Plex Mono, monospace" font-size="${(head?10:13)*k}" font-weight="600" style="fill:${head?"var(--ink)":"var(--surface)"}">${esc(head?(it.sub||"").slice(0,2).toUpperCase():d[2])}</text>
+      ${it.label?`<text y="${r+15*k}" text-anchor="middle" font-family="Source Sans 3, sans-serif" font-size="${13*k}" font-weight="700" style="fill:var(--ink);stroke:var(--surface)" stroke-width="${4*k}" paint-order="stroke">${esc(it.label)}</text>`:""}</g>`;
+  }
+  svg.innerHTML=s;
+}
+function toolLabel(t){if(t==="select")return "Move";const h=HEAD_TOOLS.find(x=>x[0]===t);if(h)return h[1]+" head";const p=MAP_POINTS.find(x=>x[0]===t);if(p)return p[1];const l=MAP_LINES.find(x=>x[0]===t);return l?l[1]:t}
+function meChrome(){
+  const j=job();const top=meEl("me-top"),bot=meEl("me-bottom");if(!top)return;
+  const isLine=MAP_LINES.some(l=>l[0]===ME.tool);const drawing=ME.draw&&j.map.lines.find(l=>l.id===ME.draw);
+  top.innerHTML=`<button class="me-btn strong" data-me="done">Done</button><div class="me-title">${esc(j.info.customer||"Property map")}</div>
+    <button class="me-btn" data-me="undo" ${ME.undo.length?"":"disabled"} aria-label="Undo">↶ Undo</button>
+    <button class="me-btn" data-me="out" aria-label="Zoom out">−</button><button class="me-btn" data-me="in" aria-label="Zoom in">+</button><button class="me-btn" data-me="fit">Fit</button>`;
+  let hint;
+  if(ME.tool==="select")hint="Drag items to move. Drag empty space to pan, pinch to zoom.";
+  else if(isLine)hint=drawing?`Tap each bend. Tap equipment to connect. ${drawing.pts.length} point${drawing.pts.length===1?"":"s"}.`:"Tap where the line starts.";
+  else hint=`Tap the map to place: ${toolLabel(ME.tool)}. Drag to pan.`;
+  let sheet="";
+  const sel=ME.sel&&(ME.sel.kind==="item"?j.map.items.find(i=>i.id===ME.sel.id):j.map.lines.find(l=>l.id===ME.sel.id));
+  if(sel&&ME.sel.kind==="item"){const d=MAP_POINTS.find(x=>x[0]===sel.t);
+    sheet=`<div class="me-sheet"><div class="row"><b class="spacer">${esc(sel.t==="head"?(HEAD_TYPES.find(h=>h[0]===sel.sub)||["","Head"])[1]+" head":d[1])}</b><button class="btn quiet sm" data-me="desel">Close</button></div>
+      ${sel.t==="head"?`<div class="chips">${HEAD_TYPES.map(h=>`<button class="chip" data-me="sub" data-v="${h[0]}" aria-pressed="${sel.sub===h[0]}">${h[1]}</button>`).join("")}</div>`:""}
+      <div class="row"><input type="text" id="me-label" data-mel="label" value="${esc(sel.label)}" placeholder="Label (e.g. Z4)" style="flex:1;min-width:120px"><button class="btn quiet sm" data-me="dup">Duplicate</button><button class="btn danger sm" data-me="del">Delete</button></div></div>`}
+  if(sel&&ME.sel.kind==="line"){const d=MAP_LINES.find(x=>x[0]===sel.t);
+    sheet=`<div class="me-sheet"><div class="row"><b class="spacer">${d[1]} · ${sel.pts.length} points</b><button class="btn quiet sm" data-me="desel">Close</button></div>
+      <p class="small muted" style="margin:0">Drag the round handles to reshape.</p>
+      <div class="row"><input type="text" id="me-label" data-mel="label" value="${esc(sel.label)}" placeholder="Label (e.g. 1&quot; PVC)" style="flex:1;min-width:120px"><button class="btn quiet sm" data-me="extend">Add points</button><button class="btn danger sm" data-me="del">Delete</button></div></div>`}
+  const counts={};j.map.items.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);j.map.lines.forEach(i=>counts[i.t]=(counts[i.t]||0)+1);
+  const layers=ME.layers?`<div class="me-row chips">${MAP_POINTS.concat(MAP_LINES.map(l=>[l[0],l[1]])).filter(p=>counts[p[0]]).map(p=>`<button class="chip" data-me="hide" data-v="${p[0]}" aria-pressed="${!S.mapHide[p[0]]}">${esc(p[1])}</button>`).join("")||'<span class="small muted">Nothing on the map yet.</span>'}</div>`:"";
+  const tb=(t,l,sw)=>`<button class="tool" data-me="tool" data-v="${t}" aria-pressed="${ME.tool===t}">${sw||""}${esc(l)}</button>`;
+  bot.innerHTML=`${sheet}${layers}<div class="me-row"><span class="small muted spacer">${hint}</span>
+    ${drawing?`<button class="btn quiet sm" data-me="unpt">Undo point</button><button class="btn sm" data-me="finish">Finish line</button>`:""}
+    <button class="chip" data-me="layers" aria-pressed="${ME.layers}">Layers</button></div>
+    <div class="me-pal">
+      ${tb("select","Move",'<span aria-hidden="true">✋</span>')}
+      <span class="me-sep">Lines</span>${MAP_LINES.map(l=>tb(l[0],l[1],`<span class="sw line" style="background:var(${l[2]})"></span>`)).join("")}
+      <span class="me-sep">Heads</span>${HEAD_TOOLS.map(h=>tb(h[0],h[1],'<span class="sw" style="background:var(--surface);border:2px solid var(--ink)"></span>')).join("")}
+      <span class="me-sep">Equipment</span>${MAP_POINTS.filter(p=>p[0]!=="head").map(p=>tb(p[0],p[1],`<span class="sw" style="background:var(${p[3]})"></span>`)).join("")}
+    </div>`;
+  const pal=bot.querySelector(".me-pal");if(pal&&ME.palScroll)pal.scrollLeft=ME.palScroll;
+  meResize();
+}
+function meSelItem(){const j=job();return ME.sel&&(ME.sel.kind==="item"?j.map.items.find(i=>i.id===ME.sel.id):j.map.lines.find(l=>l.id===ME.sel.id))}
+function meClick(ev){
+  const b=ev.target.closest("[data-me]");if(!b)return;const a=b.dataset.me;const j=job();
+  const pal=document.querySelector(".me-pal");if(pal)ME.palScroll=pal.scrollLeft;
+  if(a==="done"){closeMap();return}
+  if(a==="undo"){meUndo();return}
+  if(a==="in"||a==="out"){const f=a==="in"?0.7:1/0.7;meZoom(f,ME.vb.x+ME.vb.w/2,ME.vb.y+ME.vb.h/2);return}
+  if(a==="fit"){meFit();meDraw();return}
+  if(a==="tool"){ME.tool=b.dataset.v;ME.draw=null;if(ME.tool!=="select")ME.sel=null;meChrome();meDraw();return}
+  if(a==="layers"){ME.layers=!ME.layers;meChrome();return}
+  if(a==="hide"){S.mapHide[b.dataset.v]=!S.mapHide[b.dataset.v];if(ME.sel)ME.sel=null;meChrome();meDraw();return}
+  if(a==="finish"){const l=j.map.lines.find(x=>x.id===ME.draw);if(l&&l.pts.length<2){mePush();j.map.lines=j.map.lines.filter(x=>x!==l)}ME.draw=null;ME.sel=l&&l.pts.length>=2?{kind:"line",id:l.id}:null;ME.tool="select";scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="unpt"){const l=j.map.lines.find(x=>x.id===ME.draw);if(l){mePush();l.pts.pop();if(!l.pts.length){j.map.lines=j.map.lines.filter(x=>x!==l);ME.draw=null}scheduleSave(S.cur);meChrome();meDraw()}return}
+  if(a==="desel"){ME.sel=null;meChrome();meDraw();return}
+  const sel=meSelItem();if(!sel)return;
+  if(a==="sub"){mePush();sel.sub=b.dataset.v;scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="del"){mePush();if(ME.sel.kind==="item")j.map.items=j.map.items.filter(i=>i!==sel);else j.map.lines=j.map.lines.filter(l=>l!==sel);ME.sel=null;scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="dup"){mePush();const c=Object.assign({},sel,{id:uid("i"),x:Math.min(1000,sel.x+40),y:Math.min(700,sel.y+30)});j.map.items.push(c);ME.sel={kind:"item",id:c.id};scheduleSave(S.cur);meChrome();meDraw();return}
+  if(a==="extend"){ME.tool=sel.t;ME.draw=sel.id;meChrome();meDraw();return}
+}
+function meInput(ev){const t=ev.target;if(!t.dataset.mel)return;const sel=meSelItem();if(!sel)return;sel[t.dataset.mel]=t.value;scheduleSave(S.cur);meReq()}
+function meZoom(f,cx,cy){const v=ME.vb;const w=Math.max(150,Math.min(3000,v.w*f));const s=w/v.w;ME.vb={x:cx-(cx-v.x)*s,y:cy-(cy-v.y)*s,w,h:v.h*s};meReq()}
+function meWheel(ev){ev.preventDefault();const p=mePt(ev.clientX,ev.clientY);meZoom(ev.deltaY>0?1.12:1/1.12,p[0],p[1])}
+function meDown(ev){
+  const st=meEl("me-stage");try{st.setPointerCapture(ev.pointerId)}catch(e){}
+  ME.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(document.activeElement&&document.activeElement.id==="me-label")document.activeElement.blur();
+  if(ME.ptrs.size===2){const [a,b]=[...ME.ptrs.values()];ME.g={type:"pinch",d0:Math.hypot(a.x-b.x,a.y-b.y)||1,c0:mePt((a.x+b.x)/2,(a.y+b.y)/2),vb0:Object.assign({},ME.vb)};return}
+  if(ME.ptrs.size>2)return;
+  const j=job();const tEl=ev.target.closest("[data-item],[data-vtx],[data-line]");
+  const p=mePt(ev.clientX,ev.clientY);const g={type:"pending",sx:ev.clientX,sy:ev.clientY,p0:p,vb0:Object.assign({},ME.vb),moved:false};
+  if(tEl&&tEl.dataset.item){const it=j.map.items.find(i=>i.id===tEl.dataset.item);if(it){g.item=it;g.off=[it.x-p[0],it.y-p[1]]}}
+  else if(tEl&&tEl.dataset.vtx){const [lid,i]=tEl.dataset.vtx.split(":");const l=j.map.lines.find(x=>x.id===lid);if(l){g.vtx=[l,+i];g.off=[l.pts[i][0]-p[0],l.pts[i][1]-p[1]]}}
+  else if(tEl&&tEl.dataset.line)g.line=tEl.dataset.line;
+  ME.g=g;
+}
+function meMove(ev){
+  if(!ME.ptrs.has(ev.pointerId))return;ME.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});const g=ME.g;if(!g)return;
+  if(g.type==="pinch"&&ME.ptrs.size>=2){const [a,b]=[...ME.ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y)||1;
+    const w=Math.max(150,Math.min(3000,g.vb0.w*g.d0/d));const h=g.vb0.h*w/g.vb0.w;const r=meEl("me-stage").getBoundingClientRect();
+    const cx=(a.x+b.x)/2-r.left,cy=(a.y+b.y)/2-r.top;ME.vb={w,h,x:g.c0[0]-cx*w/r.width,y:g.c0[1]-cy*h/r.height};meReq();return}
+  if(g.type!=="pending"&&g.type!=="drag"&&g.type!=="pan")return;
+  if(!g.moved&&Math.hypot(ev.clientX-g.sx,ev.clientY-g.sy)>7){g.moved=true;
+    if(g.item||g.vtx){mePush();g.type="drag";if(g.item)ME.sel={kind:"item",id:g.item.id}}else g.type="pan"}
+  if(g.type==="drag"){const p=mePt(ev.clientX,ev.clientY);const q=clampPt([p[0]+g.off[0],p[1]+g.off[1]]);
+    if(g.item){g.item.x=q[0];g.item.y=q[1]}else{g.vtx[0].pts[g.vtx[1]]=q}meReq()}
+  if(g.type==="pan"){const r=meEl("me-stage").getBoundingClientRect();ME.vb.x=g.vb0.x-(ev.clientX-g.sx)*g.vb0.w/r.width;ME.vb.y=g.vb0.y-(ev.clientY-g.sy)*g.vb0.h/r.height;meReq()}
+}
+function meUp(ev){
+  ME.ptrs.delete(ev.pointerId);const g=ME.g;
+  if(g&&g.type==="pinch"){if(ME.ptrs.size===0)ME.g=null;else ME.g={type:"done"};return}
+  if(ME.ptrs.size)return;ME.g=null;if(!g)return;
+  if(g.type==="drag"){scheduleSave(S.cur);meChrome();return}
+  if(g.type!=="pending"||ev.type==="pointercancel")return;
+  meTap(g);
+}
+function meTap(g){
+  const j=job();const isLine=MAP_LINES.some(l=>l[0]===ME.tool);
+  if(isLine){let p=clampPt(g.p0);if(g.item)p=[g.item.x,g.item.y];
+    mePush();let l=ME.draw&&j.map.lines.find(x=>x.id===ME.draw);
+    if(!l){l={id:uid("l"),t:ME.tool,pts:[],label:""};j.map.lines.push(l);ME.draw=l.id}
+    l.pts.push(p);scheduleSave(S.cur);meChrome();meDraw();return}
+  if(g.item){ME.sel={kind:"item",id:g.item.id};meChrome();meDraw();return}
+  if(g.vtx){ME.sel={kind:"line",id:g.vtx[0].id};meChrome();meDraw();return}
+  if(g.line){ME.sel={kind:"line",id:g.line};meChrome();meDraw();return}
+  if(ME.tool==="select"){if(ME.sel){ME.sel=null;meChrome();meDraw()}return}
+  const p=clampPt(g.p0);mePush();
+  let it;if(ME.tool.startsWith("head:"))it={id:uid("i"),t:"head",sub:ME.tool.slice(5),x:p[0],y:p[1],label:"",notes:""};
+  else it={id:uid("i"),t:ME.tool,sub:"",x:p[0],y:p[1],label:"",notes:""};
+  j.map.items.push(it);ME.sel={kind:"item",id:it.id};scheduleSave(S.cur);meChrome();meDraw();
+}
+
+/* ---- mainline ---- */
+function compBlock(base,c,label,hasPos){
+  return `<div class="combo"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
+  ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
+  <div class="grid3">${fld("Size",base+".size","text",'placeholder="1&quot;"')}${fld("Type / brand",base+".type")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
+  ${seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
+}
+function mainlineTab(){const j=job();
+  return j.mainline.map((m,mi)=>{const b=`mainline.${mi}`;const leak=hasLeak(m);
+  return `<div class="card"><div class="cardhead"><h2>${esc(m.name)}</h2>${leak?'<span class="pill bad">Leak</span>':""}</div>
+  ${fld("Name",b+".name")}
+  <div class="combo"><h4>Water meters</h4>${m.meters.map((w,wi)=>{const wb=`${b}.meters.${wi}`;return `<div style="display:grid;gap:8px;padding-block:6px;border-bottom:1px dashed var(--line)">
+    <div class="grid2">${fld("Meter number",wb+".num","text",'class="mono"')}${fld("Meter reading",wb+".reading","text",'inputmode="decimal"')}</div>
+    ${seg("Flow visible with system off?",wb+".flow",YN,{yes:"bad"})}
+    ${w.flow==="yes"?seg("Where is the flow?",wb+".side",[["plumbing","Plumbing side"],["irrigation","Irrigation side"]]):""}
+    ${w.flow==="yes"&&w.side==="plumbing"?`<p class="note small">Flow is on the house plumbing side. Note it for the customer; it's outside the irrigation repair.</p>`:""}
+    ${m.meters.length>1?`<div>${delBtn("meter:"+mi+":"+wi,"Remove meter")}</div>`:""}</div>`}).join("")}
+    <div><button class="btn ghost sm" data-add="${b}.meters" data-tpl="meter">+ Add meter</button></div></div>
+  ${leak?`<div class="combo" style="border-color:var(--bad)"><h4>Mainline leak</h4>
+    ${seg("Leak visible?",b+".leak.visible",YN)}
+    ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
+    ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
+  <div class="combo"><h4>Backflow preventer</h4>
+    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    ${seg("Insulated?",b+".bf.insulated",YN)}
+    ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}</div>
+  ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
+  ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
+  ${compBlock(b+".mv",m.mv,"Master valve",true)}
+  ${fld("Notes",b+".notes","textarea")}
+  ${j.mainline.length>1?`<div>${delBtn("main:"+mi,"Remove this mainline")}</div>`:""}</div>`}).join("")+`<div><button class="btn ghost" data-addmain="1">+ Add another mainline</button></div>`;
+}
+
+/* ---- controllers ---- */
+function controllersTab(){const j=job();
+  if(!j.controllers.length)return `<div class="card empty"><h2>No controllers yet</h2><p class="muted">Add each controller on the property. Zones are tied to a controller.</p><button class="btn" data-addctl="1">+ Add controller</button></div>`;
+  return j.controllers.map((c,ci)=>{const b=`controllers.${ci}`;const f=ctlFlags(c);const zn=Math.min(Math.max(num(c.zones),0),200);
+  const flags=[];if(c.power==="no")flags.push('<span class="pill bad">No power</span>');if(f.ohm.length)flags.push(`<span class="pill bad">${f.ohm.length} wiring fault${f.ohm.length>1?"s":""}</span>`);if(c.overcurrent==="yes")flags.push('<span class="pill bad">Overcurrent</span>');if(f.decoders.length)flags.push(`<span class="pill warn">${f.decoders.length} decoder${f.decoders.length>1?"s":""} down</span>`);
+  return `<div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${flags.join("")}</div>
+  <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${fld("Brand",b+".brand","text",'placeholder="Hunter, Rain Bird…"')}${fld("Model",b+".model")}</div>
+  <div class="grid3">${fld("Number of zones",b+".zones","number",'data-rr="1" min="1" max="200"')}</div>
+  ${seg("Power to controller?",b+".power",YN,{no:"bad"})}
+  ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"]]):""}
+  ${seg("Wiring",b+".wiring",[["conventional","Conventional"],["2wire","2-wire"]])}
+  ${seg("Rain sensor present?",b+".rain",YN)}
+  ${seg("Modular?",b+".modular",YN)}
+  ${c.modular==="yes"?`<div class="combo"><h4>Modules</h4>${(c.modules||[]).map((mo,mi)=>`<div class="row"><span class="mono small">#${mi+1}</span><div style="flex:1;min-width:110px">${fld("Stations",`${b}.modules.${mi}.size`,"text",'placeholder="4"')}</div><div style="flex:1;min-width:120px">${sel("Status",`${b}.modules.${mi}.status`,["OK","Failed","Missing","Unknown"])}</div>${delBtn("mod:"+ci+":"+mi,"✕")}</div>`).join("")}
+    <div><button class="btn ghost sm" data-add="${b}.modules" data-tpl="module">+ Add module</button></div></div>`:""}
+  ${c.wiring==="conventional"?`<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted">Typical solenoid 20–60 Ω. Under 15 flags a short, 61–80 high, over 80 open.</p>
+    <div class="ohms">${Array.from({length:zn},(_,i)=>{const z=i+1;const st=ohmState((c.ohms||{})[z]);return `<label class="ohm ${st}"><b>Zone ${z}</b><input type="number" inputmode="decimal" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" data-ohm="1" value="${esc((c.ohms||{})[z])}" aria-label="Zone ${z} ohms"></label>`}).join("")}</div></div>`
+  :`<div class="combo"><h4>2-wire path</h4>${seg("Overcurrent on the path?",b+".overcurrent",YN,{yes:"bad"})}
+    ${c.overcurrent==="yes"?fld("Zones affected",b+".ocZones","number"):""}
+    ${fld("Decoders not communicating",b+".badDecoders","text",'placeholder="e.g. 3, 7, 12" data-rr="1"')}</div>`}
+  <details class="combo" ${c.programs.length?"open":""}><summary>Programming · ${c.programs.length} program${c.programs.length===1?"":"s"}</summary>
+  ${c.programs.map((p,pi)=>{const pb=`${b}.programs.${pi}`;const tot=Object.values(p.runtimes||{}).reduce((s,v)=>s+num(v),0);return `<div style="display:grid;gap:8px;padding-block:10px;border-bottom:1px dashed var(--line)">
+    <div class="row"><h4 style="margin:0;font-family:var(--display);flex:1">Program ${esc(p.name)} <span class="small muted num">· ${tot} min total</span></h4>${delBtn("prog:"+ci+":"+pi,"✕")}</div>
+    <div class="grid3">${fld("Program",pb+".name")}${fld("Start times",pb+".starts","text",'placeholder="5:00a, 9:30p"')}${fld("Seasonal adjust %",pb+".seasonal","number")}</div>
+    ${multi("Water days",pb+".days",DAYS)}
+    <div class="rt">${Array.from({length:zn},(_,i)=>`<label>Z${i+1} min<input type="number" inputmode="numeric" id="f-${pb}.runtimes.${i+1}" data-f="${pb}.runtimes.${i+1}" value="${esc((p.runtimes||{})[i+1])}"></label>`).join("")}</div></div>`}).join("")}
+  <div style="padding-top:8px"><button class="btn ghost sm" data-addprog="${ci}">+ Add program</button></div></details>
+  <div class="combo"><h4>Recommend</h4><div class="acts">
+    ${chk(b+".act.replace","Replace controller","ctl_replace")}
+    ${c.power==="no"&&c.powerIssue==="transformer"?chk(b+".act.transformer","Replace transformer","transformer",true):""}
+    ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add"):""}
+    ${f.ohm.length?chk(b+".act.wire",`Wire troubleshooting · zones ${f.ohm.map(x=>x.z).join(", ")}`,"wire_trouble",true):""}
+    ${f.decoders.length?chk(b+".act.decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"decoder",true):""}
+    ${f.failedMods?chk(b+".act.module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"module",true):""}
+  </div></div>
+  ${fld("Notes",b+".notes","textarea")}
+  <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+`<div><button class="btn ghost" data-addctl="1">+ Add controller</button></div>`;
+}
+function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==false:!!v;
+  return `<div class="act ${on?"on":""}"><div class="al">${esc(label)}<div class="ap num">${money(price(pk))}${PRICE_DEFAULTS[pk].u!=="each"?" / "+PRICE_DEFAULTS[pk].u:""}</div></div><button type="button" class="chip" data-chk="${path}" data-def="${defOn?1:0}" aria-pressed="${on}">${on?"On estimate":"Add"}</button></div>`}
+
+/* ---- zones ---- */
+function zonesTab(){const j=job();
+  if(!j.controllers.length)return `<div class="card empty"><h2>Add a controller first</h2><p class="muted">Each zone belongs to a controller.</p><button class="btn" data-tab="controllers">Go to controllers</button></div>`;
+  const zs=j.zones.map((z,i)=>[z,i]).sort((a,b)=>ctlName(j,a[0].ctl).localeCompare(ctlName(j,b[0].ctl))||num(a[0].num)-num(b[0].num));
+  if(S.zoneOpen&&!j.zones.find(z=>z.id===S.zoneOpen))S.zoneOpen=null;
+  const list=`<div class="card"><div class="cardhead"><h2>Zones</h2><button class="btn sm" data-addzone="1">+ Add zone</button></div>
+   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);return `<button class="chip" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
+  const zo=j.zones.findIndex(z=>z.id===S.zoneOpen);
+  if(zo<0)return list;
+  const z=j.zones[zo],b=`zones.${zo}`;
+  let combos="";
+  const sized=SIZED.filter(t=>z.types.includes(t));
+  for(const t of sized)for(const s of SIZES.filter(s=>z.sizes.includes(s))){const acts=headActs(t,s);
+    combos+=`<div class="combo"><h4>${s}" ${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${acts.map(a=>stepRow(ACT_L[a],`${b}.acts.${t}_${s}_${a}`,headPriceKey(t,s,a))).join("")}</div></div>`}
+  for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))combos+=`<div class="combo"><h4>${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${OTHER_ACTS[t].map(([k,l])=>stepRow(l,`${b}.acts.${k}`,k,PRICE_DEFAULTS[k].u)).join("")}</div></div>`;
+  const v=z.valve||{};
+  return list+`<div class="card"><div class="cardhead"><h2>Zone ${esc(z.num)}</h2><span class="muted small">${esc(ctlName(j,z.ctl))}</span></div>
+  <div class="grid2">${sel("Controller",b+".ctl",j.controllers.map(c=>[c.id,c.name]))}${fld("Zone number",b+".num","number",'data-rr="1"')}</div>
+  ${seg("Soil type",b+".soil",["Clay","Loam","Sandy","Rocky","Mixed"])}
+  ${seg("Sun exposure",b+".sun",[["partial","Partial"],["half","Half"],["full","Full"],["mixed","Mixed"]])}
+  ${multi("Head types",b+".types",HEAD_TYPES)}
+  ${sized.length?multi("Head sizes",b+".sizes",SIZES.map(s=>[s,s+'"'])):""}
+  ${sized.length&&!z.sizes.length?`<p class="small muted">Pick the head sizes to see repair options.</p>`:""}
+  ${combos}
+  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sel("Size",b+".valve.size",["","3/4\"","1\"","1.5\"","2\""])}${fld("Type / brand",b+".valve.type")}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
+    ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["locate","Locate valve"]])}
+    ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
+  <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
+    <p class="small muted">Repair price covers the first 3 ft; longer runs add per-foot pipe.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
+  <div class="combo"><h4>Add heads</h4>${(z.adds||[]).map((h,hi)=>`<div class="grid3" style="align-items:end">${sel("Type",`${b}.adds.${hi}.type`,[["spray","Spray"],["mp","MP rotator"],["rotor","Rotor"]])}${sel("Size",`${b}.adds.${hi}.size`,SIZES.map(s=>[s,s+'"']))}${fld("Distance (ft)",`${b}.adds.${hi}.ft`,"number")}<div>${delBtn("add:"+zo+":"+hi,"Remove")}</div></div>`).join("")}
+    <div><button class="btn ghost sm" data-add="${b}.adds" data-tpl="add">+ Add head</button></div></div>
+  <div class="combo"><h4>Custom items</h4>${(z.custom||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`${b}.custom.${ci}.desc`)}${fld("Qty",`${b}.custom.${ci}.qty`,"number")}${fld("Price each",`${b}.custom.${ci}.price`,"number")}<div>${delBtn("cus:"+zo+":"+ci,"Remove")}</div></div>`).join("")}
+    <div><button class="btn ghost sm" data-add="${b}.custom" data-tpl="custom">+ Add custom item</button></div></div>
+  ${fld("Zone notes",b+".notes","textarea")}
+  <div class="combo"><h4>Copy this zone</h4><p class="small muted" style="margin:0">Makes Zone ${esc(String(nextFree(j,z)))} on the same controller.</p>
+    <div class="row"><button class="btn ghost sm" data-copyzone="setup">Copy setup</button><button class="btn ghost sm" data-copyzone="all">Copy with repairs</button></div>
+    <p class="small muted" style="margin:0">Setup = soil, sun, head types and sizes, valve. Repairs = everything marked for this zone.</p></div>
+  <div class="row"><button class="btn ghost sm" data-nextzone="1">Next zone ›</button><span class="spacer"></span>${delBtn("zone:"+zo,"Remove zone")}</div></div>`;
+}
+
+/* ---- estimate ---- */
+function estTable(e,editable){
+  if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
+  let rows="",last=null;
+  for(const l of e.lines){if(l.sec!==last){rows+=`<tr class="sec"><td colspan="4">${esc(l.sec)}</td></tr>`;last=l.sec}
+    rows+=`<tr><td>${esc(l.label)}</td><td class="r">${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`}
+  return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div></div>`;
+}
+function estimateTab(){const j=job();const e=buildEstimate(j);
+  return `<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTable(e)}</div>
+  <div class="card"><h2>Adjustments</h2><div class="acts">${chk("est.trip","Service call / trip charge","trip",true)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
+  <div class="grid3">${fld("Discount ($)","est.discount","number",'data-rr="1"')}${fld("Sales tax %","est.tax","number",'data-rr="1"')}</div>
+  <p class="small muted">Texas charges sales tax on most residential lawn sprinkler repair; 8.25% is the common combined rate. Check your local rate.</p>
+  <div class="combo"><h4>Additional items</h4>${(j.est.extra||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`est.extra.${ci}.desc`)}${fld("Qty",`est.extra.${ci}.qty`,"number")}${fld("Price each",`est.extra.${ci}.price`,"number")}<div>${delBtn("ext:"+ci,"Remove")}</div></div>`).join("")}<div><button class="btn ghost sm" data-add="est.extra" data-tpl="custom">+ Add item</button></div></div>
+  ${fld("Terms shown on estimate/invoice","est.terms","textarea")}</div>`;
+}
+
+/* ---- report ---- */
+function findings(j,tech){
+  const out=[];
+  (j.mainline||[]).forEach(m=>{const it=[];
+    (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
+      if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
+    if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
+    const bf=m.bf;if(bf.size||bf.type||bf.condition){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="no")s+=", not insulated";if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`)});
+    if(m.notes)it.push(esc(m.notes));
+    if(it.length)out.push([m.name||"Mainline",it]);
+  });
+  (j.controllers||[]).forEach(c=>{const it=[];const f=ctlFlags(c);
+    it.push(`${[c.brand,c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
+    if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":"transformer failed"}`:""}`);
+    if(c.rain==="no")it.push("No rain sensor installed");else if(c.rain==="yes")it.push("Rain sensor installed");
+    if(f.ohm.length)it.push(`<span class="flag">Wiring problem on zone${f.ohm.length>1?"s":""} ${f.ohm.map(x=>x.z).join(", ")}</span>${tech?" ("+f.ohm.map(x=>`Z${x.z} ${x.v} Ω ${x.st}`).join("; ")+")":""}`);
+    if(c.overcurrent==="yes")it.push(`<span class="flag">Overcurrent on the 2-wire path</span>${c.ocZones?`, affecting ${esc(c.ocZones)} zones`:""}`);
+    if(f.decoders.length)it.push(`Decoder${f.decoders.length>1?"s":""} not communicating: #${f.decoders.map(esc).join(", #")}`);
+    if(f.failedMods)it.push(`${f.failedMods} failed module${f.failedMods>1?"s":""}`);
+    if(tech)(c.programs||[]).forEach(p=>{const tot=Object.values(p.runtimes||{}).reduce((s,v)=>s+num(v),0);if(p.starts||tot||p.days.length)it.push(`Program ${esc(p.name)}: starts ${esc(p.starts||"—")}, ${p.days.length?p.days.join(" "):"no days set"}, seasonal ${num(p.seasonal)}%, ${tot} min per cycle`)});
+    if(c.notes)it.push(esc(c.notes));
+    out.push([c.name||"Controller",it]);
+  });
+  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));
+  zs.forEach(z=>{const it=[];const types=z.types.map(t=>HEAD_TYPES.find(h=>h[0]===t)[1].toLowerCase());
+    const desc=[types.length?types.join(", ")+" heads":"",z.sizes.length&&z.types.some(t=>SIZED.includes(t))?z.sizes.map(s=>s+'"').join("/"):"",z.soil?z.soil.toLowerCase()+" soil":"",z.sun?z.sun+" sun":""].filter(Boolean).join(" · ");
+    if(desc)it.push(desc);
+    const v=z.valve||{};if(v.condition&&v.condition!=="Good")it.push(`Zone valve condition: ${esc(v.condition.toLowerCase())}`);
+    (z.laterals||[]).forEach(l=>it.push(`<span class="flag">Broken ${esc(l.size)} lateral line</span>${num(l.ft)?`, about ${num(l.ft)} ft to repair`:""}${l.tree==="yes"?", tree roots present":""}`));
+    if(z.notes)it.push(esc(z.notes));
+    out.push([`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,it]);
+  });
+  const tl=troubleList(j);
+  return out.map(([h,it])=>[h,it,tl.filter(t=>t.sec===h)]);
+}
+function reportHtml(j,rev){
+  const e=buildEstimate(j);const d=j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
+  const f=findings(j,!!j.est.showTech);const hasMap=j.map.items.length||j.map.lines.length;
+  const work=e.lines.filter(l=>!["Service","Additional items","Upgrades"].includes(l.sec));
+  const secsWithWork=new Set(work.map(l=>l.sec));const flagged=troubleList(j).length;
+  const other=e.lines.filter(l=>l.sec==="Additional items");
+  const ups=SHOW_UPSELLS?(j.upsells||[]).filter(u=>u.status!=="declined"&&(u.desc||u.cat)):[];
+  const biz=bizInfo();
+  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
+  <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
+  <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}</p>
+  ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p></section>
+  ${hasMap?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
+    <p class="small muted">${MAP_POINTS.filter(p=>j.map.items.some(i=>i.t===p[0])).map(p=>`${p[2]} = ${p[1]}`).concat(MAP_LINES.filter(l=>j.map.lines.some(x=>x.t===l[0])).map(l=>l[1]+" shown as "+(l[4]?(l[0]==="drip"?"dotted":"dashed"):"solid")+" line")).join(" · ")}</p></section>`:""}
+  <section><h2>Issues and solutions</h2>${f.length?f.map(([h,it,ph])=>{const sol=work.filter(l=>l.sec===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':'<span class="pill ok">OK</span>';
+    return `<div class="isec"><div class="row"><h3 class="spacer">${esc(h)}</h3>${st}</div>
+      <div class="isgrid"><div><div class="eyebrow">What we found</div>${it.length?`<ul>${it.map(x=>`<li>${x}</li>`).join("")}</ul>`:'<p class="muted small">Nothing noted.</p>'}</div>
+      <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol">${sol.map(l=>`<li>${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:'<p class="muted small">No work needed.</p>'}</div></div>
+      ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
+    ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
+  ${ups.length?`<section><h2>Optional upgrades</h2><p class="small muted">Not required to fix today's issues. Ask us about any of these.</p>
+    <div class="ups">${ups.map((u,i)=>{const ph=(u.pic_ph||[]);return `<div class="up"><div class="row"><b class="spacer">${esc(u.desc||u.cat)}</b>${u.status==="accepted"?'<span class="pill ok">Approved</span>':u.priority==="recommended"?'<span class="pill warn">Recommended</span>':'<span class="pill neutral">Optional</span>'}</div>
+    <div class="small muted">${esc([u.cat,u.sec].filter(Boolean).join(" · "))}</div>${u.benefit?`<p class="small" style="margin:4px 0 0">${esc(u.benefit)}</p>`:""}
+    ${num(u.price)?`<div class="small" style="margin-top:4px">Estimated ${money(num(u.price)*Math.max(1,num(u.qty)||1))}</div>`:""}
+    ${ph.length?`<div class="rphs">${ph.map(id=>`<figure class="rph"><img data-ph="${id}" alt="Upgrade photo"></figure>`).join("")}</div>`:""}</div>`}).join("")}</div></section>`:""}`;
+}
+function plain(x){return x.replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">")}
+function reportText(j,rev){
+  const e=buildEstimate(j);const L=[];const biz=bizInfo();
+  L.push("IRRIGATION INSPECTION REPORT"+(rev?"  ·  REV "+revNo(rev.n):""));if(biz.name)L.push(biz.name);if(rev&&rev.at)L.push("Issued: "+fmtDT(rev.at));
+  L.push(j.info.customer||"");L.push([j.info.address,j.info.city].filter(Boolean).join(", "));L.push("Inspection date: "+(j.info.date||"")+(j.info.tech?"  ·  Technician: "+j.info.tech:""));L.push("");
+  L.push("ISSUES AND SOLUTIONS");
+  findings(j,!!j.est.showTech).forEach(([h,it,ph])=>{const sol=e.lines.filter(l=>l.sec===h);L.push("");L.push(h.toUpperCase()+(sol.length?"  — needs repair":"  — OK"));
+    it.forEach(x=>L.push("  Found: "+plain(x)));sol.forEach(l=>L.push("  Fix:   "+l.label+(l.qty!==1?" × "+l.qty:"")));if((ph||[]).some(t=>(getP(j,t.path+"_ph")||[]).length))L.push("  (Photos included in the full report)")});
+  const ups=SHOW_UPSELLS?(j.upsells||[]).filter(u=>u.status!=="declined"&&(u.desc||u.cat)):[];
+  if(ups.length){L.push("");L.push("OPTIONAL UPGRADES");ups.forEach(u=>L.push("  - "+(u.desc||u.cat)+(num(u.price)?" (est. "+money(num(u.price)*Math.max(1,num(u.qty)||1))+")":"")+(u.status==="accepted"?" — approved":"")))}
+  L.push("");L.push("Pricing for the recommended work is on your invoice/estimate.");
+  return L.join("\n");
+}
+/* ---- business info (Texas: name, license, address, phone + TCEQ notice on estimates & invoices) ---- */
+const TCEQ_NOTICE="Irrigation in Texas is regulated by the Texas Commission on Environmental Quality (TCEQ) (MC-178), P.O. Box 13087, Austin, Texas 78711-3087. TCEQ's website is: www.tceq.texas.gov.";
+const BIZ_FIELDS=[["_biz_name","Business name"],["_biz_irrigator","Licensed irrigator name"],["_biz_lic","Irrigator license # (LI)"],["_biz_addr","Business address"],["_biz_phone","Business phone"],["_biz_email","Business email"]];
+function bizInfo(){const p=S.pricing;return {name:p._biz_name||"",irr:p._biz_irrigator||"",lic:p._biz_lic||"",addr:p._biz_addr||"",phone:p._biz_phone||"",email:p._biz_email||""}}
+function bizMissing(){const b=bizInfo();const m=[];if(!b.irr)m.push("Licensed irrigator name");if(!b.lic)m.push("License #");if(!b.addr)m.push("Business address");if(!b.phone)m.push("Business phone");return m}
+function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<label class="f"><span>${l}${["_biz_irrigator","_biz_lic","_biz_addr","_biz_phone"].includes(k)?" *":""}</span><input type="text" id="p-${k}" data-price="${k}" data-biz="1" value="${esc(S.pricing[k]||"")}"></label>`).join("")}</div>`}
+
+/* ---- upgrades / upsells ---- */
+/* Upgrades/upsells are built but hidden for now — set to true to turn them back on */
+const SHOW_UPSELLS=false;
+const UP_CATS=["Smart controller","Rain/freeze sensor","Water-efficient nozzles","Drip conversion","Backflow protection","Pressure regulation","Master valve","Zone expansion","Maintenance plan","Landscape lighting","Other"];
+const UP_STATUS=[["open","Not presented"],["presented","Presented"],["interested","Interested"],["accepted","Accepted"],["declined","Declined"]];
+function upSections(j){return ["Whole property"].concat(j.mainline.map(m=>m.name),j.controllers.map(c=>c.name),j.zones.map(z=>`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`))}
+function suggestUpsells(j){
+  const S2=[];const have=new Set((j.upsells||[]).map(u=>u.cat+"|"+u.sec));
+  const add=(cat,sec,desc,benefit,pk,qty)=>{if(!have.has(cat+"|"+sec))S2.push({cat,sec,desc,benefit,price:pk?price(pk,j):"",qty:qty||1})};
+  j.controllers.forEach(c=>{if(!(c.act||{}).replace)add("Smart controller",c.name,"Upgrade to a smart Wi-Fi controller","Adjusts watering to the weather automatically and can be run from a phone. Many Texas water utilities offer rebates.","ctl_replace");
+    if(c.rain==="no"&&!(c.act||{}).rainAdd)add("Rain/freeze sensor",c.name,"Add a rain/freeze sensor","Stops watering during rain and freezing temperatures; required on new Texas systems.","rain_add")});
+  const spray=j.zones.filter(z=>z.types.includes("spray"));
+  if(spray.length)add("Water-efficient nozzles","Whole property",`Convert spray nozzles to MP rotators (${spray.length} zone${spray.length===1?"":"s"})`,"Slower, more even watering that cuts runoff on clay soil and uses less water.","cnoz_mp",spray.length*6);
+  j.zones.filter(z=>z.types.includes("spray")&&z.sun==="partial").forEach(z=>add("Drip conversion",`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,`Convert zone ${z.num} beds to drip`,"Waters plant roots directly, ends overspray on walls and walks.","drip_retro"));
+  j.mainline.forEach(m=>{if(m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
+    if(m.prv.present==="no")add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.","prv_replace");
+    if(m.mv.present==="no")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.","mv_replace")});
+  add("Maintenance plan","Whole property","Seasonal maintenance plan","Spring start-up, mid-season check and winterization at a set yearly price.","",1);
+  return S2;
+}
+function newUpsell(o){return Object.assign({id:uid("u"),cat:"Other",desc:"",benefit:"",sec:"Whole property",qty:1,price:"",priority:"recommended",status:"open",notes:""},o||{})}
+function upsellsTab(){const j=job();j.upsells=j.upsells||[];const sug=suggestUpsells(j);
+  const tot=j.upsells.filter(u=>u.status!=="declined").reduce((s,u)=>s+num(u.price)*Math.max(1,num(u.qty)||1),0);
+  const acc=j.upsells.filter(u=>u.status==="accepted").reduce((s,u)=>s+num(u.price)*Math.max(1,num(u.qty)||1),0);
+  return `<div class="card"><div class="cardhead"><h2>Upgrades</h2><span class="pill neutral">${j.upsells.length} logged</span></div>
+    <p class="small muted" style="margin:0">Upgrades are optional work beyond the repairs. They show on the report as options. Mark one <b>Accepted</b> and it moves onto the invoice.</p>
+    <div class="row"><span class="num"><b>${money(tot)}</b> <span class="muted small">open opportunity</span></span><span class="num"><b>${money(acc)}</b> <span class="muted small">accepted</span></span><span class="spacer"></span><button class="btn sm" data-upnew="1">+ Log an upgrade</button></div></div>
+  ${sug.length?`<div class="card sunk"><h3>Suggested from this inspection</h3><div class="acts">${sug.map((g,i)=>`<div class="act"><div class="al">${esc(g.desc)}<div class="ap">${esc(g.sec)}${g.price!==""?" · about "+money(num(g.price)*g.qty):""}</div></div><button class="btn ghost sm" data-upadd="${i}">Add</button></div>`).join("")}</div></div>`:""}
+  ${j.upsells.map((u,i)=>{const b=`upsells.${i}`;const val=num(u.price)*Math.max(1,num(u.qty)||1);return `<div class="card"><div class="cardhead"><h3>${esc(u.desc||u.cat)}</h3>${u.status==="accepted"?'<span class="pill ok">On invoice</span>':u.status==="declined"?'<span class="pill neutral">Declined</span>':`<span class="pill warn">${money(val)}</span>`}</div>
+    <div class="grid2">${sel("Category",b+".cat",UP_CATS)}${sel("Where",b+".sec",upSections(j))}</div>
+    ${fld("Description (shown to customer)",b+".desc","text",'data-rr="1"')}
+    ${fld("Why it helps (shown to customer)",b+".benefit")}
+    <div class="grid3">${fld("Qty",b+".qty","number",'data-rr="1"')}${fld("Price each ($)",b+".price","number",'data-rr="1"')}</div>
+    ${seg("Priority",b+".priority",[["recommended","Recommended"],["optional","Optional"]])}
+    ${seg("Customer response",b+".status",UP_STATUS)}
+    ${fld("Internal notes (not on report)",b+".notes")}
+    <div class="q"><span class="ql">Photo (optional)</span>${photoStrip(b+".pic").replace("Photo required","Add photo").replace('class="phadd req"','class="phadd"')}</div>
+    <div>${delBtn("up:"+i,"Remove")}</div></div>`}).join("")}`;
+}
+function upsellPipeline(){
+  const rows=[];Object.values(S.jobs).forEach(j=>(j.upsells||[]).forEach(u=>rows.push({j,u,v:num(u.price)*Math.max(1,num(u.qty)||1)})));
+  const by=k=>rows.filter(r=>r.u.status===k).reduce((s,r)=>s+r.v,0);
+  const open=rows.filter(r=>!["accepted","declined"].includes(r.u.status));
+  return `<div class="card"><h2>Upgrade pipeline</h2><div class="grid3">${[["Not presented",by("open")],["Presented / interested",by("presented")+by("interested")],["Accepted",by("accepted")]].map(([l,v])=>`<div class="combo"><div class="eyebrow">${l}</div><div class="num" style="font-family:var(--display);font-size:1.5rem">${money(v)}</div></div>`).join("")}</div></div>
+  <div class="card"><h3>Open opportunities</h3>${open.length?`<div class="tbl"><table><thead><tr><th>Customer</th><th>Upgrade</th><th>Status</th><th class="r">Value</th></tr></thead><tbody>${open.sort((a,b)=>b.v-a.v).map(r=>`<tr><td><a href="#" data-open="${r.j.id}">${esc(r.j.info.customer||"No customer yet")}</a></td><td>${esc(r.u.desc||r.u.cat)}</td><td>${esc((UP_STATUS.find(s=>s[0]===r.u.status)||["","—"])[1])}</td><td class="r">${money(r.v)}</td></tr>`).join("")}</tbody></table></div>`:'<p class="muted">No open upgrades. Techs log them on each job\'s Upgrades tab.</p>'}</div>`;
+}
+
+/* ---- invoice ---- */
+function invNo(){const d=new Date();return "INV-"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
+function invoiceHtml(j){
+  const e=buildEstimate(j);const b=bizInfo();const inv=j.inv||{};const cur=currentRev(j);const kind=inv.kind==="invoice"?"Invoice":"Estimate";
+  return `<div class="lh"><div><div class="eyebrow">${kind}</div><h1>${esc(b.name||"Your business name")}</h1>
+    <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
+    <div class="small">Licensed Irrigator: ${esc(b.irr||"—")} · LI ${esc(b.lic||"—")}</div></div>
+    <div style="text-align:right"><div class="eyebrow">${kind} #</div><div class="mono">${esc(inv.no||"—")}</div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
+    ${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div class="mono">Rev ${revNo(cur.n)}</div>`:""}</div></div>
+  <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
+    <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
+  <section>${estTable(e)}</section>
+  ${inv.kind==="invoice"?`<section>${inv.status==="paid"?`<div class="paid">PAID${inv.paidAt?" · "+esc(new Date(inv.paidAt).toLocaleDateString("en-US")):""}${inv.method?" · "+esc(inv.method):""}</div>`:`<p><b>Amount due: ${money(e.total)}</b></p>`}</section>`:""}
+  ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
+  <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
+}
+function invoiceText(j){const e=buildEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
+  L.push(kind+" "+(inv.no||""));L.push(b.name);L.push(b.addr);L.push([b.phone,b.email].filter(Boolean).join(" · "));L.push("Licensed Irrigator: "+b.irr+" · LI "+b.lic);L.push("");
+  L.push("Bill to: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
+  let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${l.unit!=="each"?" "+l.unit:""}  ${money(l.total)}`)});
+  L.push("");L.push("Subtotal: "+money(e.sub));if(e.disc)L.push("Discount: -"+money(e.disc));L.push("Tax: "+money(e.tax));L.push("TOTAL: "+money(e.total));
+  if(inv.kind==="invoice")L.push(inv.status==="paid"?"PAID":"Amount due: "+money(e.total));
+  if(j.est.terms){L.push("");L.push(j.est.terms)}L.push("");L.push(TCEQ_NOTICE);return L.join("\n")}
+function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
+  if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Add them on the Customer tab.</p><div><button class="btn" data-tab="dispatch">Go to Customer</button></div></div>`;
+  const blocks=[];
+  if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. You only enter this once.</p>${bizFields()}<div><button class="btn sm" data-tab="invoice">Done</button></div></div>`);
+  if(!cur)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
+  const ready=!bm.length&&cur;
+  return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Unpaid</span>'):'<span class="pill neutral">Estimate</span>'}</div>
+    ${seg("Document",'inv.kind',[["estimate","Estimate (before work)"],["invoice","Invoice (work done)"]])}
+    ${inv.kind==="invoice"?`${seg("Payment",'inv.status',[["unpaid","Unpaid"],["paid","Paid"]])}${inv.status==="paid"?`<div class="grid2">${sel("Method",'inv.method',["","Card","Check","Cash","Bank transfer","Zelle"])}${fld("Paid on",'inv.paidDate',"date")}</div>`:""}`:""}
+    ${ready?`<div class="row">${inv.no?"":`<button class="btn" data-mkinv="1">Create ${inv.kind==="invoice"?"invoice":"estimate"} number</button>`}${inv.no?`${CAN_PRINT?`<button class="btn" data-print="invoice">Print</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-invcopy="1">Copy as text</button>${downloads?`<button class="btn ghost" data-invsave="1">Save file</button>`:""}`:""}</div>`:`<p class="small muted" style="margin:0">Copy and save unlock once the items above are done.</p>`}
+    <p class="small muted" style="margin:0">Prices, discount, tax and terms are set on the Estimate tab.${SHOW_UPSELLS?" Accepted upgrades are included automatically.":""}</p></div>
+  <article class="sheet">${invoiceHtml(j)}</article>`;
+}
+function reportTab(){const j=job();loadBg(j.id);
+  const miss=missingCustomer(j);
+  if(miss.length)return `<div class="card"><div class="cardhead"><h2>Customer details needed</h2><span class="pill warn">${miss.length} missing</span></div>
+    <p id="missmsg">Add the customer's details to produce the report. Still needed: <b>${miss.map(esc).join(", ")}</b>.</p>${customerFields()}<div><button class="btn" id="mkreport" data-mkreport="1" disabled>Produce report</button></div></div>
+    <div class="card sunk"><h3>Ready to go</h3><p class="small muted">${j.mainline.length} mainline, ${j.controllers.length} controller${j.controllers.length===1?"":"s"}, ${j.zones.length} zone${j.zones.length===1?"":"s"} inspected · estimate ${money(buildEstimate(j).total)}</p></div>`;
+  const revs=j.revs||[];const last=revs[revs.length-1];const cur=currentRev(j);const nextN=last?last.n+1:0;
+  let status;
+  if(cur)status=`<div class="note info"><b>Rev ${revNo(cur.n)}</b> issued ${esc(fmtDT(cur.at))}${cur.by?" by "+esc(cur.by):""}. This is the version to send.</div>`;
+  else if(last)status=`<div class="note bad"><b>The job changed after Rev ${revNo(last.n)}.</b> Issue Rev ${revNo(nextN)} before sending or printing the report.</div>`;
+  else status=`<div class="note">This report is a draft. Issue it as <b>Rev 00</b> to print, copy or save it.</div>`;
+  const issueBox=cur?"":`<div class="combo"><h4>Issue Rev ${revNo(nextN)}</h4>
+    ${last?fld("What changed? (required)","est.revNote","text",'placeholder="e.g. Added zone 6 drip repair per customer"'):""}
+    <div class="row"><button class="btn" data-issue="1">Issue Rev ${revNo(nextN)}</button><span class="small muted">Locks this version and records who issued it.</span></div></div>`;
+  const hist=revs.length?`<div class="card"><h3>Revision history</h3><div class="tbl"><table><thead><tr><th>Rev</th><th>Issued</th><th>By</th><th>Change</th><th class="r">Total</th><th></th></tr></thead><tbody>
+    ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r">${money(r.total)}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
+  const viewing=S.revView&&S.revView.job===j.id?S.revView:null;
+  return `<div class="card"><div class="row"><div class="spacer"><h2>Customer report</h2><p class="small muted">This is what the customer sees.</p></div>
+    <button class="chip" data-tech="1" aria-pressed="${!!j.est.showTech}">Include technical readings</button></div>
+    ${status}${issueBox}
+    ${cur?`<div class="row">${CAN_PRINT?`<button class="btn" data-print="report">Print Rev ${revNo(cur.n)}</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-copy="1">Copy Rev ${revNo(cur.n)} as text</button>${downloads?`<button class="btn ghost" data-save="1">Save Rev ${revNo(cur.n)} file</button>`:""}
+    <span class="spacer"></span>${j.info.status!=="Quoted"&&j.info.status!=="Approved"&&j.info.status!=="Completed"?`<button class="btn quiet sm" data-quoted="1">Mark as quoted</button>`:""}</div>`:""}</div>
+  ${viewing?`<div class="card sunk"><div class="row"><h3 class="spacer">Viewing Rev ${revNo(viewing.n)} (locked copy)</h3><button class="btn quiet sm" data-viewrev="-1">Close</button></div><article class="sheet">${viewing.html||'<p class="muted">Loading…</p>'}</article></div>`:""}
+  <article class="sheet" id="sheet">${reportHtml(j,cur||{n:nextN,draft:true})}</article>
+  ${hist}`;
+}
+/* ---- revisions ---- */
+function revNo(n){return String(n).padStart(2,"0")}
+function fmtDT(t){return new Date(t).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}
+function hashStr(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return (h>>>0).toString(36)}
+function jobPrint(j){
+  const info=Object.assign({},j.info);delete info.status;
+  const est=Object.assign({},j.est);delete est.revNote;
+  return hashStr(JSON.stringify({info,map:{items:j.map.items,lines:j.map.lines},mainline:j.mainline,controllers:j.controllers,zones:j.zones,upsells:j.upsells||[],est,
+    lines:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price])}));
+}
+function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];return last&&last.fp===jobPrint(j)?last:null}
+async function issueRev(j){
+  if(missingCustomer(j).length)return;
+  const revs=j.revs=j.revs||[];const last=revs[revs.length-1];
+  if(last&&currentRev(j))return;
+  const note=String(j.est.revNote||"").trim();
+  if(last&&!note){toast("Describe what changed before issuing");const el=document.getElementById("f-est.revNote");if(el)el.focus();return}
+  const n=last?last.n+1:0;const at=Date.now();
+  const rev={n,at,by:j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total};
+  const html=reportHtml(j,rev);
+  delete j.est.revNote;
+  rev.fp=jobPrint(j);revs.push(rev);
+  if(j.info.status==="Scheduled"||j.info.status==="In progress"||j.info.status==="Inspected")j.info.status="Quoted";
+  await putRevHtml(j,n,html);
+  scheduleSave(S.cur);rr();toast("Rev "+revNo(n)+" issued");
+}
+async function putRevHtml(j,n,html){
+  const key=j.id+"_"+revNo(n);
+  if(S.mode==="local"){if(!(await IDB.set("irr.rev."+key,html)))toast("This device is out of storage for revision copies");return}
+  if(S.mode==="db"&&!S.ro){try{await db.doc("revisions/"+key).set({job:j.id,n,html})}catch(e){handleWriteErr(e)}}
+}
+async function getRevHtml(j,rv){
+  const key=j.id+"_"+revNo(rv.n);
+  if(S.mode==="local")return await IDB.get("irr.rev."+key);
+  if(S.mode==="db"){try{const d=await db.doc("revisions/"+key).get();return d.exists?d.data().html:null}catch(e){return null}}
+  return null;
+}
+async function viewRev(j,n){
+  if(n<0){S.revView=null;rr();return}
+  const rv=(j.revs||[]).find(r=>r.n===n);if(!rv)return;
+  S.revView={job:j.id,n,html:""};rr();
+  const h=await getRevHtml(j,rv);S.revView={job:j.id,n,html:h||'<p class="muted">The locked copy of this revision isn\'t available on this device.</p>'};rr();
+}
+function standaloneReport(j,html){
+  const css=[...document.querySelectorAll("style")].map(s=>s.textContent).join("\n");
+  return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Estimate — ${esc(j.info.customer||"Customer")}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>${css}
+  body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
+}
+
+/* ---------------- trouble photos ---------------- */
+const BADCOND=["Poor","Failed"];
+function troubleList(j){
+  const L=[];const add=(path,label,sec)=>L.push({path,label,sec});
+  (j.mainline||[]).forEach((m,mi)=>{const b=`mainline.${mi}`,sec=m.name||"Mainline";
+    (m.meters||[]).forEach((w,wi)=>{if(w.flow==="yes")add(`${b}.meters.${wi}.flow`,`Water meter${w.num?" #"+w.num:""} showing flow with the system off`,sec)});
+    if(hasLeak(m)&&m.leak.visible==="yes")add(`${b}.leak.visible`,"Visible mainline leak",sec);
+    if(BADCOND.includes(m.bf.condition))add(`${b}.bf.condition`,`Backflow preventer in ${m.bf.condition.toLowerCase()} condition`,sec);
+    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes"&&BADCOND.includes(c.condition))add(`${b}.${k}.condition`,`${l} in ${c.condition.toLowerCase()} condition`,sec)});
+  });
+  (j.controllers||[]).forEach((c,ci)=>{const b=`controllers.${ci}`,sec=c.name||"Controller";
+    if(c.power==="no")add(`${b}.power`,"No power to the controller",sec);
+    if(c.wiring==="2wire"&&c.overcurrent==="yes")add(`${b}.overcurrent`,"Overcurrent on the 2-wire path",sec);
+  });
+  (j.zones||[]).forEach((z,zi)=>{const b=`zones.${zi}`,sec=`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`;
+    if(BADCOND.includes((z.valve||{}).condition))add(`${b}.valve.condition`,`Zone valve in ${z.valve.condition.toLowerCase()} condition`,sec);
+    (z.laterals||[]).forEach((l,li)=>add(`${b}.laterals.${li}.brk`,`Broken ${l.size||""} lateral line`.replace("  "," "),sec));
+  });
+  return L;
+}
+function phWrap(path,html){return S._tp&&S._tp.has(path)?html+photoStrip(path):html}
+function photoStrip(path){const ids=getP(job(),path+"_ph")||[];
+  return `<div class="phstrip">${ids.map(id=>`<div class="phthumb"><button type="button" class="phimg" data-phview="${id}" aria-label="View photo"><img data-ph="${id}" alt="Issue photo"></button><button type="button" class="phx" data-phdel="${path}|${id}" aria-label="Remove photo">✕</button></div>`).join("")}
+  <label class="phadd ${ids.length?"":"req"}">📷 ${ids.length?"Add photo":"Photo required"}<input type="file" accept="image/*" capture="environment" data-photofor="${path}" hidden></label></div>`}
+function photoModal(t,n){
+  return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Photo required"><div class="phcard">
+    <div class="eyebrow">Photo required${n>1?` · ${n} issues need photos`:""}</div><h2>${esc(t.label)}</h2><p class="muted small" style="margin:0">${esc(t.sec)}</p>
+    <p>Take a photo of this issue before moving on. It will appear with this section on the customer report.</p>
+    <label class="btn" style="text-align:center;cursor:pointer;font-size:1.1rem;padding:16px">📷 Take photo<input type="file" accept="image/*" capture="environment" data-photofor="${t.path}" hidden></label>
+    <button type="button" class="btn quiet" data-revert="${t.path}">That was a mistake, change my answer</button></div></div>
+  ${S.phBig?"":""}`;
+}
+function revertTrouble(j,path){
+  if(/\.laterals\.\d+\.brk$/.test(path)){const m=path.match(/^zones\.(\d+)\.laterals\.(\d+)/);j.zones[+m[1]].laterals.splice(+m[2],1)}
+  else setP(j,path,"");
+  scheduleSave(S.cur);rr();
+}
+S.ph={};
+function phKeyLocal(id){return "irr.ph."+id}
+async function loadPhoto(id){
+  if(S.ph[id]!==undefined)return S.ph[id];S.ph[id]=null;
+  if(S.mode==="local")S.ph[id]=(await IDB.get(phKeyLocal(id)))||null;
+  else if(S.mode==="db"){try{const d=await db.doc("photos/"+id).get();S.ph[id]=d.exists?d.data().img:null}catch(e){S.ph[id]=undefined}}
+  return S.ph[id];
+}
+function hydratePhotos(root){
+  (root||document).querySelectorAll("img[data-ph]").forEach(img=>{const id=img.dataset.ph;if(img.getAttribute("src"))return;
+    const set=u=>{if(u)img.src=u;else img.alt="Photo not available on this device"};
+    if(S.ph[id])set(S.ph[id]);else loadPhoto(id).then(set)});
+  if(S.phBig){const ov=document.getElementById("phbig");if(!ov){const d=document.createElement("div");d.id="phbig";d.className="phbig";d.innerHTML=`<img data-ph="${S.phBig}" alt="Issue photo"><button class="btn" data-phclose="1">Close</button>`;d.addEventListener("click",()=>{S.phBig=null;d.remove()});document.body.appendChild(d);hydratePhotos(d)}}
+}
+async function inlinePhotos(html){
+  const ids=[...new Set([...html.matchAll(/data-ph="([^"]+)"/g)].map(m=>m[1]))];
+  for(const id of ids)await loadPhoto(id);
+  return html.replace(/<img data-ph="([^"]+)"/g,(m,id)=>S.ph[id]?`<img src="${S.ph[id]}" data-ph="${id}"`:m);
+}
+function reportPhotos(j,ts){
+  const figs=[];ts.forEach(t=>(getP(j,t.path+"_ph")||[]).forEach(id=>figs.push(`<figure class="rph"><img data-ph="${id}" alt="${esc(t.label)}"><figcaption>${esc(t.label)}</figcaption></figure>`)));
+  return figs.length?`<div class="rphs">${figs.join("")}</div>`:"";
+}
+function addPhoto(path,file){
+  const j=job();if(!j)return;const jid=j.id;
+  const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=async()=>{
+    const max=1280;const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);let q=.72,url=c.toDataURL("image/jpeg",q);
+    while(url.length>200000&&q>.3){q-=.08;url=c.toDataURL("image/jpeg",q)}
+    if(url.length>220000){const c2=document.createElement("canvas");c2.width=Math.round(c.width*.7);c2.height=Math.round(c.height*.7);c2.getContext("2d").drawImage(c,0,0,c2.width,c2.height);url=c2.toDataURL("image/jpeg",.6)}
+    const id=uid("ph");S.ph[id]=url;
+    if(S.mode==="local"){if(!(await IDB.set(phKeyLocal(id),url))){toast("This device is out of space for photos");return}}
+    else if(S.mode==="db"){try{await db.doc("photos/"+id).set({img:url,job:jid,at:Date.now(),path})}catch(e){handleWriteErr(e);return}}
+    const jj=S.jobs[jid];if(!jj)return;const arr=(getP(jj,path+"_ph")||[]).slice();arr.push(id);setP(jj,path+"_ph",arr);scheduleSave(jid);rr();toast("Photo saved");
+  };img.onerror=()=>toast("That file isn't a photo we can read");img.src=fr.result};fr.readAsDataURL(file);
+}
+
+/* ---------------- events ---------------- */
+const app=document.getElementById("app");
+function rr(){render.keep=true;render()}
+app.addEventListener("input",ev=>{
+  const t=ev.target;
+  if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
+  if(t.dataset.docket){S.docketDate=t.value;rr();return}
+  const p=t.dataset.f;if(!p||!job())return;
+  if(t.tagName==="SELECT")return;
+  let v=t.value;if(t.dataset.num)v=v===""?0:Math.max(0,num(v));
+  setP(job(),p,v);scheduleSave(S.cur);
+  if(/^info\./.test(p))liveMissing();
+  if(t.dataset.ohm){const st=ohmState(v);const box=t.closest(".ohm");if(box)box.className="ohm "+st}
+});
+app.addEventListener("change",ev=>{
+  const t=ev.target;
+  if(t.dataset.bgfile&&t.files&&t.files[0]){readBg(t.files[0]);return}
+  if(t.dataset.photofor&&t.files&&t.files[0]){addPhoto(t.dataset.photofor,t.files[0]);t.value="";return}
+  const p=t.dataset.f;if(!p||!job())return;
+  if(t.tagName==="SELECT"){setP(job(),p,t.value);scheduleSave(S.cur);rr();return}
+  if(t.dataset.rr||t.dataset.num)rr();
+});
+app.addEventListener("click",ev=>{
+  const t=ev.target.closest("button,a[data-open]");if(!t)return;const d=t.dataset;const j=job();
+  if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
+  S.armed=null;
+  if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.new){const nj=withDefaults(newJob());S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="mainline";scheduleSave(nj.id);render();window.scrollTo(0,0);return}
+  if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
+  if(d.home){S.home=d.home;render();return}
+  if(d.filter){S.filter=d.filter;rr();return}
+  if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
+  if(!j)return;
+  if(d.set==="inv.status"&&d.v==="paid"){j.inv=j.inv||{};if(!j.inv.paidDate)j.inv.paidDate=today()}
+  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind/.test(d.set)?"":d.v);scheduleSave(S.cur);rr();return}
+  if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
+  if(d.step){const v=Math.max(0,num(getP(j,d.step))+num(d.d));setP(j,d.step,v);scheduleSave(S.cur);rr();return}
+  if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
+  if(d.add){const arr=getP(j,d.add)||[];arr.push(TPL[d.tpl]());setP(j,d.add,arr);scheduleSave(S.cur);rr();return}
+  if(d.addmain){j.mainline.push(newMainline(j.mainline.length+1));scheduleSave(S.cur);rr();return}
+  if(d.addctl){j.controllers.push(newController(j.controllers.length+1));scheduleSave(S.cur);if(S.tab!=="controllers"){S.tab="controllers";render()}else rr();return}
+  if(d.addprog!=null){const c=j.controllers[+d.addprog];const used=c.programs.map(p=>p.name);let n=PROGS.find(x=>!used.includes(x));if(!n){let k=1;while(used.includes(String(k))&&k<50)k++;n=String(k)}c.programs.push({id:uid("p"),name:n,starts:"",days:[],seasonal:100,runtimes:{}});scheduleSave(S.cur);rr();return}
+  if(d.addzone){const z=newZone(j);if(S.zoneOpen){const cur=j.zones.find(x=>x.id===S.zoneOpen);if(cur){z.ctl=cur.ctl;const used=j.zones.filter(x=>x.ctl===cur.ctl).map(x=>+x.num);let n=1;while(used.includes(n))n++;z.num=String(n);z.soil=cur.soil}}j.zones.push(z);S.zoneOpen=z.id;scheduleSave(S.cur);rr();return}
+  if(d.zone){S.zoneOpen=S.zoneOpen===d.zone?null:d.zone;rr();return}
+  if(d.copyzone){const cur=j.zones.find(x=>x.id===S.zoneOpen);if(!cur)return;const z=copyZone(j,cur,d.copyzone==="all");S.zoneOpen=z.id;scheduleSave(S.cur);render();const el=document.querySelectorAll(".card")[1];if(el)el.scrollIntoView({block:"start"});toast("Zone "+z.num+" created");return}
+  if(d.nextzone){const cur=j.zones.find(x=>x.id===S.zoneOpen);const sorted=[...j.zones].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));const i=sorted.indexOf(cur);
+    if(i>=0&&i<sorted.length-1)S.zoneOpen=sorted[i+1].id;else{const z=newZone(j);if(cur){z.ctl=cur.ctl;const used=j.zones.filter(x=>x.ctl===cur.ctl).map(x=>+x.num);let n=1;while(used.includes(n))n++;z.num=String(n);z.soil=cur.soil}j.zones.push(z);S.zoneOpen=z.id;scheduleSave(S.cur)}
+    render();const el=document.querySelectorAll(".card")[1];if(el)el.scrollIntoView({block:"start"});return}
+  if(d.mapopen){openMap();return}
+  if(d.hide){S.mapHide[d.hide]=!S.mapHide[d.hide];rr();return}
+  if(d.bgclear){saveBg(j.id,null);return}
+  if(d.mkreport){render();window.scrollTo(0,0);return}
+  if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
+  if(d.quoted){j.info.status="Quoted";scheduleSave(S.cur);rr();toast("Marked as quoted");return}
+  if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else printDoc(invoiceHtml(j));return}
+  if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
+  if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
+  if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
+  if(d.invcopy){const txt=invoiceText(j);try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
+  if(d.invsave){if(!downloads)return;const nm=((j.inv||{}).kind==="invoice"?"invoice-":"estimate-")+((j.inv||{}).no||"draft")+".html";
+    downloads.save({filename:nm,data:standaloneReport(j,invoiceHtml(j))}).then(r=>{if(r.status==="saved")toast("Saved")}).catch(e=>{if(e&&e.code!=="declined")toast("Couldn't save the file here")});return}
+  if(d.issue){if(troubleList(j).some(t=>!(getP(j,t.path+"_ph")||[]).length)){toast("Add the required photos first");return}issueRev(j);return}
+  if(d.revert){revertTrouble(j,d.revert);return}
+  if(d.phdel){const [pp,pid]=d.phdel.split("|");const arr=(getP(j,pp+"_ph")||[]).filter(x=>x!==pid);setP(j,pp+"_ph",arr);scheduleSave(S.cur);rr();return}
+  if(d.phview){S.phBig=d.phview;rr();return}
+  if(d.phclose){S.phBig=null;rr();return}
+  if(d.viewrev){viewRev(j,+d.viewrev);return}
+  if(d.copy){const rv=currentRev(j);if(!rv)return;const txt=reportText(j,rv);const done=()=>toast("Report copied");
+    try{navigator.clipboard.writeText(txt).then(done,()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
+  if(d.save){const rv=currentRev(j);if(!downloads||!rv)return;const name="estimate-"+(j.info.customer||"customer").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+(j.info.date||today())+"-rev"+revNo(rv.n)+".html";
+    getRevHtml(j,rv).then(h=>inlinePhotos(h||reportHtml(j,rv))).then(h=>downloads.save({filename:name,data:standaloneReport(j,h)})).then(r=>{if(r.status==="saved")toast("Report saved")}).catch(e=>{if(e&&e.code!=="declined")toast("Couldn't save the file here")});return}
+});
+function liveMissing(){const j=job();if(!j)return;const miss=missingCustomer(j);
+  const m=document.getElementById("missmsg"),b=document.getElementById("mkreport");
+  if(m)m.innerHTML=miss.length?`Add the customer's details to produce the report. Still needed: <b>${miss.map(esc).join(", ")}</b>.`:"All customer details are in.";
+  if(b)b.disabled=!!miss.length;}
+const CAN_PRINT=!(window.claude&&window.claude.use);
+async function printDoc(html){
+  let pa=document.getElementById("printarea");if(!pa){pa=document.createElement("div");pa.id="printarea";document.body.appendChild(pa)}
+  pa.innerHTML=`<article class="sheet">${await inlinePhotos(html)}</article>`;
+  const root=document.documentElement;const prev=root.getAttribute("data-theme");root.setAttribute("data-theme","light");
+  const restore=()=>{prev==null?root.removeAttribute("data-theme"):root.setAttribute("data-theme",prev);window.removeEventListener("afterprint",restore)};
+  window.addEventListener("afterprint",restore);
+  setTimeout(()=>{window.print();setTimeout(restore,1500)},150);
+}
+function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(e){}ta.remove();toast(ok?"Report copied":"Copy isn't available here. Select the report text instead.")}
+function doRemove(key){
+  const j=job();const [k,a,b]=key.split(":");
+  if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
+  if(k==="job"){deleteJob(a);S.cur=null;render();toast("Job deleted");return}
+  if(!j)return;
+  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
+    ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
+    zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
+    mapitem:()=>{j.map.items=j.map.items.filter(i=>i.id!==a);S.mapSel=null},mapline:()=>{j.map.lines=j.map.lines.filter(i=>i.id!==a);S.mapSel=null}}[k];
+  if(m){m();scheduleSave(S.cur)}
+}
+
+function readBg(file){
+  const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{
+    let w=1000,h=700;const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d");
+    const s=Math.max(w/img.width,h/img.height);const dw=img.width*s,dh=img.height*s;x.drawImage(img,(w-dw)/2,(h-dh)/2,dw,dh);
+    let q=.62,url=c.toDataURL("image/jpeg",q);while(url.length>230000&&q>.25){q-=.08;url=c.toDataURL("image/jpeg",q)}
+    if(url.length>240000){c.width=700;c.height=490;c.getContext("2d").drawImage(img,(700-dw*.7)/2,(490-dh*.7)/2,dw*.7,dh*.7);url=c.toDataURL("image/jpeg",.5)}
+    saveBg(S.cur,url)};img.onerror=()=>toast("That file isn't an image we can read");img.src=fr.result};fr.readAsDataURL(file);
+}
+boot();
+})();
+</script>
+
+</body>
+</html>
