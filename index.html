@@ -287,6 +287,7 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 .ba{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bacol{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:4px}.baarrow{font-size:1.6rem;color:var(--muted)}
 .compi{gap:8px}
 .addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
+.terms{white-space:pre-wrap;font-size:.85rem;max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;background:var(--surface)}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -628,12 +629,12 @@ function banner(){
   return "";
 }
 function homeView(){
-  const tabs=[["jobs","Jobs"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
+  const tabs=[["jobs","Jobs"],["reminders","Reminders"],["customers","Customers"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
-  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
   const side=S.home==="team"||S.home==="import";
-  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
+  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?"Customers":S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
     ${side?"":`<button class="iconbtn" data-new="1">+ New job</button>`}${acctChip()}</div></header>
   ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
@@ -666,6 +667,7 @@ function docketView(){
 function pricesView(){
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
   return `${isAdmin()?"":`<div class="note info">Only admins can change prices and business info. Ask Bradley if a price needs updating.</div>`}<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
+  ${termsCard()}
   ${brandsCard()}
   <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
@@ -699,9 +701,9 @@ function jobView(){
   <div class="wrap"><main>${banner()}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
-function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");return m}
+function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
 function customerFields(){return `<div class="grid2">${fld("Customer name *","info.customer","text",'autocomplete="name"')}${fld("Phone","info.phone","tel")}${fld("Email","info.email","email")}${fld("Gate / access code","info.gate")}</div>
-  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div><p class="small muted">* Required, plus a phone or email, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
+  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div>${termsAgreeBlock(job())}<p class="small muted">* Required, plus a phone or email and the terms agreement, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
   <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
@@ -1069,6 +1071,7 @@ function mainlineTab(){const j=job();
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo"><h4>Backflow preventer</h4>
     <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${fld("Model",b+".bf.model")}${fld("Serial number",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    <div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date")}</div>
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
@@ -1255,6 +1258,7 @@ function reportHtmlReal(j,rev){
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
   ${equipmentSection(j)}
+  ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   ${ups.length?`<section><h2>Optional upgrades</h2><p class="small muted">Not required to fix today's issues. Ask us about any of these.</p>
     <div class="ups">${ups.map((u,i)=>{const ph=(u.pic_ph||[]);return `<div class="up"><div class="row"><b class="spacer">${esc(u.desc||u.cat)}</b>${u.status==="accepted"?'<span class="pill ok">Approved</span>':u.priority==="recommended"?'<span class="pill warn">Recommended</span>':'<span class="pill neutral">Optional</span>'}</div>
     <div class="small muted">${esc([u.cat,u.sec].filter(Boolean).join(" · "))}</div>${u.benefit?`<p class="small" style="margin:4px 0 0">${esc(u.benefit)}</p>`:""}
@@ -1346,6 +1350,7 @@ function invoiceHtmlReal(j){
   ${inv.kind==="invoice"?`<section>${inv.status==="paid"?`<div class="paid">PAID${inv.paidAt?" · "+esc(new Date(inv.paidAt).toLocaleDateString("en-US")):""}${inv.method?" · "+esc(inv.method):""}</div>`:`<p><b>Amount due: ${money(e.total)}</b></p>`}</section>`:""}
   ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Ask us to add it.</div></div></section>`:""}
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
+  ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
 }
 function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
@@ -1450,6 +1455,102 @@ function standaloneReport(j,html){
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>${css}
   body{background:#fff;padding:24px} .sheet{max-width:760px;margin:0 auto;border:0} @media print{body{padding:0}}</style></head><body><article class="sheet">${html||reportHtml(j)}</article></body></html>`;
 }
+
+/* ---------------- Terms of Service + agreement ---------------- */
+const TERMS_DEFAULT=`1. Services. [Business] inspects ("audits"), repairs and maintains landscape irrigation systems. An audit records the condition of your system on the day of the visit.
+
+2. Reports and estimates. Audit reports and estimates are prepared for you, the property owner. Estimates are valid for 30 days unless stated otherwise. Recommended work is optional; you choose what to have done.
+
+3. Declined work. If you decline recommended repairs, you accept responsibility for any damage, water waste or further failure that results. Declined items are recorded on your reports.
+
+4. Equipment ratings. Brand ratings on your report are our company's opinion based on field experience. Your choice of replacement parts is yours.
+
+5. Property map. A detailed property map is a separate paid add-on unless included in your service plan. Maps remain the work product of [Business] until purchased.
+
+6. Payment. Invoices are due on receipt unless otherwise agreed. The service call fee covers the audit visit and is due whether or not repairs are approved.
+
+7. Maintenance reminders and updates. By providing your email address you agree to receive service updates and maintenance reminders (such as spring start-up, winterization and annual backflow testing). You can stop reminders at any time by replying "UNSUBSCRIBE" to any reminder or by contacting us.
+
+8. Use of system data. We may use information about your irrigation system in anonymized form (with your name and street address removed) for industry research and reporting.
+
+9. Access. You authorize our technicians to access the irrigation equipment on your property during scheduled visits.
+
+10. Licensing. Irrigation in Texas is regulated by the Texas Commission on Environmental Quality (TCEQ). Our licensed irrigator's information appears on every estimate and invoice.`;
+function termsText(){return (S.pricing._terms||TERMS_DEFAULT).replace(/\[Business\]/g,bizInfo().name||"Sprinkler Wrangler")}
+function termsVer(){return S.pricing._termsVer||"1"}
+function termsCard(){const adm=isAdmin();
+  return `<div class="card"><h2>Terms of Service</h2><p class="small muted" style="margin:0">Customers must agree to these before an audit report is issued. Raise the version when you change the wording. Have a lawyer review them.</p>
+  <div class="grid3"><label class="f"><span>Version</span><input id="p-_termsVer" data-price="_termsVer" type="text" value="${esc(termsVer())}" ${adm?"":"disabled"}></label></div>
+  <label class="f"><span>Terms text ([Business] is replaced with your business name)</span><textarea id="p-_terms" data-price="_terms" rows="14" ${adm?"":"disabled"}>${esc(S.pricing._terms||TERMS_DEFAULT)}</textarea></label></div>`}
+function termsAgreeBlock(j){const ok=j.info.termsAgreed;
+  return `<div class="zcheck ${ok?"":"need"}"><div class="eyebrow">Required</div>
+    <label class="row" style="gap:10px;cursor:pointer"><input type="checkbox" data-terms="1" ${ok?"checked":""} style="width:22px;height:22px"><b>Customer agreed to the Terms of Service</b></label>
+    ${ok?`<p class="small muted" style="margin:0">Version ${esc(j.info.termsVer||"1")}, agreed ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}</p>`:`<p class="small" style="margin:0">Show the customer the terms, then tick this box.</p>`}
+    <details><summary>View terms (version ${esc(termsVer())})</summary><div class="terms">${esc(termsText())}</div></details>
+    <label class="row" style="gap:10px;cursor:pointer"><input type="checkbox" data-remoff="1" ${j.info.remindersOff?"checked":""} style="width:20px;height:20px"><span>Customer opted out of maintenance reminders</span></label></div>`}
+
+/* ---------------- Customers, maintenance calendar, reminders ---------------- */
+const MAINT=[{k:"spring",label:"Spring start-up",month:2},{k:"summer",label:"Summer check & seasonal adjust",month:5},{k:"winter",label:"Winterization / freeze prep",month:10}];
+function custKey(j){const e=String(j.info.email||"").trim().toLowerCase();return e?"e:"+e:"a:"+(String(j.info.address||"").trim()+"|"+String(j.info.city||"").trim()).toLowerCase()}
+function customers(){const map={};Object.values(S.jobs).forEach(j=>{if(!j.info||(!j.info.customer&&!j.info.address))return;const k=custKey(j);(map[k]=map[k]||{key:k,jobs:[]}).jobs.push(j)});
+  return Object.values(map).map(c=>{c.jobs.sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||(b.updatedAt||0)-(a.updatedAt||0));const l=c.jobs[0];
+    c.name=l.info.customer||"(no name)";c.email=l.info.email||"";c.phone=l.info.phone||"";c.address=[l.info.address,l.info.city].filter(Boolean).join(", ");
+    c.audited=c.jobs.filter(j=>latestAudit(j));c.lastAudit=c.audited[0]||null;c.remOff=!!l.info.remindersOff;c.terms=c.jobs.find(j=>j.info.termsAgreed);return c})
+    .sort((a,b)=>a.name.localeCompare(b.name))}
+function openItems(j){const rv=latestAudit(j);if(!rv)return [];const st={};((j.completion||{}).items||[]).forEach(i=>st[i.k]=i.status);
+  return rv.audit.lines.filter(l=>st[l.k]!=="done").map(l=>Object.assign({},l,{status:st[l.k]||(j.outcome==="declined"?"declined":"")}))}
+function addMonths(d,n){const x=new Date(d);x.setMonth(x.getMonth()+n);return x}
+function custSchedule(c){const now=new Date();const out=[];const lj=c.jobs[0];const handled=Object.assign({},...c.jobs.map(j=>j.reminders||{}));
+  const push=(k,label,due,why)=>{const id=k+"@"+due.toISOString().slice(0,10);if(handled[id])return;out.push({id,k,label,due,why})};
+  if(c.lastAudit){MAINT.forEach(m=>{let d=new Date(now.getFullYear(),m.month,1);if(d<addMonths(now,-1))d=new Date(now.getFullYear()+1,m.month,1);push(m.k,m.label,d,"Seasonal")});
+    const ad=new Date(latestAudit(c.lastAudit).at);push("audit","Annual audit",addMonths(ad,12),"12 months after the last audit");
+    const open=openItems(c.lastAudit).filter(i=>i.status!=="done");if(open.length&&c.lastAudit.outcome!=="approved")push("followup",`Follow up on ${open.length} open item${open.length===1?"":"s"}`,new Date(ad.getTime()+30*864e5),"Declined or not yet done")}
+  c.jobs.forEach(j=>(j.mainline||[]).forEach(m=>{const t=(m.bf||{}).lastTest;if(t)push("backflow","Annual backflow test",addMonths(new Date(t+"T12:00"),12),"12 months after the last test")}));
+  const seen={};return out.filter(x=>{if(seen[x.k]&&x.k!=="backflow")return false;seen[x.k]=1;return true}).sort((a,b)=>a.due-b.due)}
+function dueLabel(d){const days=Math.round((d-new Date())/864e5);return days<0?`${-days} day${days===-1?"":"s"} overdue`:days===0?"due today":days<=31?`due in ${days} day${days===1?"":"s"}`:d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+function reminderMail(c,r){const b=bizInfo();const subj=`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`;
+  const body=`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`;
+  return `mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`}
+function remindersView(){const cs=customers();const now=new Date();const horizon=addMonths(now,1);const rows=[];
+  cs.forEach(c=>custSchedule(c).forEach(r=>{if(r.due<=horizon)rows.push({c,r})}));rows.sort((a,b)=>a.r.due-b.r.due);
+  return `<div class="card"><div class="cardhead"><h2>Due in the next 30 days</h2><span class="pill ${rows.length?"warn":"ok"}">${rows.length}</span></div>
+    <p class="small muted" style="margin:0">Built from each customer's audits. Email the customer, start the job, or mark it handled.</p></div>
+  ${rows.length?rows.map(({c,r})=>`<div class="card"><div class="row" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>${esc(r.label)}</b> <span class="pill ${r.due<now?"bad":"warn"}">${esc(dueLabel(r.due))}</span>
+      <div class="small"><a href="#" data-cust="${esc(c.key)}">${esc(c.name)}</a> · ${esc(c.address)}</div><div class="small muted">${esc(r.why)}${c.remOff?" · opted out of reminders":""}</div></div></div>
+    <div class="row">${c.email&&!c.remOff?`<a class="btn sm" href="${reminderMail(c,r)}" data-remsent="${esc(c.key)}|${esc(r.id)}">Email customer</a>`:`<span class="small muted">${c.remOff?"No email: opted out":"No email on file"}${c.phone?" · call "+esc(c.phone):""}</span>`}
+      <button class="btn ghost sm" data-startjob="${esc(c.key)}">Start job</button><button class="btn quiet sm" data-remdone="${esc(c.key)}|${esc(r.id)}">Mark handled</button></div></div>`).join("")
+    :`<div class="card empty"><h2>Nothing due</h2><p class="muted">Reminders appear here as customers come due for seasonal service, annual audits, backflow tests and follow-ups.</p></div>`}`}
+function customersView(){const cs=customers();
+  if(S.custOpen){const c=cs.find(x=>x.key===S.custOpen);if(c)return customerDetail(c);S.custOpen=null}
+  return `<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Profiles build automatically from each customer's jobs and audits.</p></div>
+  ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
+    return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
+      <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")}</div>`
+    :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Customers appear once a job has a name and address.</p></div>`}`}
+function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l;const eq=equipmentRows(sysJob);const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
+  return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
+  <div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
+    <div class="small">${esc(c.address)}</div><div class="small">${esc([c.phone,c.email].filter(Boolean).join(" · "))}</div>
+    <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>
+    <div class="row"><button class="btn sm" data-startjob="${esc(c.key)}">Start a new job</button></div></div>
+  <div class="card"><h3>Their system</h3><div class="small">${(sysJob.controllers||[]).map(x=>`${esc(ctlBrand(x)||"Controller")} ${esc(x.model||"")} · ${num(x.zones)} zones · ${x.wiring==="2wire"?"2-wire":"conventional"} · rain sensor: ${x.rain==="yes"?(x.rainStatus||"yes"):x.rain==="no"?"none":"not checked"}`).join("<br>")||"No controller recorded"}</div>
+    ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
+  <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
+  <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div><span class="small num">${money(i.total)}</span></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
+  <div class="card"><h3>History</h3><div class="acts">${c.jobs.map(j=>`<div class="act"><div class="al"><a href="#" data-open="${j.id}">${esc(j.info.date||"No date")}</a> · ${esc(j.info.workType||"")}<div class="ap">${(j.revs||[]).length?"Audit Rev "+revNo(j.revs[j.revs.length-1].n):"No audit"}${j.completion&&j.completion.issuedAt?" · completed":""}</div></div>${pillFor(j.info.status)}</div>`).join("")}</div></div>`}
+/* New job for a returning customer: contact info plus their system, without old findings */
+function startJobFrom(c){const src=c.jobs[0];const nj=newJob();
+  ["customer","phone","email","address","city","gate","propType"].forEach(k=>nj.info[k]=src.info[k]||"");
+  if(src.info.termsAgreed&&String(src.info.termsVer)===String(termsVer()))Object.assign(nj.info,{termsAgreed:true,termsVer:src.info.termsVer,termsAt:src.info.termsAt});
+  nj.info.remindersOff=!!src.info.remindersOff;
+  const idmap={};nj.controllers=(src.controllers||[]).map(x=>{const n=newController(1);idmap[x.id]=n.id;return Object.assign(n,{name:x.name,brandPick:x.brandPick,brandOther:x.brandOther,brand:x.brand,model:x.model,location:x.location,wiring:x.wiring,zones:x.zones,modular:x.modular,modules:JSON.parse(JSON.stringify(x.modules||[]))})});
+  nj.zones=(src.zones||[]).map(z=>{const n=newZone(nj);return Object.assign(n,{ctl:idmap[z.ctl]||"",num:z.num,soil:z.soil,sun:z.sun,types:(z.types||[]).slice(),sizes:(z.sizes||[]).slice(),headBrand:z.headBrand,headBrandOther:z.headBrandOther,valve:{size:(z.valve||{}).size||"",brand:(z.valve||{}).brand||"",brandOther:(z.valve||{}).brandOther||"",action:"none"}})});
+  nj.mainline=(src.mainline||[]).map(m=>{const n=newMainline(1);n.name=m.name;n.bf=Object.assign({},n.bf,{size:m.bf.size,type:m.bf.type,brand:m.bf.brand,brandOther:m.bf.brandOther,model:m.bf.model,serial:m.bf.serial,lastTest:m.bf.lastTest});
+    ["prv","iso","mv"].forEach(k=>{n[k]=Object.assign({},n[k],{present:m[k].present,pos:m[k].pos,size:m[k].size,brand:m[k].brand,brandOther:m[k].brandOther,model:m[k].model})});return n});
+  nj.map=JSON.parse(JSON.stringify(src.map||{items:[],lines:[]}));nj.setupDone=nj.controllers.length>0;
+  S.jobs[nj.id]=nj;scheduleSave(nj.id);
+  if(src.map&&src.map.hasBg){loadBg(src.id).then(()=>{if(S.bg[src.id])saveBg(nj.id,S.bg[src.id])})}
+  return nj}
 
 /* ---------------- Traffic-light audit (Red / Yellow / Green) ----------------
    Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
@@ -2119,6 +2220,8 @@ app.addEventListener("input",ev=>{
 app.addEventListener("change",ev=>{
   const t=ev.target;
   if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
+  if(t.dataset.terms&&job()){const j=job();if(t.checked)Object.assign(j.info,{termsAgreed:true,termsVer:termsVer(),termsAt:Date.now()});else{j.info.termsAgreed=false;delete j.info.termsAt}scheduleSave(S.cur);rr();return}
+  if(t.dataset.remoff&&job()){job().info.remindersOff=t.checked;scheduleSave(S.cur);return}
   if(t.dataset.impsel){S.impSel=S.impSel||{};S.impSel[t.dataset.impsel]=t.checked;rr();return}
   if(t.dataset.prev){openPortalDoc("report",t.value);return}
   if(t.dataset.mename){const nm=t.value.trim();S.me.name=nm;sb.from("profiles").update({name:nm}).eq("id",S.me.id).then(({error})=>toast(error?"Couldn't save your name":"Name saved"));return}
@@ -2152,7 +2255,7 @@ app.addEventListener("click",ev=>{
   }
 },true);
 app.addEventListener("click",ev=>{
-  const t=ev.target.closest("button,a[data-open]");if(!t)return;const d=t.dataset;const j=job();
+  const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
   if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
@@ -2160,6 +2263,9 @@ app.addEventListener("click",ev=>{
   if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;render();return}
   if(d.filter){S.filter=d.filter;rr();return}
+  if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
+  if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
+  if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
   if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});if(t)S.pricing._brandTiers[bn]=t;else delete S.pricing._brandTiers[bn];savePricing();rr();return}
   if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
