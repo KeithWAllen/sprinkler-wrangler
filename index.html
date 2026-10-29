@@ -2274,7 +2274,7 @@ async function afterSignIn(session){
   if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
-  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief)};
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||""};
   if(p.role==="tech"){S.home=S.me.admin?"customers":"jobs";startDb(makeSupaDb());checkLocalImport()}
   else if(SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
@@ -2320,7 +2320,9 @@ function authView(){
     <label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
     <button class="btn" ${busy}>${a.busy?"Saving…":"Save new password"}</button></form>
     <button class="linkbtn" data-auth="signin">Back to sign in</button>`;
-  if(a.step==="waiting")body=`<h2>Waiting for access</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>, but this account doesn't have technician access yet.</p><p class="muted small">Ask a technician to add your email on their Team page, then sign in again.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
+  if(a.step==="waiting")body=(S.me||{}).account==="tech"
+    ?`<h2>Account created</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>. Your technician account is waiting for approval from Sprinkler Wrangler. Once you're approved, sign in again and your jobs will be here.</p><button class="btn quiet" data-signout="1">Sign out</button>`
+    :`<h2>Thanks for signing up</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>.</p><p>Your customer portal is on its way. Soon you'll be able to see your inspection reports, estimates and invoices here. We'll let you know when it's ready.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
   if(a.step==="newpass")body=`<h2>Choose a new password</h2>${msg}
     <form data-authform="newpass" class="authf"><label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
     <button class="btn" ${busy}>Save new password</button></form>`;
