@@ -399,7 +399,7 @@ const PRICE_DEFAULTS=(()=>{
   add("bf_repair","Mainline","Backflow preventer repair","each",190,1);
   add("bf_replace","Mainline","Replace backflow preventer","each",395,1);
   add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
-  add("bf_test","Mainline","Backflow test (certified tester)","each",95,1);
+  add("bf_test","Mainline","Backflow test (certified tester)","each",95,0);
   add("bf_install","Mainline","Install backflow preventer (none present)","each",450,1);
   add("prv_repair","Mainline","PRV repair","each",110,1);
   add("prv_replace","Mainline","Replace PRV","each",325,1);
@@ -409,7 +409,7 @@ const PRICE_DEFAULTS=(()=>{
   add("mv_replace","Mainline","Replace master valve","each",245,1);
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
-  add("ctl_program","Controller","Reprogram controller schedule","each",45,1);
+  add("ctl_program","Controller","Reprogram controller schedule","each",45,0);
   add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
   add("rain_replace","Controller","Replace rain/freeze sensor","each",125,1);
   add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
@@ -776,7 +776,7 @@ function docketView(){
   return `<div class="card"><div class="grid2"><label class="f"><span>Day</span><input type="date" id="docket-date" data-docket="1" value="${esc(S.docketDate)}"></label></div></div>
   <div class="card"><div class="cardhead"><h2>Route</h2><span class="muted small">${day.length} job${day.length===1?"":"s"}</span></div>
   ${day.length?`<div class="tbl"><table class="dgridt"><colgroup><col style="width:14%"><col style="width:44%"><col style="width:22%"><col style="width:20%"></colgroup><thead><tr><th>Window</th><th>Customer</th><th>Tech / truck</th><th>Status</th></tr></thead><tbody>${day.map(j=>`<tr><td class="num">${esc(j.info.window||"—")}</td><td><a href="#" data-open="${j.id}">${esc(j.info.customer||"Unnamed")}</a><div class="small muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}${j.info.gate?" · Gate "+esc(j.info.gate):""}</div></td><td>${esc([j.info.tech,j.info.truck].filter(Boolean).join(" / ")||"—")}</td><td>${pillFor(j.info.status)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Nothing scheduled this day. Set a job's date on its Dispatch tab.</p>`}</div>
-  <div class="card"><div class="cardhead"><h2>Load docket</h2><span class="muted small">Parts to load from estimates</span></div>
+  <div class="card"><div class="cardhead"><h2>Load docket</h2><span class="muted small">${rows.length} item${rows.length===1?"":"s"}${rows.length?(n=>` · ${n} piece${n===1?"":"s"}`)(rows.reduce((t,r)=>t+(r.unit==="each"||r.unit==="zone"?r.qty:0),0)):""}</span></div><p class="small muted" style="margin:0 0 6px">What to load on the truck for this day's jobs.</p>
   ${rows.length?`<div class="tbl"><table class="dgridt"><colgroup><col style="width:58%"><col style="width:22%"><col style="width:20%"></colgroup><thead><tr><th>Part / material</th><th>Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td>${r.qty}${showU(r.unit)?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
 }
 function pricesView(){
