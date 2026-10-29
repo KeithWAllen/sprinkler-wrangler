@@ -80,7 +80,7 @@ main{padding-block:16px 80px;display:grid;gap:14px}
 .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
 label.f{display:grid;gap:4px;min-width:0}
 label.f>span{font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:.03em}
-input[type=text],input[type=number],input[type=date],input[type=tel],input[type=email],select,textarea{
+input[type=text],input[type=number],input[type=date],input[type=tel],input[type=email],input[type=password],select,textarea{
   width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 10px;min-height:44px}
 textarea{min-height:70px;resize:vertical}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
@@ -289,6 +289,7 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 .compi{gap:8px}
 .addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
 .terms{white-space:pre-wrap;font-size:.85rem;max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;background:var(--surface)}
+.whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
 .ohmrow{border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;gap:6px;background:var(--surface)}
 .ohmrow.none{border-color:var(--water)}.ohmrow.short,.ohmrow.open,.ohmrow.float{border-color:var(--tl-r)}.ohmrow.high{border-color:var(--tl-y)}
@@ -492,7 +493,7 @@ function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 let pTimer=null;
 function savePricing(){if(!isAdmin()||S.training)return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
   if(S.mode==="local")LS.set(KP()+"pricing",S.pricing);
-  else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing})}catch(e){handleWriteErr(e)}}
+  else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing});await db.doc("settings/terms").set({text:termsText(),ver:termsVer()})}catch(e){handleWriteErr(e)}}
 pTimer=null},700)}
 async function loadBg(id){
   if(S.bg[id]!==undefined)return;S.bg[id]=null;
@@ -1494,6 +1495,9 @@ const TERMS_DEFAULT=`1. Services. [Business] inspects ("audits"), repairs and ma
 10. Licensing. Irrigation in Texas is regulated by the Texas Commission on Environmental Quality (TCEQ). Our licensed irrigator's information appears on every estimate and invoice.`;
 function termsText(){return (S.pricing._terms||TERMS_DEFAULT).replace(/\[Business\]/g,bizInfo().name||"Sprinkler Wrangler")}
 function termsVer(){return S.pricing._termsVer||"1"}
+/* Public copy of the terms (no prices) so the sign-up page can show it before anyone is signed in */
+function signupTerms(){const t=S.auth&&S.auth.terms;return t&&t.text?t:{text:TERMS_DEFAULT.replace(/\[Business\]/g,"Sprinkler Wrangler"),ver:"1"}}
+async function loadSignupTerms(){if(!sb)return;try{const {data}=await sb.from("settings").select("data").eq("key","terms").maybeSingle();if(data&&data.data&&data.data.text){S.auth.terms=data.data;if(S.mode==="auth")render()}}catch(e){}}
 function termsCard(){const adm=isAdmin();
   return `<div class="card"><h2>Terms of Service</h2><p class="small muted" style="margin:0">Customers must agree to these before an audit report is issued. Raise the version when you change the wording. Have a lawyer review them.</p>
   <div class="grid3"><label class="f"><span>Version</span><input id="p-_termsVer" data-price="_termsVer" type="text" value="${esc(termsVer())}" ${adm?"":"disabled"}></label></div>
@@ -2020,13 +2024,21 @@ function authView(){
     <label class="f"><span>Password</span><input id="au-pass" type="password" autocomplete="current-password" required></label>
     <button class="btn" ${busy}>${a.busy?"Signing in…":"Sign in"}</button></form>
     <div class="row"><button class="linkbtn" data-auth="signup">Create an account</button><span class="spacer"></span><button class="linkbtn" data-auth="forgot">Forgot password?</button></div>`;
-  if(a.step==="signup")body=`<h2>Create your account</h2>${msg}
+  if(a.step==="signup"&&!a.who)body=`<h2>Create your account</h2>${msg}
+    <p>Who is this account for?</p>
+    <div class="whopick"><button class="btn" data-who="owner">I'm a property owner (customer)</button>
+    <button class="btn secondary" data-who="tech">I'm a Sprinkler Wrangler technician</button></div>
+    <button class="linkbtn" data-auth="signin">I already have an account</button>`;
+  else if(a.step==="signup"){const own=a.who==="owner";body=`<h2>${own?"Create your customer account":"Technician account"}</h2>${msg}
+    ${own?"":`<div class="note info">Technician accounts are approved by an admin. Ask your admin to add your email to the team first, then sign up here with that same email. Until then you'll see "Waiting for access".</div>`}
     <form data-authform="signup" class="authf"><label class="f"><span>Your name</span><input id="au-name" type="text" autocomplete="name" required></label>
     <label class="f"><span>Email</span><input id="au-email" type="email" autocomplete="email" inputmode="email" required value="${esc(a.email)}"></label>
     <label class="f"><span>Password (at least 8 characters)</span><input id="au-pass" type="password" autocomplete="new-password" minlength="8" required></label>
+    ${own?`<div class="eyebrow">Terms of Service</div><div class="terms signterms">${esc(signupTerms().text)}</div>
+    <label class="row termtick"><input id="au-terms" type="checkbox" required><span>I have read and agree to the Terms of Service (version ${esc(signupTerms().ver)}), including maintenance reminder emails I can opt out of.</span></label>
+    <p class="small muted" style="margin:0">Use the email address your technician has on file, so your reports appear automatically.</p>`:""}
     <button class="btn" ${busy}>${a.busy?"Creating…":"Create account"}</button></form>
-    ${SHOW_PORTAL?'<p class="small muted">Property owners: use the email address your technician has on file, so your reports appear automatically.</p>':""}
-    <button class="linkbtn" data-auth="signin">I already have an account</button>`;
+    <div class="row"><button class="linkbtn" data-who="">Back</button><span class="spacer"></span><button class="linkbtn" data-auth="signin">I already have an account</button></div>`}
   if(a.step==="code")body=`<h2>Check your email</h2>${msg}
     <p>We sent a code to <b>${esc(a.email)}</b>. Enter it below to confirm your account.</p>
     <form data-authform="code" class="authf"><label class="f"><span>Code</span><input id="au-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required class="codein"></label>
@@ -2068,8 +2080,11 @@ async function authSubmit(kind){
       const {data,error}=await sb.auth.signInWithPassword({email:a.email,password:pw});
       if(error){const m=authMsg(error);if(m==="confirm"){await sb.auth.resend({type:"signup",email:a.email});return go({step:"code",msg:"Your email isn't confirmed yet. We sent you a new code."})}return go({err:m})}
       a.busy=false;return afterSignIn(data.session)}
-    if(kind==="signup"){const name=v("au-name"),pass=document.getElementById("au-pass").value;a.email=v("au-email").toLowerCase();render();
-      const {data,error}=await sb.auth.signUp({email:a.email,password:pass,options:{data:{name},emailRedirectTo:location.origin}});
+    if(kind==="signup"){const name=v("au-name"),pass=document.getElementById("au-pass").value;a.email=v("au-email").toLowerCase();
+      const meta={name,account:a.who==="owner"?"owner":"tech"};
+      if(a.who==="owner"){const tk=document.getElementById("au-terms");if(!tk||!tk.checked)return go({err:"Please read and tick the Terms of Service box to create your account."});const t=signupTerms();meta.terms_ver=t.ver;meta.terms_at=new Date().toISOString()}
+      render();
+      const {data,error}=await sb.auth.signUp({email:a.email,password:pass,options:{data:meta,emailRedirectTo:location.origin}});
       if(error)return go({err:authMsg(error)});
       if(data.user&&Array.isArray(data.user.identities)&&data.user.identities.length===0)return go({step:"signin",err:"An account with that email already exists. Sign in instead."});
       if(data.session){a.busy=false;return afterSignIn(data.session)}
@@ -2263,9 +2278,10 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
-    if(d.auth){if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
+    if(d.who!==undefined){S.auth=Object.assign(S.auth,{who:d.who,err:"",msg:""});render();return}
+    if(d.auth){if(d.auth==="signup"){S.auth.who="";loadSignupTerms()}if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
     if(d.acct){S.acctOpen=!S.acctOpen;S.jobMenu=false;render();return}
     if(d.jobmenu){S.jobMenu=!S.jobMenu;S.acctOpen=false;render();return}
