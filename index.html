@@ -412,6 +412,9 @@ const PRICE_DEFAULTS=(()=>{
   add("iso_replace","Mainline","Replace isolation valve","each",165,1);
   add("mv_repair","Mainline","Master valve repair","each",95,1);
   add("mv_replace","Mainline","Replace master valve","each",245,1);
+  add("mv_relocate","Mainline","Relocate master valve downstream of backflow (code)","each",225,1);
+  add("mv_install","Mainline","Install master valve","each",295,1);
+  add("iso_install","Mainline","Install isolation valve","each",185,1);
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
   add("ctl_program","Controller","Reprogram controller schedule","each",45,0);
@@ -640,7 +643,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
-  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
+  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
   if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
   j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
@@ -675,8 +678,13 @@ function buildEstimate(j){
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note")add(sec,"bf_install",1)}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
-    [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k];if(c.present!=="yes")return;if(c.action==="repair")add(sec,p+"_repair",1);if(c.action==="replace")add(sec,p+"_replace",1)});
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note")add(sec,"bf_install",1)}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
+    [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
+      if(c.present==="no"&&(k==="iso"||k==="mv")){if(c.noneAction!=="none")add(sec,p+"_install",1);return}
+      if(c.present!=="yes")return;
+      if(k==="mv"&&c.pos==="upstream")add(sec,"mv_relocate",1);
+      if(k==="prv"&&c.pos==="upstream")return;
+      if(c.action==="repair")add(sec,p+"_repair",1);if(c.action==="replace")add(sec,p+"_replace",1)});
   });
   (j.controllers||[]).forEach(c=>{
     const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
@@ -1216,11 +1224,18 @@ function meTap(g){
 }
 
 /* ---- mainline ---- */
-function compBlock(base,c,label,hasPos){
-  return `<div class="combo"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
+const PIPE_SIZES=["3/4\"","1\"","1 1/4\"","1 1/2\"","2\""];
+function sizeSel(label,path){const v=getP(job(),path)||"";const opts=[["","Choose…"]].concat(PIPE_SIZES);if(v&&!PIPE_SIZES.includes(v))opts.push([v,v+" (as entered)"]);return sel(label,path,opts)}
+function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv=k==="mv",isPrv=k==="prv",isIso=k==="iso";
+  const up=c.present==="yes"&&c.pos==="upstream";
+  const brandV=brandName(c.brand,c.brandOther);
+  return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
+  ${c.present==="no"&&(isIso||isMv)?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>`:""}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
-  <div class="grid3">${fld("Size",base+".size","text",'placeholder="1&quot;"')}${brandSel("Brand",base+".brand",base.endsWith(".prv")?"prv":base.endsWith(".iso")?"iso":"valve")}${base.endsWith(".mv")?lineSel("Product line",base+".line","valve",brandName(c.brand,c.brandOther)):""}${fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
-  ${seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
+  ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Fix now.</div>`:""}
+  ${isPrv&&up?`<div class="note warn small"><b>Upstream of the backflow (house side):</b> work here needs a licensed plumber.</div>`:""}
+  <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
+  ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
 }
 function mainlineTab(){const j=job();
   return j.mainline.map((m,mi)=>{const b=`mainline.${mi}`;const leak=hasLeak(m);
@@ -1241,12 +1256,13 @@ function mainlineTab(){const j=job();
     ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
     ${m.bf.present==="no"?`<div class="note bad small"><b>No backflow preventer.</b> Texas (TCEQ) requires backflow prevention on any irrigation system connected to drinking water. This is marked Fix now on the report.</div>
     ${seg("Recommend",b+".bf.noneAction",[["install","Install one"],["note","Note only (protection is elsewhere)"]])}`:m.bf.present!=="yes"?`<p class="small muted" style="margin:0">Answer first. The backflow details appear once you pick Yes.</p>`:`
-    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    <div class="grid3">${sizeSel("Size",b+".bf.size")}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${realLine(m.bf.line)?"":fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     ${seg("Backflow test record",b+".bf.testRec",[["tag","Tag or record found"],["unknown","Unknown / no tag"]])}
     ${m.bf.testRec==="tag"?`<div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date",'data-rr="1"')}</div>`:""}
     ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Fix now.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
-    ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}`}</div>
+    ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
+    ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -1260,7 +1276,7 @@ function controllersTab(){const j=job();
   return j.controllers.map((c,ci)=>{const b=`controllers.${ci}`;const f=ctlFlags(c);const zn=Math.min(Math.max(num(c.zones),0),200);
   const flags=[];if(c.power==="no")flags.push('<span class="pill bad">No power</span>');if(f.ohm.length)flags.push(`<span class="pill bad">${f.ohm.length} wiring fault${f.ohm.length>1?"s":""}</span>`);if(c.overcurrent==="yes")flags.push('<span class="pill bad">Overcurrent</span>');if(f.decoders.length)flags.push(`<span class="pill warn">${f.decoders.length} decoder${f.decoders.length>1?"s":""} down</span>`);
   return `<div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${flags.join("")}</div>
-  <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${sel("Brand",b+".brandPick",[["",c.brand?"(entered: "+c.brand+")":"Choose…"]].concat(CTL_BRANDS))}${c.brandPick==="Other"?fld("Brand name",b+".brandOther"):""}${lineSel("Product line",b+".line","controller",ctlBrand(c))}${fld("Model",b+".model")}</div>
+  <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${sel("Brand",b+".brandPick",[["",c.brand?"(entered: "+c.brand+")":"Choose…"]].concat(CTL_BRANDS))}${c.brandPick==="Other"?fld("Brand name",b+".brandOther"):""}${lineSel("Product line",b+".line","controller",ctlBrand(c))}${realLine(c.line)?"":fld("Model",b+".model")}</div>
   <div class="grid3">${fld("Number of zones",b+".zones","number",'data-rr="1" min="1" max="200"')}</div>
   ${seg("Power to controller?",b+".power",YN,{no:"bad"})}
   ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"],["controller","Controller itself"]]):""}
@@ -1288,8 +1304,10 @@ function controllersTab(){const j=job();
 function parseStarts(t){return String(t||"").split(/[,;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean).map(x=>{const m=x.match(/^(\d{1,2})(?::(\d{2}))?\s*(a|am|p|pm)?$/);if(!m)return null;let h=+m[1];const mi=+(m[2]||0);const ap=m[3];if(ap&&ap[0]==="p"&&h<12)h+=12;if(ap&&ap[0]==="a"&&h===12)h=0;return h*60+mi}).filter(x=>x!=null)}
 function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def,qty,detail)=>R.push({k,label,why,pk,def:!!def,qty:qty||1,detail:detail||""});
   const tier=gradeFor("controller",ctlBrand(c),c.line);
-  const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push(c.line&&lineInfo("controller",ctlBrand(c),c.line)?"economy-grade model with a shorter service life":"economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.overcurrent==="yes")replaceWhy.push("overcurrent on the 2-wire path");if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
-  if(replaceWhy.length)add("replace","Replace controller","Because of: "+replaceWhy.join(", ")+".","ctl_replace",false,1,[ctlBrand(c),c.model].filter(Boolean).join(" "));
+  const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push(c.line&&lineInfo("controller",ctlBrand(c),c.line)?"economy-grade model with a shorter service life":"economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
+  {const rp=c.repl||{};const newOne=[rp.brand,realLine(rp.line)].filter(Boolean).join(" ");
+   if(replaceWhy.length)add("replace","Replace controller","Because of: "+replaceWhy.join(", ")+".","ctl_replace",c.power==="no"&&c.powerIssue==="controller",1,newOne?"new "+newOne:[ctlBrand(c),realLine(c.line)||c.model].filter(Boolean).join(" "))}
+  if(c.wiring==="2wire"&&c.overcurrent==="yes")add("trouble2w","Troubleshoot the 2-wire path","Overcurrent on the path. Find the fault (wire, splice or decoder) before replacing parts.","wire_trouble",true);
   if(c.power==="no"&&c.powerIssue==="transformer")add("transformer","Replace transformer","No power and the transformer failed.","transformer",true);
   if(c.power==="no"&&c.powerIssue==="outlet")add("outlet","Customer to have an electrician restore power to the outlet","The outlet has no power. Check the GFCI and breaker first.",null,true);
   if(c.rain==="no")add("rainAdd","Add rain/freeze sensor","No rain/freeze sensor installed. Stops watering in rain and freezing weather.","rain_add",true);
@@ -1307,7 +1325,7 @@ function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def
 function recOn(c,r){const v=(c.act||{})[r.k];return v===undefined?r.def:!!v}
 function recsBlock(c,ci){const recs=ctlRecs(c);const cus=c.custom||[];
   return `<div class="combo recs"><h4>Recommendations</h4><p class="small muted" style="margin:0">Built from what you entered on this page. Tap Add to put one on the estimate. Prices are set on the Estimate tab.</p>
-  <div class="acts">${recs.map(r=>{const on=recOn(c,r);return `<div class="act ${on?"on":""}"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}${r.pk?"":" (advice on the report, no charge)"}</div></div><button type="button" class="chip recbtn" data-rec="${ci}|${r.k}" aria-pressed="${on}">${on?"✓ Added":"+ Add"}</button></div>`}).join("")||'<p class="small muted" style="margin:0">Nothing flagged from what you entered so far.</p>'}
+  <div class="acts">${recs.map(r=>{const on=recOn(c,r);const rp=c.repl||{};return `<div class="act ${on?"on":""}"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}${r.pk?"":" (advice on the report, no charge)"}</div></div><button type="button" class="chip recbtn" data-rec="${ci}|${r.k}" aria-pressed="${on}">${on?"✓ Added":"+ Add"}</button></div>${r.k==="replace"&&on?`<div class="grid2 replpick"><label class="f"><span>New controller brand</span><select data-f="controllers.${ci}.repl.brand" data-rr="1"><option value="">Choose…</option>${CTL_BRANDS.filter(x=>x!=="Other").map(x=>`<option ${rp.brand===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>${rp.brand&&((PRODUCT_LINES.controller||{})[rp.brand]||[]).length?`<label class="f"><span>New controller product line</span><select data-f="controllers.${ci}.repl.line" data-rr="1"><option value="">Choose…</option>${PRODUCT_LINES.controller[rp.brand].map(x=>`<option ${rp.line===x[0]?"selected":""}>${esc(x[0])}</option>`).join("")}</select></label>`:""}</div>`:""}`}).join("")||'<p class="small muted" style="margin:0">Nothing flagged from what you entered so far.</p>'}
   ${cus.map((x,xi)=>`<div class="act on"><div class="al">${esc(x.desc)}<div class="ap">Your recommendation${num(x.price)?"":" · price it on the Estimate tab"}</div></div>${delBtn("ccus:"+ci+":"+xi,"✕")}</div>`).join("")}</div>
   <div class="row" style="flex-wrap:nowrap;gap:8px"><input type="text" id="ctlrec-${ci}" placeholder="Add your own recommendation" style="flex:1;min-width:0" data-ctlrecin="${ci}"><button type="button" class="btn sm" data-ctlrecadd="${ci}">Add</button></div></div>`}
 function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
@@ -1395,7 +1413,9 @@ function findings(j,tech){
     const bf=m.bf;if(bf.present==="no")it.push(`<span class="flag">No backflow preventer found.</span> Texas (TCEQ) requires backflow prevention on irrigation connected to drinking water.${bf.noneAction==="note"?" Technician noted protection may be installed elsewhere.":""}`);else if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
     if(bf.present!=="no"&&bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
     if(bfTestDue(m))it.push(`<span class="flag">Backflow test due:</span> ${bf.testRec==="unknown"?"no test tag or record was found":"last tested "+esc(new Date(bf.lastTest+"T12:00").toLocaleDateString("en-US"))+", more than 12 months ago"}.`);
-    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`)});
+    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&(k==="iso"||k==="mv"))it.push(`No ${l.toLowerCase()} installed.${c.noneAction!=="none"?" Installing one is recommended.":""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`);
+      if(c.present==="yes"&&k==="mv"&&c.pos==="upstream")it.push(`<span class="flag">Code violation:</span> the master valve is upstream of the backflow preventer. It must be downstream.`);
+      if(c.present==="yes"&&k==="prv"&&c.pos==="upstream"&&c.action==="plumber")it.push("Recommended: have a licensed plumber service the pressure reducing valve (it is on the house side of the backflow).")});
     if(m.notes)it.push(esc(m.notes));
     if(it.length)out.push([m.name||"Mainline",it]);
   });
@@ -1511,9 +1531,9 @@ function suggestUpsells(j){
   const spray=j.zones.filter(z=>z.types.includes("spray"));
   if(spray.length)add("Water-efficient nozzles","Whole property",`Convert spray nozzles to MP rotators (${spray.length} zone${spray.length===1?"":"s"})`,"Slower, more even watering that cuts runoff on clay soil and uses less water.","cnoz_mp",spray.length*6);
   j.zones.filter(z=>z.types.includes("spray")&&z.sun==="partial").forEach(z=>add("Drip conversion",`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,`Convert zone ${z.num} beds to drip`,"Waters plant roots directly, ends overspray on walls and walks.","drip_retro"));
-  j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
+  j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.insulate!=="yes"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
     if(m.prv.present==="no")add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.","prv_replace");
-    if(m.mv.present==="no")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.","mv_replace")});
+    if(m.mv.present==="no"&&m.mv.noneAction==="none")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.","mv_install")});
   add("Maintenance plan","Whole property","Seasonal maintenance plan","Spring start-up, mid-season check and winterization at a set yearly price.","",1);
   return S2;
 }
@@ -1861,7 +1881,7 @@ function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveC
    Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
-const RED_KEYS=new Set(["bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+const RED_KEYS=new Set(["mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
@@ -1871,7 +1891,7 @@ const worst=(a,b)=>{const o={r:3,y:2,g:1,"":0,n:0};return (o[a]||0)>=(o[b]||0)?a
 function sectionColors(j){const e=buildEstimate(j);const C={};const bump=(sec,c)=>{C[sec]=worst(C[sec]||"",c)};
   e.lines.forEach(l=>{const c=lineColor(j,l);if(c)bump(l.sec,c)});
   (j.mainline||[]).forEach(m=>{const sec=m.name||"Mainline";const parts=[m.bf,m.prv,m.iso,m.mv].filter(Boolean);
-    if(hasLeak(m)||m.bf.present==="no"||bfTestDue(m)||parts.some(p=>p.condition==="Failed"))bump(sec,"r");else if(parts.some(p=>p.condition==="Poor"||p.condition==="Fair")||m.bf.insulated==="no")bump(sec,"y");else bump(sec,"g")});
+    if(hasLeak(m)||m.bf.present==="no"||bfTestDue(m)||(m.mv&&m.mv.present==="yes"&&m.mv.pos==="upstream")||parts.some(p=>p.condition==="Failed"))bump(sec,"r");else if(parts.some(p=>p.condition==="Poor"||p.condition==="Fair")||m.bf.insulated==="no")bump(sec,"y");else bump(sec,"g")});
   (j.controllers||[]).forEach(c=>{const sec=c.name||"Controller";const f=ctlFlags(c);
     if(c.power==="no"||f.wire.length||c.overcurrent==="yes"||f.decoders.length||f.failedMods)bump(sec,"r");
     else if(f.rebuild.length||c.rain==="no"||c.rainStatus==="notworking"||c.rainStatus==="bypassed")bump(sec,"y");else bump(sec,"g")});
@@ -2096,21 +2116,25 @@ function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};
    A job starts with a few controller questions; the app then builds exactly that many zones. */
 const CTL_BRANDS=["Hunter","Rain Bird","Toro","Weathermatic","Irritrol","Orbit","Rachio","Other"];
 function ctlBrand(c){return c.brandPick==="Other"?(c.brandOther||""):(c.brandPick||c.brand||"")}
-function newDraft(){return {brand:"",brandOther:"",model:"",wiring:"conventional",zones:6,drip:[]}}
+function newDraft(){return {brand:"",brandOther:"",model:"",line:"",wiring:"conventional",zones:6,drip:[],modular:"",modules:[]}}
 function ctlSetupForm(title,isFirst){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
-  const ready=!!d.brand;
+  const ready=!!d.brand&&!!d.modular;
   return `<div class="card"><div class="eyebrow">${isFirst?"Step 2":"New controller"}</div><h2>${esc(title)}</h2>
     <p class="muted small" style="margin:0">Look at the customer's controller. The app builds the zones from these answers.</p>
     <div class="q"><span class="ql">Brand *</span><div class="chips">${CTL_BRANDS.map(x=>`<button type="button" class="chip" data-csbrand="${esc(x)}" aria-pressed="${d.brand===x}">${esc(x)}</button>`).join("")}</div></div>
     ${d.brand==="Other"?`<label class="f"><span>Brand name</span><input id="cs-brandOther" data-cs="brandOther" type="text" value="${esc(d.brandOther)}"></label>`:""}
-    <label class="f"><span>Model (optional)</span><input id="cs-model" data-cs="model" type="text" value="${esc(d.model)}" placeholder="e.g. Pro-C, ESP-TM2"></label>
+    ${((PRODUCT_LINES.controller||{})[d.brand]||[]).length?`<label class="f"><span>Product line</span><select id="cs-line" data-cs="line" data-csrr="1"><option value="">Choose…</option>${PRODUCT_LINES.controller[d.brand].map(x=>`<option ${d.line===x[0]?"selected":""}>${esc(x[0])}</option>`).join("")}<option ${d.line==="Other / not listed"?"selected":""}>Other / not listed</option><option ${d.line==="Not sure"?"selected":""}>Not sure</option></select></label>`:""}
+    ${d.brand&&!realLine(d.line)?`<label class="f"><span>Model (optional)</span><input id="cs-model" data-cs="model" type="text" value="${esc(d.model)}" placeholder="e.g. Pro-C, ESP-TM2"></label>`:""}
+    <div class="q"><span class="ql">Modular? *</span><div class="chips">${[["yes","Yes"],["no","No"]].map(([v,l])=>`<button type="button" class="chip" data-csmod="${v}" aria-pressed="${d.modular===v}">${l}</button>`).join("")}</div></div>
+    ${d.modular==="yes"?`<div class="combo"><h4>Modules</h4><p class="small muted" style="margin:0">Add each station module installed in the controller.</p>
+      ${d.modules.map((mo,mi)=>`<div class="row" style="flex-wrap:nowrap"><span class="small" style="width:70px">Module ${mi+1}</span><label class="f" style="flex:1"><span>Stations</span><select data-csmods="${mi}">${["","1","2","3","4","6","8","12","22"].map(v=>`<option value="${v}" ${String(mo.size)===v?"selected":""}>${v||"Choose…"}</option>`).join("")}</select></label><label class="f" style="flex:1"><span>Status</span><select data-csmodst="${mi}">${["OK","Failed","Empty slot"].map(v=>`<option ${mo.status===v?"selected":""}>${v}</option>`).join("")}</select></label><button type="button" class="btn quiet sm" data-csmodrm="${mi}" aria-label="Remove module">✕</button></div>`).join("")}
+      <div><button type="button" class="btn ghost sm" data-csmodadd="1">+ Add module</button></div></div>`:""}
     <div class="q"><span class="ql">Wiring</span><div class="chips">${[["conventional","Conventional"],["2wire","2-wire"]].map(([v,l])=>`<button type="button" class="chip" data-cswire="${v}" aria-pressed="${d.wiring===v}">${l}</button>`).join("")}</div></div>
     <div class="q"><span class="ql">Number of zones *</span><div class="row"><div class="step"><button type="button" data-cszn="-1" aria-label="Fewer zones">−</button><input id="cs-zones" data-cs="zones" type="number" inputmode="numeric" value="${n}" aria-label="Number of zones"><button type="button" data-cszn="1" aria-label="More zones">+</button></div></div></div>
-    <div class="q"><span class="ql">Which zones are drip? (tap any; the rest start as spray)</span><div class="chips">${Array.from({length:n},(_,i)=>i+1).map(z=>`<button type="button" class="chip" data-csdrip="${z}" aria-pressed="${d.drip.includes(z)}">${z}</button>`).join("")}</div></div>
     <div class="row"><button class="btn" data-csbuild="1" ${ready?"":"disabled"} style="min-height:48px">Build ${n} zone${n===1?"":"s"}</button>${isFirst?"":`<button class="btn quiet" data-cscancel="1">Cancel</button>`}</div>
-    ${ready?"":`<p class="small muted" style="margin:0">Pick the brand to continue.</p>`}</div>`}
+    ${ready?"":`<p class="small muted" style="margin:0">${!d.brand?"Pick the brand":"Answer “Modular?”"} to continue.</p>`}</div>`}
 function buildController(j){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
-  const c=newController(j.controllers.length+1);Object.assign(c,{brandPick:d.brand,brandOther:d.brandOther.trim(),brand:"",model:d.model.trim(),wiring:d.wiring,zones:n,rain:"",power:"yes"});
+  const c=newController(j.controllers.length+1);Object.assign(c,{brandPick:d.brand,brandOther:d.brandOther.trim(),brand:"",model:realLine(d.line)?"":d.model.trim(),line:d.line||"",wiring:d.wiring,zones:n,rain:"",power:"yes",modular:d.modular||"no",modules:d.modular==="yes"?d.modules.filter(mo=>mo.size||mo.status!=="OK").map(mo=>({size:mo.size,status:mo.status||"OK"})):[]});
   j.controllers.push(c);
   for(let i=1;i<=n;i++){const z=newZone(j);z.ctl=c.id;z.num=String(i);
     if(d.drip.includes(i)){z.types=["drip"];z.sizes=[]}else{z.types=["spray"];z.sizes=["4","6"]}
@@ -2698,7 +2722,9 @@ app.addEventListener("input",ev=>{
 });
 app.addEventListener("change",ev=>{
   const t=ev.target;
-  if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
+  if(t.dataset.csmods!=null&&S.ctlDraft){S.ctlDraft.modules[+t.dataset.csmods].size=t.value;return}
+  if(t.dataset.csmodst!=null&&S.ctlDraft){S.ctlDraft.modules[+t.dataset.csmodst].status=t.value;return}
+  if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.csrr){rr();return}if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
   if(t.dataset.terms&&job()){const j=job();if(t.checked)Object.assign(j.info,{termsAgreed:true,termsVer:termsVer(),termsAt:Date.now()});else{j.info.termsAgreed=false;delete j.info.termsAt}scheduleSave(S.cur);rr();return}
   if(t.dataset.assign&&job()){const j=job();const p=techList().find(x=>x.id===t.value);if(p){assignTo(j,p);try{localStorage.setItem("irr.lastAssign",p.id)}catch(e){}scheduleSave(S.cur);rr()}return}
   if(t.dataset.cfcheck&&S.custEdit){S.custEdit[t.dataset.cfcheck]=t.checked;return}
@@ -2817,7 +2843,10 @@ app.addEventListener("click",ev=>{
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
     S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
   if(d.ol){setP(j,d.ol,"OL");scheduleSave(S.cur);rr();return}
-  if(d.csbrand){S.ctlDraft.brand=d.csbrand;rr();return}
+  if(d.csbrand){S.ctlDraft.brand=d.csbrand;S.ctlDraft.line="";rr();return}
+  if(d.csmod){S.ctlDraft.modular=d.csmod;if(d.csmod==="yes"&&!S.ctlDraft.modules.length)S.ctlDraft.modules=[{size:"",status:"OK"}];rr();return}
+  if(d.csmodadd){S.ctlDraft.modules.push({size:"",status:"OK"});rr();return}
+  if(d.csmodrm!=null){S.ctlDraft.modules.splice(+d.csmodrm,1);rr();return}
   if(d.cswire){S.ctlDraft.wiring=d.cswire;rr();return}
   if(d.cszn){const dr=S.ctlDraft;dr.zones=Math.max(1,Math.min(99,(num(dr.zones)||1)+num(d.cszn)));dr.drip=dr.drip.filter(z=>z<=dr.zones);rr();return}
   if(d.csdrip){const dr=S.ctlDraft;const z=num(d.csdrip);dr.drip=dr.drip.includes(z)?dr.drip.filter(x=>x!==z):dr.drip.concat(z);rr();return}
