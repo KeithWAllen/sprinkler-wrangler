@@ -318,10 +318,10 @@ table.dgridt{table-layout:fixed;width:100%}
 .twn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:34px;min-height:26px;padding:2px 5px;border-radius:8px;border:2px solid var(--line);font-size:.75rem;font-weight:700;line-height:1.1}.twn small{font-weight:500;font-size:.65rem}
 .tw-g{border-color:#2E9E5B;background:#2E9E5B;color:#fff}.tw-o{border-color:#E8860C;background:#E8860C;color:#fff}.tw-r{border-color:#D23B32;background:#D23B32;color:#fff}.tw-x{border-color:#8E959C;background:#8E959C;color:#fff}.tw-n{border-style:dashed;background:transparent}
 .twc-o{color:#C46F06;font-weight:700}.twc-r{color:#D23B32;font-weight:700}.twc-x{color:#6B7178;font-weight:700}
-.twcirc{border-radius:50%!important;width:50px;height:50px;padding:0!important}.twcirc small{font-size:.6rem}.twplus{font-size:1.4rem;border-style:dashed;color:var(--muted)!important;background:transparent}
+.twcirc{border-radius:50%!important;width:50px;height:50px;padding:0!important}.twcirc small{font-size:.55rem;font-weight:600}.twz{font-size:1rem;font-weight:800;line-height:1}.twplus{font-size:1.4rem;border-style:dashed;color:var(--muted)!important;background:transparent}
 .twsb{border:2px solid var(--line);padding:12px 6px!important;font-size:.9rem!important}.twsb.tws-g.on{background:#2E9E5B;color:#fff;border-color:#2E9E5B}.twsb.tws-o.on{background:#E8860C;color:#fff;border-color:#E8860C}.twsb.tws-r.on{background:#D23B32;color:#fff;border-color:#D23B32}.twsb.tws-x.on{background:#8E959C;color:#fff;border-color:#8E959C}
 .tws-g{border-color:#2E9E5B}.tws-o{border-color:#E8860C}.tws-r{border-color:#D23B32}.tws-x{border-color:#8E959C}
-.twleg .twleg{margin-top:6px}.twroot{display:flex;align-items:center;gap:8px}.twctl{border-radius:8px;width:42px;height:42px;background:var(--ink,#222);color:#fff;border-color:var(--ink,#222)}
+.twleg .twleg{margin-top:6px}.twscroll{overflow-x:auto;max-width:100%}.twscroll svg{display:block;color:var(--ink,#1a1a1a)}.twroot{display:flex;align-items:center;gap:8px}.twctl{border-radius:8px;width:42px;height:42px;background:var(--ink,#222);color:#fff;border-color:var(--ink,#222)}
 .twv{display:grid;justify-items:start}.twvr{display:flex;align-items:center;gap:10px}.twvr .twn{border-radius:50%;width:42px;height:42px;padding:0;flex:none}
 .twvw{width:2px;height:16px;background:var(--muted);margin-left:20px;position:relative}.twvw.oc{background:#D23B32;width:3px}.twvw.cut{background:none;border-left:2px dashed #D23B32;height:26px}.twvw.cut span{position:absolute;left:10px;top:4px;white-space:nowrap;color:#D23B32;font-weight:800;font-size:.75rem}
 .twvb{margin-left:20px;padding:6px 0 6px 16px;border-left:2px solid var(--muted)}.twroot-leg{margin-top:4px}.twvend{margin:4px 0 0 4px}.twtree .twchain .twn:not(.twrun){border-radius:50%;width:42px;height:42px;padding:0}.twtree .twchain .twn small{font-size:.58rem}.twrun{border-radius:21px!important}.twkey .twn{border-radius:50%}
@@ -1348,19 +1348,37 @@ function twoWire(c){const bad=[],sols=[],breaks=[],legOc=[];_dupCache=dupZones(c
     if(c.overcurrent==="yes"&&L.oc==="yes"){const r=splitRange(L);legOc.push({li,where:`Leg ${li+1}`+(r.done?", "+r.where:" (overcurrent)"),r})}});
   return {bad,sols,breaks,legOc}}
 function twoWireTree(c){const legs=c.legs||[];if(!legs.some(L=>(L.decoders||[]).length))return "";const tw=twoWire(c);const dz=dupZones(c);
-  /* Top-down tree, one bubble per decoder (Bradley: long is fine; every bubble helps pick a halfway point). Branches split off at their decoder. */
-  const parentOf=L=>L.from?+String(L.from).split(":")[0]:-1;
-  const legHtml=li=>{const L=legs[li];const ds=L.decoders||[];
+  /* Drawn like Bradley's paper sketch: controller on top, legs run down, branches split off to the side at their decoder,
+     decoders in the same valve box sit side by side. One bubble per decoder, labeled by zone. Scrolls as far as it needs to. */
+  const CW=58,RH=60,R=19,PAD=34;const occ={};const pos={};let maxC=0,maxR=0;
+  const kids=li=>legs.map((M,lb)=>[M,lb]).filter(([M])=>M.from&&+String(M.from).split(":")[0]===li).sort((x,y)=>+x[0].from.split(":")[1]-+y[0].from.split(":")[1]).map(x=>x[1]);
+  const layout=(li,minCol,r0)=>{const ds=legs[li].decoders||[];const rel=[];let r=0,cx=0,w=1;
+    ds.forEach((d,k)=>{if(k>0&&d.box){cx++;}else if(k>0){r++;cx=0}rel.push([r,cx]);w=Math.max(w,cx+1)});
+    const rows=ds.length?r+1:0;let col=minCol;
+    const free=cc=>{for(let rr=r0;rr<r0+Math.max(rows,1);rr++)for(let q=cc;q<cc+w;q++)if(occ[rr+":"+q])return false;return true};
+    while(!free(col))col++;
+    for(let rr=r0;rr<r0+Math.max(rows,1);rr++)for(let q=col;q<col+w;q++)occ[rr+":"+q]=1;
+    pos[li]=rel.map(([rr,q])=>{maxC=Math.max(maxC,col+q);maxR=Math.max(maxR,r0+rr);return {r:r0+rr,c:col+q}});
+    kids(li).forEach(lb=>{const k=+legs[lb].from.split(":")[1]-1;const p=pos[li][k];if(p)layout(lb,col+w,p.r+1)})};
+  const roots=legs.map((L,li)=>{const pi=L.from?+String(L.from).split(":")[0]:-1;return pi<0||!legs[pi]||pi>=li?li:-1}).filter(v=>v>=0);
+  roots.forEach((li,i)=>layout(li,i?1:0,1));
+  const X=cc=>PAD+cc*CW,Y=rr=>PAD+rr*RH;const COL={g:"#2E9E5B",o:"#E8860C",r:"#D23B32",x:"#8E959C"};
+  let lines="",nodes="";
+  const seg=(x1,y1,x2,y2,kind)=>{if(kind==="cut"){const mx=(x1+x2)/2,my=(y1+y2)/2;return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#D23B32" stroke-width="2.5" stroke-dasharray="5 4"/><text x="${mx+8}" y="${my+5}" font-size="15" font-weight="800" fill="#D23B32">✕</text>`}
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${kind==="oc"?"#D23B32":"#7a8288"}" stroke-width="${kind==="oc"?4:2}"/>`};
+  legs.forEach((L,li)=>{const ds=L.decoders||[];const P=pos[li];if(!P||!ds.length)return;
     const br=tw.breaks.find(x=>x.li===li);const oc=c.overcurrent==="yes"&&L.oc==="yes"?splitRange(L):null;const cut=br&&!(oc&&oc.done)?br.reach+1:-1;
-    const inR=i=>oc&&i>=oc.lo&&i<=oc.hi;const x=i=>i===cut||(oc&&oc.done&&oc.single&&i===oc.lo);
-    const wire=i=>`<div class="twvw ${x(i)?"cut":""} ${inR(i)&&!x(i)?"oc":""}">${x(i)?"<span>✕ likely break</span>":""}</div>`;
-    const kidsAt=k=>legs.map((M,lb)=>M.from===li+":"+(k+1)?lb:-1).filter(v=>v>=0);
-    const rows=ds.map((d,k)=>{const st=DST.find(q=>q[0]===d.st);const isBad=tw.bad.includes(decLabel(li,k,d));
-      return wire(k)+`<div class="twvr"><span class="twn tw-${dstCls(d.st)}">D${k+1}</span><span class="small">${d.zones?`<b>Zone ${esc(d.zones)}</b>`:""}${d.addr&&(!d.zones||zoneList(d).some(z=>dz.includes(z)))?` · #${esc(d.addr)}`:""}${st&&d.st!=="ok"?` · <span class="twc-${st[2]}">${st[1].toLowerCase()}</span>`:""}${isBad&&d.st==="nc"?` <span class="twc-r">(failed decoder)</span>`:""}</span></div>`
-        +kidsAt(k).map(lb=>`<div class="twvb"><div class="twl">⑂ Leg ${lb+1} branches off D${k+1}</div>${legHtml(lb)}</div>`).join("")}).join("");
-    return `<div class="twv">${rows}${oc&&inR(ds.length)?wire(ds.length):""}<div class="twvend small muted">end of Leg ${li+1}</div></div>`};
-  const roots=legs.map((L,li)=>{const pi=parentOf(L);return pi<0||!legs[pi]||pi>=li?li:-1}).filter(v=>v>=0);
-  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twroot"><span class="twn twctl">C</span> Controller</div>${roots.map(li=>`<div class="twvb twroot-leg"><div class="twl">Leg ${li+1}</div>${legHtml(li)}</div>`).join("")}
+    const kind=i=>i===cut||(oc&&oc.done&&oc.single&&i===oc.lo)?"cut":oc&&i>=oc.lo&&i<=oc.hi?"oc":"";
+    let o;if(L.from&&roots.indexOf(li)<0){const [pl,k]=L.from.split(":").map(Number);const pp=(pos[pl]||[])[k-1];o=pp?[X(pp.c),Y(pp.r)]:[X(0),Y(0)]}else o=[X(0),Y(0)];
+    ds.forEach((d,k)=>{const from=k===0?o:[X(P[k-1].c),Y(P[k-1].r)];lines+=seg(from[0],from[1],X(P[k].c),Y(P[k].r),kind(k))});
+    if(oc&&oc.hi>=ds.length){const l=P[ds.length-1];lines+=seg(X(l.c),Y(l.r),X(l.c),Y(l.r)+RH*0.6,kind(ds.length))}
+    ds.forEach((d,k)=>{const p=P[k];const cl=dstCls(d.st);const fill=COL[cl]||"#fff";const lab=d.zones||("D"+(k+1));const fs=lab.length>4?9:lab.length>2?12:14;
+      const dupA=d.addr&&zoneList(d).some(z=>dz.includes(z));
+      nodes+=`<g><title>${esc(decLabel(li,k,d))}${d.st?" · "+esc(DST.find(q=>q[0]===d.st)[1]):""}</title><circle cx="${X(p.c)}" cy="${Y(p.r)}" r="${R}" fill="${fill}" stroke="${cl==="n"?"#7a8288":fill}" stroke-width="2" ${cl==="n"?'stroke-dasharray="4 3"':""}/><text x="${X(p.c)}" y="${Y(p.r)+fs*0.36}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${cl==="n"?"currentColor":"#fff"}">${esc(lab)}</text>${dupA?`<text x="${X(p.c)}" y="${Y(p.r)+R+11}" text-anchor="middle" font-size="9" fill="currentColor">#${esc(d.addr)}</text>`:""}</g>`})});
+  const W=X(maxC)+PAD,H=Y(maxR)+PAD+10;
+  const ctl=`<rect x="${X(0)-R}" y="${Y(0)-R}" width="${2*R}" height="${2*R}" rx="6" fill="#1f2a24"/><text x="${X(0)}" y="${Y(0)+6}" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">C</text>`;
+  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twscroll"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="2-wire path tree">${lines}${ctl}${nodes}</svg></div>
+    <div class="small muted">Bubbles show the zone number. Side-by-side bubbles share a valve box.</div>
     <div class="small muted twkey">${DST.map(([,l,k])=>`<span><span class="twn tw-${k}"></span> ${l.toLowerCase()}</span>`).join("")}<span><span class="twn tw-n"></span> not checked</span><span><b style="color:var(--bad)">✕</b> likely break</span><span><span class="tww oc"></span> fault in this stretch</span></div></div>`}
 /* Binary search on a shorted leg. Nodes: 0 = controller, k = decoder k. Segment s = wire from node s to node s+1 (s = N is past the last decoder).
    Each split "cut after D k": fault on controller side -> segments 0..k-1, far side -> k..N. */
@@ -1379,12 +1397,13 @@ function twEditor(c,b,ci){const dz=dupZones(c);const sel=String(S.twSel||"").spl
     const sum=[["sol","shorted solenoid"],["dec","shorted decoder"],["nc","no comm."]].map(([k,l])=>cnt(k)?`<span class="twc-${dstCls(k)}">${cnt(k)} ${l}</span>`:"").filter(Boolean).join(" · ");
     return `<div class="twedit"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><b>Leg ${li+1}</b> <span class="small muted">· ${L.from?"branches off "+esc(legFromLabel(c,L)):"from the controller"} · ${ds.length} decoder${ds.length===1?"":"s"}</span>${sum?`<div class="small">${sum}</div>`:""}</div>${delBtn("twleg:"+ci+":"+li,"Remove leg")}</div>
       ${c.overcurrent==="yes"?seg("Overcurrent on this leg?",`${b}.legs.${li}.oc`,YN,{yes:"bad"}):""}
-      <div class="twgrid">${ds.map((x,k)=>`<button type="button" class="twn twcirc tw-${dstCls(x.st)} ${k===di?"sel":""}" data-twtap="${ci}|${li}|${k}" aria-label="${esc(decLabel(li,k,x))}: ${esc((DST.find(q=>q[0]===x.st)||[0,"not checked"])[1])}">D${k+1}${x.zones?`<small>Z ${esc(x.zones)}</small>`:""}${(c.legs||[]).some(M=>M.from===li+":"+(k+1))?`<small class="twbr">⑂</small>`:""}</button>`).join("")}<button type="button" class="twn twcirc twplus" data-twadd="${ci}|${li}" aria-label="Add the next decoder">+</button></div>
+      <div class="twgrid">${ds.map((x,k)=>`<button type="button" class="twn twcirc tw-${dstCls(x.st)} ${k===di?"sel":""}" data-twtap="${ci}|${li}|${k}" aria-label="${esc(decLabel(li,k,x))}: ${esc((DST.find(q=>q[0]===x.st)||[0,"not checked"])[1])}">${x.zones?`<span class="twz">${esc(x.zones)}</span><small>D${k+1}</small>`:`D${k+1}`}${x.box&&k>0?`<small>box</small>`:""}${(c.legs||[]).some(M=>M.from===li+":"+(k+1))?`<small class="twbr">⑂</small>`:""}</button>`).join("")}<button type="button" class="twn twcirc twplus" data-twadd="${ci}|${li}" aria-label="Add the next decoder">+</button></div>
       ${d?`<div class="twdet"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">D${di+1}${d.zones?` · zone ${esc(d.zones)}`:""}</b><button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|">Close</button></div>
         <div class="grid2"><label class="f"><span>Zone(s)</span><input type="text" inputmode="numeric" data-f="${b}.legs.${li}.decoders.${di}.zones" data-rr="1" value="${esc(d.zones)}" placeholder="e.g. 3 or 3, 4"></label><label class="f ${zoneList(d).some(z=>dz.includes(z))&&!d.addr?"need":""}"><span>Address${zoneList(d).some(z=>dz.includes(z))?" *":" (optional)"}</span><input type="text" data-f="${b}.legs.${li}.decoders.${di}.addr" data-rr="1" value="${esc(d.addr)}"></label></div>
+        ${di>0?`<div class="q"><span class="ql">Location</span><div class="chips"><button type="button" class="chip" data-twbox="${ci}|${li}|${di}|0" aria-pressed="${!d.box}">Further down the wire</button><button type="button" class="chip" data-twbox="${ci}|${li}|${di}|1" aria-pressed="${!!d.box}">Same valve box as D${di}</button></div></div>`:""}
         <div class="twst">${DST.map(([v,l,k])=>`<button type="button" class="btn twsb tws-${k} ${d.st===v?"on":""}" data-twst="${ci}|${li}|${di}|${v}" aria-pressed="${d.st===v}">${l}${di<ds.length-1?" ›":""}</button>`).join("")}</div>
         <div class="row" style="gap:6px">${di>0?`<button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|${di-1}">‹ D${di}</button>`:""}${di<ds.length-1?`<button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|${di+1}">D${di+2} ›</button>`:""}</div>
-        <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" data-twins="${ci}|${li}|${di}">+ Decoder after D${di+1}</button><button type="button" class="btn ghost sm" data-twbranch="${ci}|${li}|${di}">⑂ Branch off D${di+1}</button><span style="flex:1"></span><button type="button" class="btn quiet sm" data-twdel="${ci}|${li}|${di}">Remove</button></div></div>`:""}
+        <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" data-twins="${ci}|${li}|${di}">+ Decoder after D${di+1}</button><button type="button" class="btn ghost sm" data-twins="${ci}|${li}|${di}|box">+ Same valve box</button><button type="button" class="btn ghost sm" data-twbranch="${ci}|${li}|${di}">⑂ Branch off D${di+1}</button><span style="flex:1"></span><button type="button" class="btn quiet sm" data-twdel="${ci}|${li}|${di}">Remove</button></div></div>`:""}
       <div class="twbulk"><span class="small">Add zones</span><input type="number" inputmode="numeric" id="twf-${ci}-${li}" placeholder="from" aria-label="From zone"><span class="small">to</span><input type="number" inputmode="numeric" id="twt-${ci}-${li}" placeholder="to" aria-label="To zone"><button type="button" class="btn ghost sm" data-twbulk="${ci}|${li}">Add</button>${nu&&ds.length?`<button type="button" class="btn quiet sm" data-twrest="${ci}|${li}">Mark the ${nu} not checked as good</button>`:""}</div>
       ${c.overcurrent==="yes"&&L.oc==="yes"&&(L.decoders||[]).length?(()=>{const r=splitRange(L);return `<div class="twsplit"><div class="small"><b>Split test (binary search)</b> · cut the path after a decoder and check which side still shows overcurrent.</div>
         ${(L.splits||[]).map((x,si)=>`<div class="row" style="flex-wrap:nowrap;gap:6px"><label class="f" style="flex:none;width:110px"><span>Cut after</span><select data-f="${b}.legs.${li}.splits.${si}.after" data-rr="1">${(L.decoders||[]).map((d,di)=>`<option value="${di+1}" ${+x.after===di+1?"selected":""}>D${di+1}${d.zones?" · Z "+esc(d.zones):""}</option>`).join("")}</select></label>
@@ -2921,7 +2940,8 @@ app.addEventListener("click",ev=>{
   if(d.twadd){const [ci,li]=d.twadd.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders=L.decoders||[];const prev=L.decoders[L.decoders.length-1];const z=prev&&/^\d+$/.test(prev.zones)?String(+prev.zones+1):"";L.decoders.push({addr:"",zones:z,st:""});if(S.twMode==="edit")S.twSel=`${ci}|${li}|${L.decoders.length-1}`;scheduleSave(S.cur);rr();return}
   if(d.twbranch){const [ci,li,di]=d.twbranch.split("|").map(Number);const c=j.controllers[ci];c.legs.push({oc:"",from:li+":"+(di+1),decoders:[]});toast(`Leg ${c.legs.length} branches off D${di+1}. Add its decoders.`);S.twSel="";scheduleSave(S.cur);rr();return}
   if(d.twst){const [ci,li,di,v]=d.twst.split("|").map((x,i)=>i<3?+x:x);const L=j.controllers[ci].legs[li];const dd=L.decoders[di];dd.st=dd.st===v?"":v;if(dd.st&&di<L.decoders.length-1)S.twSel=`${ci}|${li}|${di+1}`;scheduleSave(S.cur);rr();return}
-  if(d.twins){const [ci,li,di]=d.twins.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders.splice(di+1,0,TPL.decoder());S.twSel=`${ci}|${li}|${di+1}`;scheduleSave(S.cur);rr();return}
+  if(d.twbox){const [ci,li,di,v]=d.twbox.split("|").map(Number);j.controllers[ci].legs[li].decoders[di].box=!!v;scheduleSave(S.cur);rr();return}
+  if(d.twins){const pr=d.twins.split("|");const [ci,li,di]=pr.map(Number);const L=j.controllers[ci].legs[li];const nd=TPL.decoder();if(pr[3]==="box")nd.box=true;L.decoders.splice(di+1,0,nd);S.twSel=`${ci}|${li}|${di+1}`;scheduleSave(S.cur);rr();return}
   if(d.twdel){const [ci,li,di]=d.twdel.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders.splice(di,1);S.twSel=L.decoders.length?`${ci}|${li}|${Math.min(di,L.decoders.length-1)}`:"";scheduleSave(S.cur);rr();return}
   if(d.twrest){const [ci,li]=d.twrest.split("|").map(Number);j.controllers[ci].legs[li].decoders.forEach(x=>{if(!x.st)x.st="ok"});scheduleSave(S.cur);rr();return}
   if(d.twbulk){const [ci,li]=d.twbulk.split("|").map(Number);let f=parseInt(document.getElementById(`twf-${ci}-${li}`).value),t=parseInt(document.getElementById(`twt-${ci}-${li}`).value);if(!f){toast("Enter the first zone");return}if(!t)t=f;const step=f<=t?1:-1;if(Math.abs(t-f)>299){toast("Up to 300 at a time");return}
