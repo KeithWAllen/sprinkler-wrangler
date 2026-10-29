@@ -298,6 +298,7 @@ details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left
 .jobno{display:inline-block;font-family:var(--mono,monospace);font-size:.8em;font-weight:700;background:var(--accent);color:var(--accent-ink,#fff);border-radius:6px;padding:1px 6px;margin-right:2px;vertical-align:1px}.custjobs{display:grid;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-size:.85rem;grid-column:1/-1}
 button.custjob{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer;padding:8px 0}button.custjob:hover{background:var(--sunk,rgba(0,0,0,.03))}
 details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;padding:14px 16px;display:grid;gap:2px}details.admsec>summary::-webkit-details-marker{display:none}details.admsec>summary .admt{font-family:var(--display);font-size:1.25rem;font-weight:700}details.admsec>summary .admt::after{content:" ▸";color:var(--muted)}details.admsec[open]>summary .admt::after{content:" ▾"}.admbody{padding:0 16px 14px}.admbody>.card{box-shadow:none;border:0;padding:0;margin:0 0 12px}.admbody .card .card{box-shadow:none}details.nohead .admbody>.card>h2:first-child,details.nohead .admbody>.card>.cardhead>h2{display:none}
+.bellbtn{position:relative;background:none;border:1.5px solid rgba(255,255,255,.55);color:inherit;border-radius:999px;width:42px;height:42px;display:grid;place-items:center;cursor:pointer;margin-right:6px}.bellct{position:absolute;top:-4px;right:-4px;background:#d93a2f;color:#fff;border-radius:999px;font-size:11px;font-weight:800;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border:2px solid var(--accent)}.notifs{min-width:290px;max-width:min(360px,92vw)}.notif{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -2430,10 +2431,27 @@ async function signOut(){S.acctOpen=false;if(!S.training){toast("Saving…");try
 function jobMenu(j){if(!isChief())return "";
   return `<div class="acct"><button class="iconbtn jobmenubtn" data-jobmenu="1" aria-expanded="${!!S.jobMenu}" aria-label="Job options">⋯</button>
   ${S.jobMenu?`<div class="acctmenu" role="menu"><b>Job options</b><p class="small muted" style="margin:0">Deleting removes this job, its photos' links, reports and invoice for everyone. It can't be undone.</p>${delBtn("job:"+j.id,"Delete job")}</div>`:""}</div>`}
+/* ---- Notifications (bell) ---- */
+function seenMap(){try{return JSON.parse(localStorage.getItem("irr.seen."+((S.me||{}).id||""))||"{}")}catch(e){return {}}}
+function markSeen(id){try{const m=seenMap();m[id]=Date.now();localStorage.setItem("irr.seen."+((S.me||{}).id||""),JSON.stringify(m))}catch(e){}}
+function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return L;
+  if(isOffice()){if(!S.team)loadTeam();
+    ownerAccounts().filter(p=>!p.approved).forEach(p=>{const m=custMatch({email:p.email});L.push({t:`${p.name||p.email} wants portal access`,s:m?`Matches ${m.customer}${m.custNo?" (Customer "+m.custNo+")":""}`:`${p.email}: no matching customer profile yet`,b:`<button class="btn sm" data-approve="${esc(p.email)}|${esc(m?m.id:"")}">Approve</button>`})});
+    const wk=addMonths(new Date(),0);wk.setDate(wk.getDate()+7);let due=0;customers().forEach(c=>custSchedule(c).forEach(r=>{if(r.due<=wk)due++}));
+    if(due)L.push({t:`${due} maintenance reminder${due===1?"":"s"} due`,s:"Due within 7 days or overdue",b:`<button class="btn ghost sm" data-notgo="reminders">Open</button>`});
+    const stale=Object.values(S.jobs).filter(j=>j.info.status==="Waiting"&&Date.now()-(j.updatedAt||0)>7*864e5).length;
+    if(stale)L.push({t:`${stale} job${stale===1?"":"s"} waiting to hear for over a week`,s:"Follow up with the customer",b:`<button class="btn ghost sm" data-notgo="jobs">Open</button>`});
+    const nc=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).length;
+    if(nc)L.push({t:`${nc} job${nc===1?"":"s"} missing customer details`,s:"Shown on the Customers tab",b:`<button class="btn ghost sm" data-notgo="customers">Open</button>`})}
+  const seen=seenMap();Object.values(S.jobs).filter(j=>j.assign&&j.assign.id===S.me.id&&!seen[j.id]&&j.createdBy!==S.me.id&&j.info.status!=="Completed"&&j.info.status!=="Declined").forEach(j=>L.push({t:`New job: ${jobTitle(j)}`,s:`${j.info.customer||"Customer"}${j.info.date?" · "+new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):""}`,b:`<button class="btn sm" data-open="${j.id}">Open</button>`}));
+  return L}
+function bellChip(){if(!sb||!S.me||S.mode!=="db")return "";const L=notifList();
+  return `<div class="acct"><button class="bellbtn" data-bell="1" aria-expanded="${!!S.bellOpen}" aria-label="Notifications${L.length?": "+L.length+" new":""}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v3.5L4.5 15v1h15v-1L18 12.5V9a6 6 0 0 0-6-6zm0 18a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 21z" fill="currentColor"/></svg>${L.length?`<span class="bellct">${L.length}</span>`:""}</button>
+  ${S.bellOpen?`<div class="acctmenu notifs" role="menu"><b>Notifications</b>${L.length?L.map(x=>`<div class="notif"><div style="flex:1;min-width:0"><div>${esc(x.t)}</div><div class="small muted">${esc(x.s)}</div></div>${x.b}</div>`).join(""):'<p class="small muted" style="margin:0">You\'re all caught up.</p>'}</div>`:""}</div>`}
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
-  return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
+  return `${bellChip()}<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.admin?"Admin":"Technician"}</span></div>
-    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+    ${S.mode==="db"&&!S.training?`<button class="btn quiet sm" data-accnotifs="1">Notifications${(n=>n?` (${n})`:"")(notifList().length)}</button>`:""}<button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- Training mode: practice jobs on this phone only ---------- */
 function trainingSample(){const j=withDefaults(newJob());j.training=true;delete j.intake;
@@ -2593,20 +2611,23 @@ app.addEventListener("change",ev=>{
   if(/^controllers\.\d+\.zones$/.test(p)){syncZones(job(),+p.split(".")[1]);scheduleSave(S.cur)}
   if(t.dataset.rr||t.dataset.num)rr();
 });
-document.addEventListener("click",ev=>{if((S.acctOpen||S.jobMenu)&&!ev.target.closest(".acct")){S.acctOpen=false;S.jobMenu=false;render()}});
+document.addEventListener("click",ev=>{if((S.acctOpen||S.jobMenu||S.bellOpen)&&!ev.target.closest(".acct")){S.acctOpen=false;S.jobMenu=false;S.bellOpen=false;render()}});
 app.addEventListener("submit",ev=>{
   const f=ev.target;
   if(f.dataset.authform){ev.preventDefault();if(!S.auth.busy)authSubmit(f.dataset.authform);return}
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
+    if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
+    if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
+    if(d.notgo){S.bellOpen=false;S.cur=null;S.home=d.notgo;S.custEdit=null;S.custPick=false;render();window.scrollTo(0,0);return}
     if(d.accsettings){S.acctOpen=false;S.cur=null;S.home="prices";render();window.scrollTo(0,0);return}
     if(d.who!==undefined){S.auth=Object.assign(S.auth,{who:d.who,err:"",msg:""});render();return}
     if(d.auth){if(d.auth==="signup"){S.auth.who="";loadSignupTerms()}if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
-    if(d.acct){S.acctOpen=!S.acctOpen;S.jobMenu=false;render();return}
+    if(d.acct){S.acctOpen=!S.acctOpen;S.jobMenu=false;S.bellOpen=false;render();return}
     if(d.jobmenu){S.jobMenu=!S.jobMenu;S.acctOpen=false;render();return}
     if(d.entertrain){enterTraining();return}
     if(d.exittrain){exitTraining();return}
@@ -2622,10 +2643,10 @@ app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
-  if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.open){ev.preventDefault();markSeen(d.open);S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
-  if(d.approve){const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const a=document.createElement("a");a.href=approveMail(p||{email:em},S.custs[cid]);a.click()});return}
+  if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const a=document.createElement("a");a.href=approveMail(p||{email:em},S.custs[cid]);a.click()});return}
   if(d.revoke){setAccess(d.revoke,false).then(ok=>ok&&toast("Portal access switched off"));return}
   if(d.custcancel){S.custEdit=null;render();return}
   if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
