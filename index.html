@@ -318,6 +318,9 @@ table.dgridt{table-layout:fixed;width:100%}
 .twn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:34px;min-height:26px;padding:2px 5px;border-radius:8px;border:2px solid var(--line);font-size:.75rem;font-weight:700;line-height:1.1}.twn small{font-weight:500;font-size:.65rem}
 .tw-g{border-color:var(--tl-g);background:color-mix(in srgb,var(--tl-g) 18%,transparent)}.tw-r{border-color:var(--tl-r);background:color-mix(in srgb,var(--tl-r) 25%,transparent)}.tw-rr{border-color:var(--tl-r);border-style:dashed}.tw-n{border-style:dotted}
 .tww{display:inline-flex;align-items:center;justify-content:center;width:22px;height:2px;background:var(--muted);color:var(--bad);font-weight:800;font-size:.9rem}.tww.cut{background:none;border-top:2px dashed var(--bad);height:0;width:26px}.tww.oc{background:var(--tl-r)}
+.twgrid{display:flex;flex-wrap:wrap;gap:6px}.twgrid .twn{cursor:pointer;color:inherit;font-family:inherit;min-width:44px;min-height:40px}.twn.sel{outline:3px solid var(--accent,#1f6f43);outline-offset:1px}
+.twdet{display:grid;gap:8px;padding:10px;border-radius:10px;border:2px solid var(--line);background:var(--card,transparent)}.twst{display:grid;grid-template-columns:1fr 1fr;gap:8px}.twst .btn{padding:14px 8px;font-size:1rem}
+.twbulk{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.twbulk input{width:72px;text-align:center}.twrun{padding:2px 10px}.twbr{color:var(--muted);font-weight:700}
 .twsplit{display:grid;gap:8px;padding:8px;border-radius:8px;background:color-mix(in srgb,var(--tl-r) 8%,transparent)}
 .f.need input{border-color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 25%,transparent)}
 .twkey{display:flex;gap:4px 12px;align-items:center;flex-wrap:wrap}.twkey>span{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}.twkey .twn{min-width:14px;min-height:14px;padding:0}
@@ -510,7 +513,7 @@ function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num
 function newController(n){return {id:uid("c"),name:"Controller "+String.fromCharCode(64+(n||1)),brand:"",model:"",location:"",wiring:"conventional",modular:"no",modules:[],rain:"",zones:5,power:"yes",powerIssue:"",programs:[{id:uid("p"),name:"A",starts:"",days:[],seasonal:100,runtimes:{}}],ohms:{},overcurrent:"",ocZones:"",badDecoders:"",act:{},notes:""}}
 function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
   return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
-const TPL={meter:()=>({num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",decoders:[{addr:"",zones:"",st:""}]}),decoder:()=>({addr:"",zones:"",st:""})};
+const TPL={meter:()=>({num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
 
 /* ---------------- storage ---------------- */
 const IDB=(()=>{let dbp=null;
@@ -1296,22 +1299,7 @@ function controllersTab(){const j=job();
     <div><button class="btn ghost sm" data-add="${b}.modules" data-tpl="module">+ Add module</button></div></div>`:""}
   ${c.wiring==="conventional"?ohmBlock(c,b,zn):`<div class="combo"><h4>2-wire path</h4>${seg("Overcurrent on the path?",b+".overcurrent",YN,{yes:"bad"})}
     ${c.overcurrent==="yes"?fld("Zones affected",b+".ocZones","number"):""}
-    <p class="small muted" style="margin:0">Tone out each leg from the controller and add its decoders in the order you find them.</p>
-    ${(()=>{const dz=dupZones(c);return dz.length?`<div class="note warn small"><b>Duplicate decoder:</b> zone ${dz.map(esc).join(", ")} is on more than one decoder. Add the address to each one so they can be told apart.</div>`:""})()}
-    ${(c.legs||[]).map((L,li)=>`<div class="twedit"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">Leg ${li+1}</b><button type="button" class="btn quiet sm" data-rmp="${b}.legs|${li}">Remove leg</button></div>
-      ${c.overcurrent==="yes"?seg("Overcurrent on this leg?",`${b}.legs.${li}.oc`,YN,{yes:"bad"}):""}
-
-      ${(L.decoders||[]).map((d,di)=>`<div class="twrow"><span class="small"><b>D${di+1}</b></span><label class="f"><span>Zone(s)</span><input type="text" inputmode="numeric" data-f="${b}.legs.${li}.decoders.${di}.zones" data-rr="1" value="${esc(d.zones)}" placeholder="e.g. 3 or 3, 4"></label><label class="f ${zoneList(d).some(z=>dupZones(c).includes(z))&&!d.addr?"need":""}"><span>Address${zoneList(d).some(z=>dupZones(c).includes(z))?" *":" (optional)"}</span><input type="text" data-f="${b}.legs.${li}.decoders.${di}.addr" data-rr="1" value="${esc(d.addr)}"></label>
-        <div class="chips">${[["ok","Talking"],["bad","Not talking"]].map(([v,l])=>`<button type="button" class="chip ${v==="bad"?"bad":""}" data-set="${b}.legs.${li}.decoders.${di}.st" data-v="${v}" aria-pressed="${d.st===v}">${l}</button>`).join("")}</div>
-        <button type="button" class="btn quiet sm" data-rmp="${b}.legs.${li}.decoders|${di}" aria-label="Remove decoder">✕</button></div>`).join("")}
-      <div><button type="button" class="btn ghost sm" data-add="${b}.legs.${li}.decoders" data-tpl="decoder">+ Add decoder</button></div>
-${c.overcurrent==="yes"&&L.oc==="yes"&&(L.decoders||[]).length?(()=>{const r=splitRange(L);return `<div class="twsplit"><div class="small"><b>Split test (binary search)</b> · cut the path after a decoder and check which side still shows overcurrent.</div>
-        ${(L.splits||[]).map((x,si)=>`<div class="row" style="flex-wrap:nowrap;gap:6px"><label class="f" style="flex:none;width:110px"><span>Cut after</span><select data-f="${b}.legs.${li}.splits.${si}.after" data-rr="1">${(L.decoders||[]).map((d,di)=>`<option value="${di+1}" ${+x.after===di+1?"selected":""}>D${di+1}${d.zones?" · Z "+esc(d.zones):""}</option>`).join("")}</select></label>
-          <div class="chips">${[["near","Controller side"],["far","Far side"]].map(([v,l])=>`<button type="button" class="chip" data-set="${b}.legs.${li}.splits.${si}.side" data-v="${v}" aria-pressed="${x.side===v}">${l}</button>`).join("")}</div>
-          <button type="button" class="btn quiet sm" data-rmp="${b}.legs.${li}.splits|${si}" aria-label="Remove split">✕</button></div>`).join("")}
-        <div class="small ${r.done?"":"muted"}">${r.done?`Fault narrowed to: <b>${esc(r.where)}</b>.`:"No splits yet."}${r.next?` Next: cut after <b>D${r.next}</b>.`:r.done&&r.single?" Located.":""}</div>
-        ${r.next||!r.done?`<div><button type="button" class="btn ghost sm" data-addsplit="${b}.legs.${li}|${r.next||Math.ceil(r.N/2)}">+ Add split${r.next?` (after D${r.next})`:""}</button></div>`:""}</div>`})():""}</div>`).join("")}
-    <div><button type="button" class="btn ghost sm" data-add="${b}.legs" data-tpl="leg">+ Add leg</button></div>
+    ${twEditor(c,b,ci)}
     ${twoWireTree(c)}</div>`}
   <details class="combo" ${c.programs.length?"open":""}><summary>Programming · ${c.programs.length} program${c.programs.length===1?"":"s"}</summary>
   ${c.programs.map((p,pi)=>{const pb=`${b}.programs.${pi}`;const tot=Object.values(p.runtimes||{}).reduce((s,v)=>s+num(v),0);return `<div style="display:grid;gap:8px;padding-block:10px;border-bottom:1px dashed var(--line)">
@@ -1335,14 +1323,32 @@ function zoneList(d){return String(d.zones||"").split(/[,\s]+/).filter(Boolean)}
 function dupZones(c){const n={};(c.legs||[]).forEach(L=>(L.decoders||[]).forEach(d=>zoneList(d).forEach(z=>n[z]=(n[z]||0)+1)));return Object.keys(n).filter(z=>n[z]>1)}
 let _dupCache=null;
 function decLabel(li,di,d){const dup=_dupCache&&zoneList(d).some(z=>_dupCache.includes(z));return `Leg ${li+1} · D${di+1}${d.zones?" (zone "+d.zones+(dup&&d.addr?", #"+d.addr:"")+")":d.addr?" (#"+d.addr+")":""}`}
-function twoWire(c){const bad=[],breaks=[],legOc=[];_dupCache=dupZones(c);
-  (c.legs||[]).forEach((L,li)=>{const ds=L.decoders||[];
-    let lastOk=-1;ds.forEach((d,di)=>{if(d.st==="ok")lastOk=di});
-    ds.forEach((d,di)=>{if(d.st==="bad"&&di<lastOk)bad.push(decLabel(li,di,d))});
-    const tail=ds.findIndex((d,di)=>di>lastOk&&d.st==="bad");
-    if(tail>=0){const from=lastOk<0?"the controller":"D"+(lastOk+1);breaks.push({li,from,to:"D"+(tail+1),where:`Leg ${li+1}, between ${from} and D${tail+1}`})}
+function twoWire(c){const bad=[],breaks=[],legOc=[];_dupCache=dupZones(c);const legs=c.legs||[];
+  const kids=li=>legs.map((M,lb)=>[M,lb]).filter(([M])=>M.from&&+String(M.from).split(":")[0]===li).map(([M,lb])=>({lb,at:+String(M.from).split(":")[1]-1}));
+  const memo={};const talks=li=>{if(li in memo)return memo[li];memo[li]=false;memo[li]=(legs[li].decoders||[]).some(d=>d.st==="ok")||kids(li).some(k=>talks(k.lb));return memo[li]};
+  legs.forEach((L,li)=>{const ds=L.decoders||[];const br=kids(li).filter(k=>talks(k.lb));
+    const beyond=di=>ds.some((d,k)=>k>di&&d.st==="ok")||br.some(k=>k.at>=di);
+    ds.forEach((d,di)=>{if(d.st==="bad"&&beyond(di))bad.push(decLabel(li,di,d))});
+    let reach=-1;ds.forEach((d,k)=>{if(d.st==="ok")reach=Math.max(reach,k)});br.forEach(k=>reach=Math.max(reach,k.at));
+    const tail=ds.findIndex((d,k)=>k>reach&&d.st==="bad");
+    if(tail>=0){const from=reach<0?legFromLabel(c,L):"D"+(reach+1);breaks.push({li,from,reach,to:"D"+(tail+1),where:`Leg ${li+1}, between ${from} and D${tail+1}`})}
     if(c.overcurrent==="yes"&&L.oc==="yes"){const r=splitRange(L);legOc.push({li,where:`Leg ${li+1}`+(r.done?", "+r.where:" (overcurrent)"),r})}});
   return {bad,breaks,legOc}}
+function twoWireTree(c){const legs=c.legs||[];if(!legs.some(L=>(L.decoders||[]).length))return "";const tw=twoWire(c);const dz=dupZones(c);
+  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twroot">Controller</div>${legs.map((L,li)=>{const ds=L.decoders||[];if(!ds.length)return "";
+    const br=tw.breaks.find(x=>x.li===li);const oc=c.overcurrent==="yes"&&L.oc==="yes"?splitRange(L):null;const cut=br&&!(oc&&oc.done)?br.reach+1:-1;
+    const inR=i=>oc&&i>=oc.lo&&i<=oc.hi;const x=i=>i===cut||(oc&&oc.done&&oc.single&&i===oc.lo);
+    const wire=i=>`<span class="tww ${x(i)?"cut":""} ${inR(i)&&!x(i)?"oc":""}">${x(i)?"✕":""}</span>`;
+    const branchAt=k=>legs.map((M,lb)=>M.from===li+":"+(k+1)?lb+1:0).filter(Boolean);
+    const cls=(d,k)=>d.st==="ok"?"g":d.st==="bad"?(tw.bad.includes(decLabel(li,k,d))?"r":"rr"):"n";
+    const node=(d,k)=>{const bl=branchAt(k);return `<span class="twn tw-${cls(d,k)}" title="${esc(decLabel(li,k,d))}">D${k+1}${d.zones?`<small>Z ${esc(d.zones)}</small>`:""}${d.addr&&(!d.zones||zoneList(d).some(z=>dz.includes(z)))?`<small>#${esc(d.addr)}</small>`:""}${bl.length?`<small class="twbr">↳ Leg ${bl.join(", ")}</small>`:""}</span>`};
+    /* collapse long healthy / unchecked runs so 100-zone systems stay readable */
+    let out="",k=0;while(k<ds.length){const c0=cls(ds[k],k);let e=k;
+      if(c0==="g"||c0==="n"||c0==="rr"){while(e+1<ds.length&&cls(ds[e+1],e+1)===c0&&!branchAt(e).length&&!x(e+1)&&!inR(e+1))e++}
+      if(e-k>=4&&!branchAt(e).length){out+=wire(k)+`<span class="twn tw-${c0} twrun">D${k+1}–D${e+1}<small>${e-k+1} ${c0==="g"?"talking":c0==="rr"?"not reached":"not checked"}</small></span>`;k=e+1}
+      else{out+=wire(k)+node(ds[k],k);k++}}
+    return `<div class="twleg"><div class="twl">Leg ${li+1}${L.from?` · from ${esc(legFromLabel(c,L))}`:""}</div><div class="twchain">${out}${oc&&inR(ds.length)?wire(ds.length):""}</div></div>`}).join("")}
+    <div class="small muted twkey"><span><span class="twn tw-g"></span> talking</span><span><span class="twn tw-r"></span> failed decoder</span><span><span class="twn tw-rr"></span> not reached</span><span><span class="twn tw-n"></span> not checked</span><span><b style="color:var(--bad)">✕</b> likely fault</span><span><span class="tww oc"></span> fault in this stretch</span></div></div>`}
 /* Binary search on a shorted leg. Nodes: 0 = controller, k = decoder k. Segment s = wire from node s to node s+1 (s = N is past the last decoder).
    Each split "cut after D k": fault on controller side -> segments 0..k-1, far side -> k..N. */
 function splitRange(L){const N=(L.decoders||[]).length;let lo=0,hi=N;(L.splits||[]).forEach(x=>{const k=+x.after;if(!k||!x.side)return;if(x.side==="near")hi=Math.min(hi,k-1);else lo=Math.max(lo,k)});
@@ -1350,14 +1356,28 @@ function splitRange(L){const N=(L.decoders||[]).length;let lo=0,hi=N;(L.splits||
   const bad=lo>hi;const where=bad?"split results conflict, recheck":lo===hi?(lo===N?`past D${N} (to the end of the run)`:`between ${nm(lo)} and ${nm(lo+1)}`):`between ${nm(lo)} and ${end(hi+1)}`;
   const next=!bad&&hi>lo?Math.floor((lo+hi+1)/2):0;
   return {lo,hi,N,where,done:(L.splits||[]).some(x=>x.after&&x.side),single:lo===hi,next:next>=1&&next<=N?next:0}}
-function twoWireTree(c){const legs=c.legs||[];if(!legs.length)return "";const tw=twoWire(c);const dz=dupZones(c);
-  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twroot">Controller</div>${legs.map((L,li)=>{const br=tw.breaks.find(x=>x.li===li);const ds=L.decoders||[];const ocR=c.overcurrent==="yes"&&L.oc==="yes"?splitRange(L):null;const cut=br&&!(ocR&&ocR.done)?(br.from==="the controller"?0:+br.from.slice(1)):-1;
-    const node=(d,di)=>{const cls=d.st==="ok"?"g":d.st==="bad"?(tw.bad.includes(decLabel(li,di,d))?"r":"rr"):"n";return `<span class="twn tw-${cls}" title="${esc(decLabel(li,di,d))}">D${di+1}${d.zones?`<small>Z ${esc(d.zones)}</small>`:""}${d.addr&&(!d.zones||zoneList(d).some(z=>dz.includes(z)))?`<small>#${esc(d.addr)}</small>`:""}</span>`};
-    const oc=c.overcurrent==="yes"&&L.oc==="yes"?splitRange(L):null;
-    const inR=i=>oc&&i>=oc.lo&&i<=oc.hi;const x=i=>i===cut||(oc&&oc.done&&oc.single&&i===oc.lo);
-    const wire=i=>`<span class="tww ${x(i)?"cut":""} ${inR(i)&&!x(i)?"oc":""}">${x(i)?"✕":""}</span>`;
-    return `<div class="twleg"><div class="twl">Leg ${li+1}</div><div class="twchain">${ds.map((d,di)=>wire(di)+node(d,di)).join("")}${oc&&inR(ds.length)?wire(ds.length):""}</div></div>`}).join("")}
-    <div class="small muted twkey"><span><span class="twn tw-g"></span> talking</span><span><span class="twn tw-r"></span> failed decoder</span><span><span class="twn tw-rr"></span> not reached</span><span><span class="twn tw-n"></span> not checked</span><span><b style="color:var(--bad)">✕</b> likely fault</span><span><span class="tww oc"></span> fault in this stretch</span></div></div>`}
+function legFromLabel(c,L){if(!L.from)return "the controller";const [lj,k]=String(L.from).split(":").map(Number);const d=((c.legs[lj]||{}).decoders||[])[k-1]||{};return `Leg ${lj+1} · D${k}${d.zones?" (zone "+d.zones+")":""}`}
+function twEditor(c,b,ci){const dz=dupZones(c);const tw=twoWire(c);const sel=String(S.twSel||"").split("|");
+  return `<p class="small muted" style="margin:0">Tone out each leg and add its decoders in the order you find them. A leg can start at the controller or branch off a decoder on another leg.</p>
+  ${dz.length?`<div class="note warn small"><b>Duplicate decoder:</b> zone ${dz.map(esc).join(", ")} is on more than one decoder. Add the address to each one so they can be told apart.</div>`:""}
+  ${(c.legs||[]).map((L,li)=>{const ds=L.decoders||[];const nb=ds.filter(d=>d.st==="bad").length,nu=ds.filter(d=>!d.st).length;const isSel=+sel[0]===ci&&+sel[1]===li&&sel[2]!==""&&ds[+sel[2]];const di=isSel?+sel[2]:-1;const d=isSel?ds[di]:null;
+    return `<div class="twedit"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><b>Leg ${li+1}</b> <span class="small muted">· ${ds.length} decoder${ds.length===1?"":"s"}${nb?` · <span style="color:var(--bad)">${nb} not talking</span>`:""}${nu&&ds.length?` · ${nu} not checked`:""}</span></div>${delBtn("twleg:"+ci+":"+li,"Remove leg")}</div>
+      ${li>0?`<label class="f"><span>Starts at</span><select data-f="${b}.legs.${li}.from" data-rr="1"><option value="">The controller</option>${c.legs.slice(0,li).map((M,lj)=>(M.decoders||[]).map((x,k)=>`<option value="${lj}:${k+1}" ${L.from===lj+":"+(k+1)?"selected":""}>Branch off Leg ${lj+1} · D${k+1}${x.zones?" (Z "+esc(x.zones)+")":""}</option>`).join("")).join("")}</select></label>`:""}
+      ${c.overcurrent==="yes"?seg("Overcurrent on this leg?",`${b}.legs.${li}.oc`,YN,{yes:"bad"}):""}
+      ${ds.length?`<div class="twgrid">${ds.map((x,k)=>{const cls=x.st==="ok"?"g":x.st==="bad"?(tw.bad.includes(decLabel(li,k,x))?"r":"rr"):"n";return `<button type="button" class="twn tw-${cls} ${k===di?"sel":""}" data-twsel="${ci}|${li}|${k}" aria-label="${esc(decLabel(li,k,x))}">D${k+1}${x.zones?`<small>Z ${esc(x.zones)}</small>`:""}</button>`}).join("")}</div>`:""}
+      ${d?`<div class="twdet"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">D${di+1}${d.zones?` · zone ${esc(d.zones)}`:""}</b><button type="button" class="btn quiet sm" data-twsel="${ci}|${li}|">Close</button></div>
+        <div class="grid2"><label class="f"><span>Zone(s)</span><input type="text" inputmode="numeric" data-f="${b}.legs.${li}.decoders.${di}.zones" data-rr="1" value="${esc(d.zones)}" placeholder="e.g. 3 or 3, 4"></label><label class="f ${zoneList(d).some(z=>dz.includes(z))&&!d.addr?"need":""}"><span>Address${zoneList(d).some(z=>dz.includes(z))?" *":" (optional)"}</span><input type="text" data-f="${b}.legs.${li}.decoders.${di}.addr" data-rr="1" value="${esc(d.addr)}"></label></div>
+        <div class="twst">${[["ok","Talking"],["bad","Not talking"]].map(([v,l])=>`<button type="button" class="btn ${d.st===v?(v==="bad"?"danger":"primary"):"ghost"}" data-twst="${ci}|${li}|${di}|${v}">${l}${di<ds.length-1?" ›":""}</button>`).join("")}</div>
+        <div class="row" style="gap:6px">${di>0?`<button type="button" class="btn quiet sm" data-twsel="${ci}|${li}|${di-1}">‹ D${di}</button>`:""}${di<ds.length-1?`<button type="button" class="btn quiet sm" data-twsel="${ci}|${li}|${di+1}">D${di+2} ›</button>`:""}<span style="flex:1"></span><button type="button" class="btn quiet sm" data-twins="${ci}|${li}|${di}">Insert after</button><button type="button" class="btn quiet sm" data-twdel="${ci}|${li}|${di}">Remove</button></div></div>`:""}
+      <div class="twbulk"><span class="small">Add zones</span><input type="number" inputmode="numeric" id="twf-${ci}-${li}" placeholder="from" aria-label="From zone"><span class="small">to</span><input type="number" inputmode="numeric" id="twt-${ci}-${li}" placeholder="to" aria-label="To zone"><button type="button" class="btn ghost sm" data-twbulk="${ci}|${li}">Add</button></div>
+      <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" data-add="${b}.legs.${li}.decoders" data-tpl="decoder">+ One decoder</button>${nu&&ds.length?`<button type="button" class="btn ghost sm" data-twrest="${ci}|${li}">Mark the ${nu} not checked as talking</button>`:""}</div>
+      ${c.overcurrent==="yes"&&L.oc==="yes"&&(L.decoders||[]).length?(()=>{const r=splitRange(L);return `<div class="twsplit"><div class="small"><b>Split test (binary search)</b> · cut the path after a decoder and check which side still shows overcurrent.</div>
+        ${(L.splits||[]).map((x,si)=>`<div class="row" style="flex-wrap:nowrap;gap:6px"><label class="f" style="flex:none;width:110px"><span>Cut after</span><select data-f="${b}.legs.${li}.splits.${si}.after" data-rr="1">${(L.decoders||[]).map((d,di)=>`<option value="${di+1}" ${+x.after===di+1?"selected":""}>D${di+1}${d.zones?" · Z "+esc(d.zones):""}</option>`).join("")}</select></label>
+          <div class="chips">${[["near","Controller side"],["far","Far side"]].map(([v,l])=>`<button type="button" class="chip" data-set="${b}.legs.${li}.splits.${si}.side" data-v="${v}" aria-pressed="${x.side===v}">${l}</button>`).join("")}</div>
+          <button type="button" class="btn quiet sm" data-rmp="${b}.legs.${li}.splits|${si}" aria-label="Remove split">✕</button></div>`).join("")}
+        <div class="small ${r.done?"":"muted"}">${r.done?`Fault narrowed to: <b>${esc(r.where)}</b>.`:"No splits yet."}${r.next?` Next: cut after <b>D${r.next}</b>.`:r.done&&r.single?" Located.":""}</div>
+        ${r.next||!r.done?`<div><button type="button" class="btn ghost sm" data-addsplit="${b}.legs.${li}|${r.next||Math.ceil(r.N/2)}">+ Add split${r.next?` (after D${r.next})`:""}</button></div>`:""}</div>`})():""}</div>`}).join("")}
+  <div><button type="button" class="btn ghost sm" data-add="${b}.legs" data-tpl="leg">+ Add leg</button></div>`}
 function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def,qty,detail)=>R.push({k,label,why,pk,def:!!def,qty:qty||1,detail:detail||""});
   const tier=gradeFor("controller",ctlBrand(c),c.line);
   const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push(c.line&&lineInfo("controller",ctlBrand(c),c.line)?"economy-grade model with a shorter service life":"economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
@@ -2879,6 +2899,13 @@ app.addEventListener("click",ev=>{
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
   if(d.step){const v=Math.max(0,num(getP(j,d.step))+num(d.d));setP(j,d.step,v);scheduleSave(S.cur);rr();return}
   if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
+  if(d.twsel!=null){S.twSel=d.twsel;rr();return}
+  if(d.twst){const [ci,li,di,v]=d.twst.split("|").map((x,i)=>i<3?+x:x);const L=j.controllers[ci].legs[li];const dd=L.decoders[di];dd.st=dd.st===v?"":v;if(dd.st&&di<L.decoders.length-1)S.twSel=`${ci}|${li}|${di+1}`;scheduleSave(S.cur);rr();return}
+  if(d.twins){const [ci,li,di]=d.twins.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders.splice(di+1,0,TPL.decoder());S.twSel=`${ci}|${li}|${di+1}`;scheduleSave(S.cur);rr();return}
+  if(d.twdel){const [ci,li,di]=d.twdel.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders.splice(di,1);S.twSel=L.decoders.length?`${ci}|${li}|${Math.min(di,L.decoders.length-1)}`:"";scheduleSave(S.cur);rr();return}
+  if(d.twrest){const [ci,li]=d.twrest.split("|").map(Number);j.controllers[ci].legs[li].decoders.forEach(x=>{if(!x.st)x.st="ok"});scheduleSave(S.cur);rr();return}
+  if(d.twbulk){const [ci,li]=d.twbulk.split("|").map(Number);let f=parseInt(document.getElementById(`twf-${ci}-${li}`).value),t=parseInt(document.getElementById(`twt-${ci}-${li}`).value);if(!f){toast("Enter the first zone");return}if(!t)t=f;const step=f<=t?1:-1;if(Math.abs(t-f)>299){toast("Up to 300 at a time");return}
+    const L=j.controllers[ci].legs[li];L.decoders=(L.decoders||[]).filter(x=>x.zones||x.addr||x.st);for(let z=f;z!==t+step;z+=step)L.decoders.push({addr:"",zones:String(z),st:""});toast(`${Math.abs(t-f)+1} decoders added`);scheduleSave(S.cur);rr();return}
   if(d.addsplit){const [pp,k]=d.addsplit.split("|");const L=getP(j,pp);L.splits=L.splits||[];L.splits.push({after:String(Math.max(1,+k)),side:""});scheduleSave(S.cur);rr();return}
   if(d.rmp){const [pp,ix]=d.rmp.split("|");const arr=getP(j,pp)||[];arr.splice(+ix,1);scheduleSave(S.cur);rr();return}
   if(d.add){const arr=getP(j,d.add)||[];arr.push(TPL[d.tpl]());setP(j,d.add,arr);scheduleSave(S.cur);rr();return}
@@ -2961,6 +2988,7 @@ function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
   if(k==="impdiscard"){discardLocal();return}
+  if(k==="twleg"){const c=j.controllers[+a];c.legs.splice(+b,1);c.legs.forEach(L=>{if(L.from){const [lj,kk]=L.from.split(":").map(Number);if(lj===+b)L.from="";else if(lj>+b)L.from=(lj-1)+":"+kk}});S.twSel="";scheduleSave(S.cur);rr();return}
   if(k==="trainreset"){resetTraining();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
