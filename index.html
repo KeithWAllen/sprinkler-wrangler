@@ -295,6 +295,7 @@ details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left
 .hsrow{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.hsbadge{flex:none}.hsafter{display:flex;gap:12px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.hsparts{display:grid;gap:12px}.hsbar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:4px 0}.hsbar span{display:block;height:100%}.tlbg-g{background:var(--tl-g)}.tlbg-y{background:var(--tl-y)}.tlbg-r{background:var(--tl-r)}
 @keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(31,94,64,.6)}100%{box-shadow:0 0 0 14px rgba(31,94,64,0)}}.pulse{animation:pulseRing .8s ease-out 2}
 .totals3{display:grid;gap:10px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.totblk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;break-inside:avoid}.totblk>div:not(.tbh){display:flex;justify-content:space-between;gap:10px}.totblk .tbh{font-weight:800;margin-bottom:4px;display:grid;gap:2px}.totblk .tbh .small{font-weight:400}.totblk .grand{font-weight:800;border-top:1px solid var(--line);padding-top:4px}.tb-r{border-left:4px solid var(--tl-r)}.tb-y{border-left:4px solid var(--tl-y)}.tb-all{border-left:4px solid var(--accent)}
+.jobno{display:inline-block;font-family:var(--mono,monospace);font-size:.8em;font-weight:700;background:var(--accent);color:var(--accent-ink,#fff);border-radius:6px;padding:1px 6px;margin-right:2px;vertical-align:1px}.custjobs{display:grid;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-size:.85rem;grid-column:1/-1}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -446,6 +447,16 @@ function price(k,j){j=j||job();const b=basePrice(k);return j&&j.info&&j.info.pro
 function job(){return S.jobs[S.cur]}
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2400)}
 
+/* Naming: customers get a permanent number (1001, 1002…; training T1001). Jobs are titled
+   TYPE-MMDDYY-CUSTNO-REV, e.g. A-102926-1001-00 (A = audit). Same customer, same day → 1001B, 1001C. */
+function jnParse(n){const m=String(n||"").match(/(\d+)$/);return m?+m[1]:0}
+function nextCustNo(){const pre=S.training?"T":"";const max=Object.values(S.custs).filter(c=>c.custNo&&String(c.custNo).startsWith("T")===!!S.training).reduce((m,c)=>Math.max(m,jnParse(c.custNo)),1000);return pre+(max+1)}
+function ensureCustNos(){Object.values(S.custs).filter(c=>c&&!c.custNo).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)||String(a.id).localeCompare(String(b.id))).forEach(c=>{c.custNo=nextCustNo();saveCust(c)})}
+function mmddyy(d){const x=d instanceof Date?d:new Date(d);return String(x.getMonth()+1).padStart(2,"0")+String(x.getDate()).padStart(2,"0")+String(x.getFullYear()).slice(2)}
+function jobTitle(j){if(!j)return "";const c=S.custs[j.custId];const cn=c&&c.custNo?String(c.custNo):"";const d=j.info&&j.info.date?new Date(j.info.date+"T12:00"):new Date(j.createdAt||Date.now());
+  const day=mmddyy(d);let suf="";if(cn){const same=Object.values(S.jobs).filter(x=>x.custId===j.custId&&mmddyy(x.info&&x.info.date?new Date(x.info.date+"T12:00"):new Date(x.createdAt||0))===day).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));const i=same.findIndex(x=>x.id===j.id);if(i>0)suf=String.fromCharCode(65+i)}
+  const revs=j.revs||[];const rv=revs.length?revNo(revs[revs.length-1].n):"00";return ["A",day,cn?cn+suf:"",rv].filter(Boolean).join("-")}
+function jobNoTag(j){const t=jobTitle(j);return t?`<span class="jobno">${esc(t)}</span>`:""}
 function newJob(){
   const me=S.me&&sb?{id:S.me.id,name:S.me.name||String(S.me.email).split("@")[0],email:S.me.email}:null;
   return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),intake:false,createdBy:me?me.id:"",assign:me&&!isOffice()?me:null,
@@ -511,7 +522,7 @@ async function deleteJob(id){
 }
 /* ---------- Customer profiles (created first, jobs hang off them) ---------- */
 const CUST_FIELDS=["customer","phone","email","address","city","gate"];
-function newCust(){return {id:uid("c"),createdAt:Date.now(),updatedAt:Date.now(),createdBy:(S.me&&S.me.id)||"",customer:"",phone:"",email:"",address:"",city:"",gate:"",propType:"",notes:"",remindersOff:false}}
+function newCust(){return {id:uid("c"),custNo:nextCustNo(),createdAt:Date.now(),updatedAt:Date.now(),createdBy:(S.me&&S.me.id)||"",customer:"",phone:"",email:"",address:"",city:"",gate:"",propType:"",notes:"",remindersOff:false}}
 function custMissing(c){const m=[];if(!String(c.customer||"").trim())m.push("Customer name");if(!String(c.address||"").trim())m.push("Street address");if(!String(c.city||"").trim())m.push("City");if(!String(c.phone||"").trim()&&!String(c.email||"").trim())m.push("Phone or email");if(!c.propType)m.push("Residential or commercial");return m}
 let custTimers={};
 function saveCust(c,linkedToo){c.updatedAt=Date.now();S.custs[c.id]=c;
@@ -546,7 +557,7 @@ async function saveBg(id,img){
   else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 function startLocal(){
-  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};render();
+  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};ensureCustNos();render();
 }
 async function boot(){
   render();
@@ -712,7 +723,7 @@ function jobsList(){
   return `<div class="row"><div class="chips">${[["open",`Open (${open.length})`],["all",`All (${all.length})`]].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`).join("")}</div></div>
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
     return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
-    <div class="who"><strong>${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
+    <div class="who"><strong>${jobNoTag(j)} ${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
     <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${pillFor(j.info.status)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
 }
 function docketView(){
@@ -761,7 +772,7 @@ function jobView(){
   if(S.tab==="dispatch")S.tab="mainline";
   const v={score:scoreTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
-    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(statusLabel(j.info.status))} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
+    <div style="flex:1;min-width:0"><div class="sub">${jobTitle(j)?esc(jobTitle(j))+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(statusLabel(j.info.status))} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
   <div class="wrap"><main>${banner()}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
@@ -1374,10 +1385,10 @@ function reportHtmlReal(j,rev){
   const other=e.lines.filter(l=>l.sec==="Additional items");
   const ups=SHOW_UPSELLS?(j.upsells||[]).filter(u=>u.status!=="declined"&&(u.desc||u.cat)):[];
   const biz=bizInfo();
-  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
+  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div>${jobTitle(j)?`<div class="small"><b>Job ${esc(jobTitle(j))}</b></div>`:""}</div>
   <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
   <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
-  ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is on your invoice/estimate.</p>${scorecard(j)}</section>
+  ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is in the Estimate section below.</p>${scorecard(j)}</section>
   ${hasMap&&!mapIncluded(j)?mapTeaser():""}
   ${hasMap&&mapIncluded(j)?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
     <p class="small muted">${MAP_POINTS.filter(p=>j.map.items.some(i=>i.t===p[0])).map(p=>`${p[2]} = ${p[1]}`).concat(MAP_LINES.filter(l=>j.map.lines.some(x=>x.t===l[0])).map(l=>l[1]+" shown as "+(l[4]?(l[0]==="drip"?"dotted":"dashed"):"solid")+" line")).join(" · ")}</p></section>`:""}
@@ -1475,7 +1486,7 @@ function invoiceHtmlReal(j){
     <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
     <div class="small">Licensed Irrigator: ${esc(b.irr||"—")} · LI ${esc(b.lic||"—")}</div></div>
     <div style="text-align:right"><div class="eyebrow">${kind} #</div><div class="mono">${esc(inv.no||"—")}</div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
-    ${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div class="mono">Rev ${revNo(cur.n)}</div>`:""}</div></div>
+    ${jobTitle(j)?`<div class="eyebrow" style="margin-top:6px">Job</div><div class="mono">${esc(jobTitle(j))}</div>`:""}${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div class="mono">Rev ${revNo(cur.n)}</div>`:""}</div></div>
   <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
@@ -1681,12 +1692,13 @@ function customersView(){if(S.custEdit)return custForm();const cs=customers();
   return `<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button></div></div>
   ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
-    return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
+    return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
+      ${c.jobs.length?`<div class="custjobs">${c.jobs.slice(0,4).map(j=>`<span>${jobNoTag(j)} ${esc(statusLabel(j.info.status))}</span>`).join("")}${c.jobs.length>4?`<span class="muted">+${c.jobs.length-4} more</span>`:""}</div>`:""}
       <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")}</div>`
     :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Tap New customer to add the first one.</p></div>`}${nocustCard}`}
 function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{controllers:[],mainline:[],zones:[]};const eq=l?equipmentRows(sysJob):[];const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
   return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
-  <div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${!SHOW_JOB_TERMS?"":c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
+  <div class="card"><div class="cardhead"><h2>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</h2>${!SHOW_JOB_TERMS?"":c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
     <div class="small">${esc(c.address)}</div><div class="small">${esc([c.phone,c.email].filter(Boolean).join(" · "))}</div>
     <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>
     ${c.gate?`<div class="small">Gate ${esc(c.gate)}</div>`:""}${c.rec&&c.rec.notes?`<div class="small"><b>Notes:</b> ${esc(c.rec.notes)}</div>`:""}
@@ -1695,7 +1707,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
     ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
   <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
-  <div class="card"><h3>History</h3><div class="acts">${c.jobs.map(j=>`<div class="act"><div class="al"><a href="#" data-open="${j.id}">${esc(j.info.date||"No date")}</a> · ${esc(j.info.workType||"")}<div class="ap">${(j.revs||[]).length?"Audit Rev "+revNo(j.revs[j.revs.length-1].n):"No audit"}${j.completion&&j.completion.issuedAt?" · completed":""}</div></div>${pillFor(j.info.status)}</div>`).join("")}</div></div>`}
+  <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<div class="act"><div class="al"><a href="#" data-open="${j.id}">${jobTitle(j)?esc(jobTitle(j))+" · ":""}${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</a><div class="ap">${(j.revs||[]).length?"Audit Rev "+revNo(j.revs[j.revs.length-1].n):"No audit"}${j.completion&&j.completion.issuedAt?" · completed":""}</div></div>${pillFor(j.info.status)}</div>`).join("")}</div></div>`}
 /* New job for a returning customer: contact info plus their system, without old findings */
 function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)})}
   const src=c.jobs.find(j=>(j.controllers||[]).length)||c.jobs[0];const nj=newJob();nj.custId=rec.id;
@@ -1800,7 +1812,7 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
   const nowCell=i=>i.status==="done"?`${tlDot("g")} <b>Fixed</b>`:i.status==="declined"?`${tlDot(i.c)} Declined by customer`:`${tlDot(i.c)} Not done yet`;
   const ord={r:0,y:1};const items=c.items.slice().sort((a,b)=>ord[a.c]-ord[b.c]);
   const figs=[];items.forEach(i=>(i.pic_ph||[]).forEach(id=>figs.push(`<figure class="rph"><img data-ph="${id}" alt="${esc(i.label)}"><figcaption>After: ${esc(i.label)}</figcaption></figure>`)));
-  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}Completion report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div>
+  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}Completion report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div>${jobTitle(j)?`<div class="small"><b>Job ${esc(jobTitle(j))}</b></div>`:""}</div>
     <div style="text-align:right"><div class="eyebrow">Audit</div><div class="mono">Rev ${revNo(c.rev)} · ${esc(d(rv.at))}</div><div class="eyebrow" style="margin-top:6px">Completed</div><div>${esc(d(c.issuedAt||Date.now()))}</div>${c.by?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(c.by)}</div>`:""}</div></div>
   <section><h2>Before and after</h2><div class="ba">
     <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> fix now ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
@@ -2211,7 +2223,7 @@ function startDb(d){
       S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
-    S.loaded=true;
+    if(!S.loaded){S.loaded=true;ensureCustNos()}
     const ae=document.activeElement;
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     if(ME.open)return;
@@ -2220,6 +2232,7 @@ function startDb(d){
   db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
   db.collection("customers").onSnapshot(snap=>{if(S.training)return;S.custsErr=false;
     for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}if(custTimers[id]&&S.custs[id])continue;const d=ch.doc.data();const prev=S.custs[id];if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
+    if(S.loaded)ensureCustNos();
     const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;if(!ME.open)render()},()=>{S.custsErr=true;render()});
   setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},8000);
   render();
@@ -2365,7 +2378,7 @@ function trainingSample(){const j=withDefaults(newJob());j.training=true;delete 
 function enterTraining(){S.acctOpen=false;S.training=true;document.body.classList.add("training");
   S.cur=null;S.home=isOffice()?"customers":"jobs";S.custOpen=null;S.custEdit=null;S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};
   if(!Object.keys(S.jobs).length){const j=trainingSample();S.jobs[j.id]=j;LS.set(KP()+"jobs",S.jobs)}
-  Object.values(S.jobs).forEach(j=>{if(!j.custId&&(j.info.customer||j.info.address)){const c=custFromJob(j);j.custId=c.id;S.custs[c.id]=c}});LS.set(KP()+"custs",S.custs);LS.set(KP()+"jobs",S.jobs);
+  Object.values(S.jobs).forEach(j=>{if(!j.custId&&(j.info.customer||j.info.address)){const c=custFromJob(j);j.custId=c.id;S.custs[c.id]=c}});ensureCustNos();LS.set(KP()+"custs",S.custs);LS.set(KP()+"jobs",S.jobs);
   render();window.scrollTo(0,0);toast("Training mode on")}
 function exitTraining(){S.acctOpen=false;try{sessionStorage.setItem("sw.exitTraining","1")}catch(e){}location.reload()}
 async function resetTraining(){const all=LS.get(KP()+"jobs")||{};
