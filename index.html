@@ -429,7 +429,8 @@ function job(){return S.jobs[S.cur]}
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2400)}
 
 function newJob(){
-  return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),
+  const me=S.me&&sb?{id:S.me.id,name:S.me.name||String(S.me.email).split("@")[0],email:S.me.email}:null;
+  return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),intake:false,createdBy:me?me.id:"",assign:me&&!isOffice()?me:null,
     info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
     map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:"Estimate valid for 30 days."}};
 }
@@ -490,6 +491,14 @@ async function deleteJob(id){
 }
 /* Admins (owner + developer) change prices; technicians only read them */
 function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
+/* Chief admin (developer): only one who can delete jobs or change admins */
+function isChief(){return !S.training&&(!sb||!!(S.me&&S.me.chief))}
+/* Office side (admins + dispatch): customers, reminders, assigning jobs. Also works in training. */
+function isOffice(){return !sb||!!(S.me&&S.me.admin)}
+function canDeleteJob(j){if(S.training||!sb)return true;if(isChief())return true;return !!(S.me&&j.createdBy===S.me.id&&!j.controllers.length&&!(j.revs||[]).length)}
+function myJob(j){if(!sb||isOffice())return true;return !j.assign||j.assign.id===S.me.id||j.createdBy===S.me.id}
+function techList(){return (S.team&&S.team.people||[]).filter(p=>p.role==="tech")}
+function assignTo(j,p){j.assign={id:p.id,name:p.name||String(p.email).split("@")[0],email:p.email};j.info.tech=j.assign.name}
 let pTimer=null;
 function savePricing(){if(!isAdmin()||S.training)return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
   if(S.mode==="local")LS.set(KP()+"pricing",S.pricing);
@@ -646,7 +655,8 @@ function banner(){
   return "";
 }
 function homeView(){
-  const tabs=[["jobs","Jobs"],["reminders","Reminders"],["customers","Customers"],["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
+  if(!isOffice()&&(S.home==="reminders"||S.home==="customers"))S.home="jobs";
+  const tabs=[["jobs","Jobs"],...(isOffice()?[["reminders","Reminders"],["customers","Customers"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
   else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
@@ -657,7 +667,7 @@ function homeView(){
   <div class="wrap"><main>${banner()}${body}</main></div>`;
 }
 function jobsList(){
-  const all=Object.values(S.jobs).sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||b.updatedAt-a.updatedAt);
+  const all=Object.values(S.jobs).filter(myJob).sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||b.updatedAt-a.updatedAt);
   const open=all.filter(j=>j.info.status!=="Completed"&&j.info.status!=="Declined");
   const list=S.filter==="open"?open:all;
   if(!all.length)return `<div class="card empty">
@@ -667,11 +677,11 @@ function jobsList(){
   return `<div class="row"><div class="chips">${[["open",`Open (${open.length})`],["all",`All (${all.length})`]].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`).join("")}</div></div>
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
     return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
-    <div class="who"><strong>${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.info.tech?" · "+esc(j.info.tech):""}</span></div>
+    <div class="who"><strong>${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
     <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${pillFor(j.info.status)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
 }
 function docketView(){
-  const day=Object.values(S.jobs).filter(j=>j.info.date===S.docketDate).sort((a,b)=>(a.info.window||"").localeCompare(b.info.window||""));
+  const day=Object.values(S.jobs).filter(myJob).filter(j=>j.info.date===S.docketDate).sort((a,b)=>(a.info.window||"").localeCompare(b.info.window||""));
   const load={};
   day.forEach(j=>buildEstimate(j).lines.filter(l=>l.m).forEach(l=>{const k=l.key?PRICE_DEFAULTS[l.key].l:l.label;const u=l.unit;const key=k+"|"+u;load[key]=load[key]||{label:k,unit:u,qty:0,jobs:new Set()};load[key].qty+=l.qty;load[key].jobs.add(j.info.customer||"Unnamed")}));
   const rows=Object.values(load).sort((a,b)=>a.label.localeCompare(b.label));
@@ -700,18 +710,19 @@ function jobView(){
   const j=job();const e=buildEstimate(j);
   const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
   const miss=missingCustomer(j);
-  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["dispatch","Customer"],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
+  const tabs=[["dispatch","Customer"],["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
+  if(j.intake===false)return intakeView(j);
   if(!j.info.propType)return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">Start of job</div><h1>New job</h1></div></div></header></div>
   <div class="wrap"><main>${banner()}<div class="card"><div class="eyebrow">Step 1</div><h2>What kind of property is this?</h2>
     <p class="muted">This sets pricing for the whole job. Commercial work is priced ${commPct()}% above residential rates.</p>
     <div class="grid2"><button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="residential">Residential<div class="small" style="font-weight:400;opacity:.85">Homes, HOA single lots</div></button>
     <button class="btn" style="min-height:88px;font-size:1.15rem" data-set="info.propType" data-v="commercial">Commercial<div class="small" style="font-weight:400;opacity:.85">Businesses, HOA common areas, multi-family</div></button></div></div>
-    <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`;
+    ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}</main></div>`;
   if(!j.setupDone&&!j.controllers.length){if(!S.ctlDraft)S.ctlDraft=newDraft();return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · Start of job</div><h1>Controller setup</h1></div>${acctChip()}</div></header></div>
-  <div class="wrap"><main>${banner()}${ctlSetupForm("What controller is on site?",true)}
-    <div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div></main></div>`}
+  <div class="wrap"><main>${banner()}${custSummary(j)}${ctlSetupForm("What controller is on site?",true)}
+    ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}</main></div>`}
   const v={dispatch:dispatchTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
@@ -722,14 +733,43 @@ const REQ=[["info.customer","Customer name"],["info.address","Street address"],[
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(SHOW_JOB_TERMS&&!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
 function customerFields(){return `<div class="grid2">${fld("Customer name *","info.customer","text",'autocomplete="name"')}${fld("Phone","info.phone","tel")}${fld("Email","info.email","email")}${fld("Gate / access code","info.gate")}</div>
   <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div>${SHOW_JOB_TERMS?termsAgreeBlock(job()):remOptOut(job())}<p class="small muted">* Required, plus a phone or email${SHOW_JOB_TERMS?" and the terms agreement":""}, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
+function assignSel(j){if(!S.team){loadTeam();return `<label class="f"><span>Assigned technician</span><select disabled><option>Loading team…</option></select></label>`}
+  const ts=techList();return `<label class="f"><span>Assigned technician</span><select data-assign="1" id="assign-sel">${j.assign?"":'<option value="">Pick a technician</option>'}${ts.map(p=>`<option value="${esc(p.id)}" ${j.assign&&j.assign.id===p.id?"selected":""}>${esc(p.name||p.email)}</option>`).join("")}</select></label>`}
+function custSummary(j){const i=j.info;if(!i.customer&&!i.address)return "";const tel=String(i.phone||"").replace(/[^\d+]/g,"");
+  return `<div class="card custsum"><div class="eyebrow">Customer</div><h2 style="margin:2px 0">${esc(i.customer||"No name yet")}</h2>
+  <div class="small">${esc([i.address,i.city].filter(Boolean).join(", "))}${i.gate?` · <b>Gate ${esc(i.gate)}</b>`:""}</div>
+  <div class="small">${tel?`<a href="tel:${esc(tel)}">${esc(i.phone)}</a>`:""}${i.phone&&i.email?" · ":""}${esc(i.email||"")}${i.window?" · "+esc(i.window):""}</div>
+  ${i.notes?`<p class="small" style="margin:6px 0 0"><b>Problem reported:</b> ${esc(i.notes)}</p>`:""}</div>`}
+function intakeLive(){const j=job();if(!j||j.intake!==false)return;const m=intakeMissing(j);const p=document.getElementById("intake-miss"),b=document.getElementById("intake-go");
+  if(p){p.hidden=!m.length;p.querySelector("span").textContent=m.join(", ")}if(b)b.disabled=!!m.length}
+function intakeMissing(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!j.info.propType)m.push("Residential or commercial");if(sb&&isOffice()&&!j.assign)m.push("Technician");return m}
+function intakeView(j){const off=sb&&isOffice();
+  if(off&&!j.assign&&S.team){const ts=techList();let last=null;try{last=localStorage.getItem("irr.lastAssign")}catch(e){}
+    const pick=ts.find(p=>p.id===last)||ts.find(p=>!p.is_admin)||ts.find(p=>p.id===S.me.id)||ts[0];if(pick){assignTo(j,pick);scheduleSave(j.id)}}
+  const miss=intakeMissing(j);const toOther=off&&j.assign&&j.assign.id!==S.me.id;
+  const pt=(v,l,d)=>`<button class="btn ${j.info.propType===v?"":"ghost"}" style="min-height:70px" data-set="info.propType" data-v="${v}" aria-pressed="${j.info.propType===v}">${l}<div class="small" style="font-weight:400;opacity:.85">${d}</div></button>`;
+  return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
+    <div style="flex:1;min-width:0"><div class="sub">${off?"Dispatch":"Start of job"}</div><h1>New job</h1></div>${acctChip()}</div></header></div>
+  <div class="wrap"><main>${banner()}
+  <div class="card"><div class="eyebrow">Step 1</div><h2>Customer</h2>${customerFields()}</div>
+  <div class="card"><div class="eyebrow">Step 2</div><h2>Visit</h2><div class="grid2">${fld("Date","info.date","date")}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}</div>
+    ${off?`<div class="grid2">${assignSel(j)}${fld("Truck","info.truck")}</div>`:""}
+    ${fld("Problem reported / notes for the technician","info.notes","textarea")}</div>
+  <div class="card"><div class="eyebrow">Step 3</div><h2>What kind of property is this?</h2><p class="muted small">Commercial work is priced ${commPct()}% above residential rates.</p>
+    <div class="grid2">${pt("residential","Residential","Homes, HOA single lots")}${pt("commercial","Commercial","Businesses, HOA common areas, multi-family")}</div></div>
+  <div class="card"><p class="small" id="intake-miss" style="margin-top:0" ${miss.length?"":"hidden"}><b>Still needed:</b> <span>${esc(miss.join(", "))}</span></p>
+    <button class="btn" id="intake-go" style="width:100%;min-height:52px" data-intakedone="1" ${miss.length?"disabled":""}>${toOther?`Create job & send to ${esc(j.assign.name)}`:"Start the job"}</button>
+    ${toOther?"":`<div class="row" style="margin-top:8px"><span class="spacer small muted">Customer not available?</span><button class="linkbtn" data-intakeskip="1">Fill in details later</button></div>`}</div>
+  ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}
+  </main></div>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
-  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
+  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
   <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
   ${seg("Status","info.status",STATUSES)}
   ${fld("Problem reported / dispatch notes","info.notes","textarea")}</div>
-  ${isAdmin()?`<div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}`;
+  ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}`;
 }
 
 /* ---- map ---- */
@@ -1802,10 +1842,10 @@ function jobSteps(j){
   const ml=j.mainline.length>0&&j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow));
   const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
   return [
+    {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
     {k:"mainline",label:"Mainline",done:ml,todo:"Check the water meter with the system off: is it moving?"},
     {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>(c.rain==="no"||(c.rain==="yes"&&c.rainStatus))&&!ctlFlags(c).unread),todo:!j.controllers.length?"Set up the controller.":j.controllers.some(c=>ctlFlags(c).unread)?`Controller: pick the wire reading for ${j.controllers.reduce((a,c)=>a+ctlFlags(c).unread,0)} zone(s).`:"Controller: answer the rain/freeze sensor question."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
-    {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the audit report."},
     {k:"completion",label:"Outcome",done:j.outcome==="declined"||(j.outcome==="approved"&&!!(j.completion&&j.completion.issuedAt&&j.completion.fp===compPrint(j))),
      todo:!j.outcome||j.outcome==="waiting"?"Ask if the customer is hiring us for the work.":"Mark the completed work and issue the completion report."}];
@@ -2011,7 +2051,7 @@ async function afterSignIn(session){
   if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
-  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin};
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief)};
   if(p.role==="tech"){startDb(makeSupaDb());checkLocalImport()}
   else if(SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
@@ -2115,16 +2155,16 @@ async function signOut(){S.acctOpen=false;
   resetToSignIn();toast("Signed out")}
 /* Who's signed in: shown in the top bar on every screen */
 /* Job options menu (admins): delete the job */
-function jobMenu(j){if(!isAdmin())return "";
+function jobMenu(j){if(!isChief())return "";
   return `<div class="acct"><button class="iconbtn jobmenubtn" data-jobmenu="1" aria-expanded="${!!S.jobMenu}" aria-label="Job options">⋯</button>
   ${S.jobMenu?`<div class="acctmenu" role="menu"><b>Job options</b><p class="small muted" style="margin:0">Deleting removes this job, its photos' links, reports and invoice for everyone. It can't be undone.</p>${delBtn("job:"+j.id,"Delete job")}</div>`:""}</div>`}
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
-  ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.admin?"Admin":"Technician"}</span></div>
+  ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.admin?"Admin":"Technician"}</span></div>
     <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- Training mode: practice jobs on this phone only ---------- */
-function trainingSample(){const j=withDefaults(newJob());j.training=true;
+function trainingSample(){const j=withDefaults(newJob());j.training=true;delete j.intake;
   Object.assign(j.info,{customer:"Practice Customer",address:"123 Training Ln",city:"Frisco, TX",phone:"555-0100",email:"practice@example.com",propType:"residential",notes:"Practice job: customer says zone 3 isn't watering."});
   j.mainline[0].meters[0]={num:"00000000",reading:"1000",flow:"",side:""};return j}
 function enterTraining(){S.acctOpen=false;S.training=true;document.body.classList.add("training");
@@ -2185,10 +2225,10 @@ async function discardLocal(){
 }
 
 /* ---------- Team & account (technicians) ---------- */
-async function loadTeam(){
+async function loadTeam(){if(S.teamLoading)return S.teamLoading;S.teamLoading=(async()=>{try{
   const [p,s]=await Promise.all([sb.from("profiles").select("*").order("created_at"),sb.from("staff_emails").select("email")]);
-  S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.home==="team"&&!S.cur)render();
-}
+  S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.cur||S.home==="team")renderKeepFocus();
+  }finally{S.teamLoading=null}})();return S.teamLoading}
 function teamView(){
   if(!isAdmin()){const me=S.me;return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill neutral">Technician</span></div>
     <div class="grid2"><label class="f"><span>Your name (shown on reports you issue)</span><input id="me-name" type="text" data-mename="1" value="${esc(me.name)}"></label><label class="f"><span>Your email</span><input type="email" value="${esc(me.email)}" disabled></label></div>
@@ -2198,11 +2238,11 @@ function teamView(){
   const me=S.me;const techs=S.team.people.filter(p=>p.role==="tech");const owners=S.team.people.filter(p=>p.role==="owner");
   const pending=S.team.staff.filter(e=>!S.team.people.some(p=>p.email===e));
   const adm=isAdmin();
-  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">${me.admin?"Admin":"Technician"}</span></div>
+  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">${me.chief?"Chief admin":me.admin?"Admin":"Technician"}</span></div>
     <div class="grid2"><label class="f"><span>Your name (shown on reports you issue)</span><input id="me-name" type="text" data-mename="1" value="${esc(me.name)}"></label><label class="f"><span>Your email</span><input type="email" value="${esc(me.email)}" disabled></label></div>
     <div><button class="btn quiet" data-signout="1">Sign out</button></div></div>
-  <div class="card"><h2>Team</h2><p class="small muted" style="margin:0">Technicians do jobs, reports and invoices and can see prices. <b>Admins</b> can also change prices and business info and manage the team.</p>
-    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm?`<div class="row" style="gap:6px;justify-content:flex-end">${p.is_admin?(p.id===me.id?"":delBtn("unadmin:"+p.email,"Remove admin")):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`}${p.id===me.id?"":delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
+  <div class="card"><h2>Team</h2><p class="small muted" style="margin:0">Technicians do the jobs assigned to them. <b>Admins</b> (owner and dispatch) also add customers, create and assign jobs, change prices and add technicians. Only the <b>chief admin</b> can delete jobs or make someone an admin.</p>
+    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_chief&&p.is_admin?'<span class="pill ok">Chief admin</span>':p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm&&!p.is_chief&&p.id!==me.id&&(isChief()||!p.is_admin)?`<div class="row" style="gap:6px;justify-content:flex-end">${isChief()?(p.is_admin?delBtn("unadmin:"+p.email,"Remove admin"):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`):""}${delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
     ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${adm?delBtn("staff:"+e,"Remove"):""}</div>`).join("")}</div>
     ${adm?"":"<!--"}<form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
     <p class="small muted" style="margin:0">The new technician then creates their own account on the sign-in screen with the technician's email you entered above. If that email already has an account, they become a technician right away.</p>${adm?"":"-->"}</div>
@@ -2253,6 +2293,7 @@ app.addEventListener("input",ev=>{
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
   const p=t.dataset.f;if(!p||!job())return;
   if(t.tagName==="SELECT")return;
+  if(job().intake===false)setTimeout(intakeLive,0);
   let v=t.value;if(t.dataset.num)v=v===""?0:Math.max(0,num(v));
   setP(job(),p,v);scheduleSave(S.cur);
   if(/^info\./.test(p))liveMissing();
@@ -2262,6 +2303,7 @@ app.addEventListener("change",ev=>{
   const t=ev.target;
   if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
   if(t.dataset.terms&&job()){const j=job();if(t.checked)Object.assign(j.info,{termsAgreed:true,termsVer:termsVer(),termsAt:Date.now()});else{j.info.termsAgreed=false;delete j.info.termsAt}scheduleSave(S.cur);rr();return}
+  if(t.dataset.assign&&job()){const j=job();const p=techList().find(x=>x.id===t.value);if(p){assignTo(j,p);try{localStorage.setItem("irr.lastAssign",p.id)}catch(e){}scheduleSave(S.cur);rr()}return}
   if(t.dataset.remoff&&job()){job().info.remindersOff=t.checked;scheduleSave(S.cur);return}
   if(t.dataset.impsel){S.impSel=S.impSel||{};S.impSel[t.dataset.impsel]=t.checked;rr();return}
   if(t.dataset.prev){openPortalDoc("report",t.value);return}
@@ -2301,8 +2343,12 @@ app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
-  if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
-  if(d.new){const nj=newJob();S.ctlDraft=null;S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="mainline";scheduleSave(nj.id);render();window.scrollTo(0,0);return}
+  if(d.open){ev.preventDefault();S.cur=d.open;S.tab="dispatch";S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.new){const nj=newJob();S.ctlDraft=null;S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="dispatch";scheduleSave(nj.id);if(sb&&isOffice()&&!S.team)loadTeam();render();window.scrollTo(0,0);return}
+  if(d.intakedone&&job()){const j=job();if(intakeMissing(j).length)return;j.intake=false;delete j.intake;scheduleSave(S.cur);
+    if(sb&&isOffice()&&j.assign&&j.assign.id!==S.me.id){S.cur=null;S.home="jobs";render();window.scrollTo(0,0);toast("Job sent to "+j.assign.name);return}
+    S.tab="dispatch";render();window.scrollTo(0,0);return}
+  if(d.intakeskip&&job()){const j=job();delete j.intake;scheduleSave(S.cur);render();window.scrollTo(0,0);return}
   if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;render();return}
   if(d.filter){S.filter=d.filter;rr();return}
@@ -2396,7 +2442,7 @@ function doRemove(key){
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
-  if(k==="job"){if(!isAdmin())return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
+  if(k==="job"){const jj=S.jobs[a];if(!jj||!canDeleteJob(jj))return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
   const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
