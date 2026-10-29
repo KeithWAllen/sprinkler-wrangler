@@ -1422,6 +1422,16 @@ function reportHtml(j,rev){
   return reportHtmlReal(j,rev);
 }
 /* Shared document header: centered title, then a balanced 2 x 2 block (one font throughout) */
+/* Technical readings section (when switched on for the job) */
+function techSection(j){if(!j.est.showTech)return "";const BL={short:"Short",ok:"Normal",high:"High",float:"Floating",open:"Open"};const parts=[];
+  const meters=[];(j.mainline||[]).forEach(m=>(m.meters||[]).forEach((w,i)=>{if(w.num||w.reading||w.flow)meters.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${esc(w.num||"—")}</td><td>${esc(w.reading||"—")}</td><td>${w.flow==="yes"?"Moving":w.flow==="no"?"Not moving":"—"}</td></tr>`)}));
+  if(meters.length)parts.push(`<h3>Water meters (system off)</h3><div class="tbl"><table><thead><tr><th>Line</th><th>Meter #</th><th>Reading</th><th>Flow</th></tr></thead><tbody>${meters.join("")}</tbody></table></div>`);
+  (j.controllers||[]).forEach(c=>{const zn=Math.min(Math.max(num(c.zones),0),200);
+    if(c.wiring==="conventional"&&zn){const rows=Array.from({length:zn},(_,i)=>{const z=i+1;const b=zoneBand(c,z);const v=(c.ohms||{})[z];return `<tr><td>Zone ${z}</td><td>${b?esc(BL[b]||b):"Not read"}</td><td>${v!=null&&v!==""?esc(String(v))+(/^\d/.test(String(v))?" Ω":""):"—"}</td></tr>`}).join("");
+      parts.push(`<h3>${esc(c.name||"Controller")}: zone wire readings</h3><div class="tbl"><table><thead><tr><th>Zone</th><th>Range</th><th>Exact reading</th></tr></thead><tbody>${rows}</tbody></table></div>`)}
+    (c.programs||[]).forEach(pg=>{const rt=Object.entries(pg.runtimes||{}).filter(([,v])=>num(v)>0).sort((a,b)=>+a[0]-+b[0]);
+      parts.push(`<h3>${esc(c.name||"Controller")}: program ${esc(pg.name||"")}</h3><p class="small" style="margin:0">Start times: ${esc(pg.starts||"—")} · Days: ${esc((pg.days||[]).join(", ")||"—")} · Seasonal adjust: ${pg.seasonal!=null&&pg.seasonal!==""?esc(String(pg.seasonal))+"%":"—"}</p>${rt.length?`<p class="small" style="margin:2px 0 0">Runtimes: ${rt.map(([z,v])=>`Z${esc(z)} ${esc(String(v))} min`).join(" · ")}</p>`:""}`)})});
+  return parts.length?`<section class="techsec"><h2>Technical readings</h2>${parts.join("")}</section>`:""}
 function docHead(title,sub,cells){return `<div class="dhead"><div class="dtitle">${title}</div>${sub?`<div class="dsub">${sub}</div>`:""}<div class="dgrid">${cells.map(([l,v])=>`<div class="dcell"><div class="dlab">${l}</div><div class="dval">${v}</div></div>`).join("")}</div></div>`}
 function reportHtmlReal(j,rev){
   const e=buildEstimate(j);const d=j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
@@ -1448,6 +1458,7 @@ function reportHtmlReal(j,rev){
       <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||showU(l.unit)?` <span class="muted">× ${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
+  ${techSection(j)}
   ${(()=>{const e=buildEstimate(j);return e.lines.length?`<section class="repest"><h2>Estimate</h2><p class="small muted" style="margin-top:0">Prices for the work above. Fix now items are needed to stop damage or water loss; Recommended items can be scheduled later.</p>${estTableTL(j,e,false)}${j.est.terms?`<p class="small">${esc(j.est.terms)}</p>`:""}</section>`:""})()}
   ${equipmentSection(j)}
   ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
@@ -1592,7 +1603,7 @@ function reportTab(){const j=job();loadBg(j.id);
     ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
   const viewing=S.revView&&S.revView.job===j.id?S.revView:null;
   return `<div class="card"><div class="row"><div class="spacer"><h2>Customer report</h2><p class="small muted">This is what the customer sees.</p></div>
-    <button class="chip" data-tech="1" aria-pressed="${!!j.est.showTech}">Include technical readings</button></div>
+    <button class="chip techsw" data-tech="1" aria-pressed="${!!j.est.showTech}" title="Adds meter readings, every zone's wire reading and controller programs to the report">Technical readings: <b>${j.est.showTech?"On":"Off"}</b></button></div>
     ${status}${issueBox}
     ${cur?`<div class="row">${CAN_PRINT?`<button class="btn" data-print="report">Print Rev ${revNo(cur.n)}</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-copy="1">Copy Rev ${revNo(cur.n)} as text</button>${downloads?`<button class="btn ghost" data-save="1">Save Rev ${revNo(cur.n)} file</button>`:""}
     <span class="spacer"></span></div>`:""}</div>
@@ -1611,20 +1622,22 @@ function jobPrint(j){
   const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
   return hashStr(JSON.stringify({c:[i.customer||"",i.address||"",i.city||"",i.propType||""],
     f:findings(j,false).map(([h,it])=>[h,(it||[]).map(strip)]),
-    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||"",v:3}))}
+    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||"",v:3,...(j.est.showTech?{t:techSection(j).replace(/<[^>]+>/g," ").replace(/\s+/g," ")}:{})}))}
 /* Option totals (with tax) for the portal: Fix now (incl. service), Recommended, All work */
 function estOptions(j){const e=buildEstimate(j);const rate=num(j.est.tax)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});
   const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
   return {rate:num(j.est.tax),fix:t(g.s+g.r),rec:g.y?t(g.y):null,all:t(e.sub,e.disc)}}
 /* Automatic change log: what the customer would see differently since the last issued revision */
 function revSnap(j){const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
-  return {who:[i.customer||"",[i.address,i.city].filter(Boolean).join(", ")],date:i.date||"",
+  return {tech:!!(j.est||{}).showTech,who:[i.customer||"",[i.address,i.city].filter(Boolean).join(", ")],date:i.date||"",
     f:[].concat(...findings(j,false).map(([h,it])=>(it||[]).map(x=>h+": "+strip(x)))),
     l:buildEstimate(j).lines.map(l=>({k:l.sec+"|"+l.label,label:l.label,sec:l.sec,qty:l.qty,price:l.price}))}}
 function changeLog(j,last){if(!last)return [];const now=revSnap(j);const out=[];const fmtD=d=>d?new Date(d+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
   const old=last.snap;
   if(old){if(old.who[0]!==now.who[0])out.push(`Customer name: ${old.who[0]||"—"} → ${now.who[0]}`);if(old.who[1]!==now.who[1])out.push(`Address: ${old.who[1]||"—"} → ${now.who[1]}`);
-    if(old.date!==now.date)out.push(`Inspection date: ${fmtD(old.date)} → ${fmtD(now.date)}`);}
+    if(old.date!==now.date)out.push(`Inspection date: ${fmtD(old.date)} → ${fmtD(now.date)}`);
+    if(!!old.tech!==now.tech)out.push(now.tech?"Technical readings added":"Technical readings removed");}
+  else if(now.tech)out.push("Technical readings added");
   const ol=old?old.l:((last.audit||{}).lines||[]).map(x=>({k:x.sec+"|"+x.label,label:x.label,sec:x.sec,qty:x.qty,price:x.qty?x.total/x.qty:x.total}));
   const nl=old?now.l:now.l.filter(l=>lineColor(j,{sec:l.sec,label:l.label,key:null})!==""||true).filter(l=>l.sec!=="Service"&&l.sec!=="Add-ons");
   const om=new Map(ol.map(x=>[x.k,x])),nm=new Map(nl.map(x=>[x.k,x]));
