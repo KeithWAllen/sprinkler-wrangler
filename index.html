@@ -745,7 +745,7 @@ function jobView(){
   const j=job();const e=buildEstimate(j);
   const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
   const miss=missingCustomer(j);
-  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["score","Score"],["report","Report"],["completion","Completion"],["invoice","Invoice"]];
+  const tabs=[["mainline","Mainline",j.mainline.length],["controllers","Controllers",j.controllers.length],["zones","Zones",j.zones.length],["map","Map",j.map.items.length+j.map.lines.length],...(SHOW_UPSELLS?[["upsells","Upgrades",(j.upsells||[]).length]]:[]),["estimate","Estimate"],["report","Report"],["completion","Completion"],["invoice","Invoice"],["score","Score"]];
   if(j.intake===false)return intakeView(j);
   if(!j.info.propType)return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">Start of job</div><h1>New job</h1></div></div></header></div>
@@ -1762,8 +1762,7 @@ function scoreTab(){const j=job();const h=healthScore(j,false),a=healthScore(j,t
     ${h.unread?`<p class="small muted" style="margin:6px 0 0">${h.unread} zone${h.unread===1?"":"s"} not checked yet; the score may change.</p>`:""}</div></div>
     ${a.score>h.score?`<div class="hsafter">${hsBadge(a.score,64)}<div><b>${a.score} after the Fix now repairs</b><div class="small muted">Up ${a.score-h.score} points if the customer approves the Fix now items on the estimate.</div></div></div>`:""}</div>
   <div class="card"><h3>What the score is made of</h3><div class="hsparts">${h.parts.map(x=>{const pct=Math.round(100*(x.max-x.lost)/x.max);const pc=pct>=80?"g":pct>=50?"y":"r";return `<div class="hspart"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">${esc(x.area)}</b><span class="mono small">${Math.round(x.max-x.lost)} / ${x.max}</span></div><div class="hsbar"><span class="tlbg-${pc}" style="width:${pct}%"></span></div>${x.why.length?`<div class="small muted">${x.why.map(esc).join(" · ")}</div>`:""}</div>`}).join("")}</div>
-    ${top.length?`<p class="small" style="margin:10px 0 0"><b>Biggest drag:</b> ${esc(top[0].area)} (−${Math.round(top[0].lost)} points).</p>`:""}
-    <p class="small muted" style="margin:6px 0 0">Draft weights for review: zones 35, water loss 20, protection 15, equipment 15, schedule 10, controller 5.</p></div>`}
+</div>`}
 function scorecard(j){const C=sectionColors(j);const n={r:0,y:0,g:0,n:0};Object.values(C).forEach(c=>n[c||"n"]=(n[c||"n"]||0)+1);
   return `<div class="score">${["r","y","g"].map(c=>`<div class="sc sc-${c}"><div class="scn">${n[c]}</div><div><b>${TL[c][0]}</b><div class="small">${esc(TL[c][1])}</div></div></div>`).join("")}</div>
   ${n.n?`<p class="small muted" style="margin:4px 0 0">${n.n} area${n.n===1?"":"s"} not checked on this visit.</p>`:""}`}
