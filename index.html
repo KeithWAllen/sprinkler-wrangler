@@ -294,6 +294,7 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left:10px}details.lines summary{cursor:pointer;color:var(--muted)}
 .hsrow{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.hsbadge{flex:none}.hsafter{display:flex;gap:12px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.hsparts{display:grid;gap:12px}.hsbar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:4px 0}.hsbar span{display:block;height:100%}.tlbg-g{background:var(--tl-g)}.tlbg-y{background:var(--tl-y)}.tlbg-r{background:var(--tl-r)}
 @keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(31,94,64,.6)}100%{box-shadow:0 0 0 14px rgba(31,94,64,0)}}.pulse{animation:pulseRing .8s ease-out 2}
+.totals3{display:grid;gap:10px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.totblk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;break-inside:avoid}.totblk>div:not(.tbh){display:flex;justify-content:space-between;gap:10px}.totblk .tbh{font-weight:800;margin-bottom:4px;display:grid;gap:2px}.totblk .tbh .small{font-weight:400}.totblk .grand{font-weight:800;border-top:1px solid var(--line);padding-top:4px}.tb-r{border-left:4px solid var(--tl-r)}.tb-y{border-left:4px solid var(--tl-y)}.tb-all{border-left:4px solid var(--accent)}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -1386,6 +1387,7 @@ function reportHtmlReal(j,rev){
       <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||showU(l.unit)?` <span class="muted">× ${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
+  ${(()=>{const e=buildEstimate(j);return e.lines.length?`<section class="repest"><h2>Estimate</h2><p class="small muted" style="margin-top:0">Prices for the work above. Fix now items are needed to stop damage or water loss; Recommended items can be scheduled later.</p>${estTableTL(j,e,false)}${j.est.terms?`<p class="small">${esc(j.est.terms)}</p>`:""}</section>`:""})()}
   ${equipmentSection(j)}
   ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   ${ups.length?`<section><h2>Optional upgrades</h2><p class="small muted">Not required to fix today's issues. Ask us about any of these.</p>
@@ -1523,8 +1525,8 @@ function reportTab(){const j=job();loadBg(j.id);
   const issueBox=cur?"":`<div class="combo"><h4>Issue Rev ${revNo(nextN)}</h4>
     ${last?fld("What changed? (required)","est.revNote","text",'placeholder="e.g. Added zone 6 drip repair per customer"'):""}
     <div class="row"><button class="btn" data-issue="1">Issue Rev ${revNo(nextN)}</button><span class="small muted">Locks this version and records who issued it.</span></div></div>`;
-  const hist=revs.length?`<div class="card"><h3>Revision history</h3><div class="tbl"><table><thead><tr><th>Rev</th><th>Issued</th><th>By</th><th>Change</th><th class="r">Total</th><th></th></tr></thead><tbody>
-    ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r">${money(r.total)}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
+  const hist=revs.length?`<div class="card"><h3>Revision history</h3><div class="tbl"><table><thead><tr><th>Rev</th><th>Issued</th><th>By</th><th>Change</th><th></th></tr></thead><tbody>
+    ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
   const viewing=S.revView&&S.revView.job===j.id?S.revView:null;
   return `<div class="card"><div class="row"><div class="spacer"><h2>Customer report</h2><p class="small muted">This is what the customer sees.</p></div>
     <button class="chip" data-tech="1" aria-pressed="${!!j.est.showTech}">Include technical readings</button></div>
@@ -1774,8 +1776,10 @@ function estTableTL(j,e,editable){
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
     ${block("s","Service & add-ons",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
-  <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div>
-  ${groups.r.length&&groups.y.length?`<div class="small"><span>Fix now only (service + red, before tax)</span><span>${money(sub(groups.s)+sub(groups.r))}</span></div>`:""}</div>
+  ${(()=>{const rate=num(j.est.tax)/100;const fx=sub(groups.s)+sub(groups.r),rc=sub(groups.y);
+    const blk=(cls,title,note,st,disc)=>{const base=st-(disc||0);const tx=base*rate;return `<div class="totblk ${cls}"><div class="tbh"><span>${title}</span>${note?`<span class="small muted">${note}</span>`:""}</div><div><span>Subtotal</span><span>${money(st)}</span></div>${disc?`<div><span>Discount</span><span>−${money(disc)}</span></div>`:""}<div><span>Tax (${num(j.est.tax)}%)</span><span>${money(tx)}</span></div><div class="grand"><span>Total</span><span>${money(base+tx)}</span></div></div>`};
+    const two=groups.y.length>0;
+    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,"Stops damage and water loss. Includes the service call.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub,e.disc):""}</div>`})()}
   ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
 
 /* ---------------- Completion: what was (audit) vs what is (after the work) ----------------
