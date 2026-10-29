@@ -1818,7 +1818,29 @@ const BRAND_NOTE_DEFAULT="Better-built irrigation parts usually last longer and 
 function brandName(v,other){return v==="Other"?String(other||"").trim():v==="Not sure"?"":String(v||"").trim()}
 function brandSel(label,path,cat){const j=job();const v=getP(j,path)||"";
   return sel(label,path,[["","Choose…"]].concat(BRANDS[cat],["Other","Not sure"]))+(v==="Other"?fld("Brand name",path+"Other"):"")}
-function brandTier(name){if(!name)return null;const t=(S.pricing._brandTiers||{})[name];return TIERS.find(x=>x[0]===t)||null}
+/* Suggested starting grades (researched Oct 2026): sales channel (professional supply vs. big-box DIY), product line and warranty.
+   One grade per brand; an admin's choice on the Price sheet always wins. */
+const BRAND_TIER_DEFAULTS={
+  "Rain Bird":["pro","Sold mainly through professional irrigation suppliers"],
+  "Hunter":["pro","Sold mainly through professional irrigation suppliers; model warranties up to 5 years"],
+  "Toro":["pro","Professional irrigation line"],
+  "Irritrol":["pro","Toro brand sold to irrigation professionals for decades"],
+  "Weathermatic":["pro","Commercial and professional irrigation manufacturer"],
+  "K-Rain":["std","Professional rotors, but a smaller line sold through retail too"],
+  "Rachio":["std","Consumer smart controller sold at big-box stores; mixed durability reports"],
+  "Orbit":["eco","Consumer do-it-yourself line sold at big-box stores"],
+  "Febco":["pro","Established backflow manufacturer (Watts)"],
+  "Watts":["pro","Established backflow and valve manufacturer"],
+  "Zurn Wilkins":["pro","Established backflow and valve manufacturer"],
+  "Ames":["pro","Established backflow manufacturer (Watts)"],
+  "Apollo":["pro","Established valve and backflow manufacturer"],
+  "NIBCO":["pro","Established professional valve manufacturer"],
+  "Mueller":["pro","Established professional valve manufacturer"],
+  "Honeywell":["std","Residential plumbing line"],
+  "Cash Acme":["std","Residential plumbing line"],
+  "Spears":["std","PVC valves: reliable, but plastic"]};
+function brandTierKey(name){const own=(S.pricing._brandTiers||{})[name];if(own!==undefined)return own==="none"?"":own;return (BRAND_TIER_DEFAULTS[name]||[])[0]||""}
+function brandTier(name){if(!name)return null;const t=brandTierKey(name);return TIERS.find(x=>x[0]===t)||null}
 function allBrands(){const set=new Set();Object.values(BRANDS).forEach(l=>l.forEach(b=>set.add(b)));
   Object.values(S.jobs).forEach(j=>equipmentRows(j).forEach(r=>{if(r.brand)set.add(r.brand)}));
   Object.keys(S.pricing._brandTiers||{}).forEach(b=>set.add(b));return [...set].sort((a,b)=>a.localeCompare(b))}
@@ -1836,9 +1858,9 @@ function equipmentSection(j){const rows=equipmentRows(j);if(!rows.length)return 
   <div class="tbl"><table><thead><tr><th>Part</th><th>Brand</th><th>Model / details</th><th>${esc(biz)}${biz==="Our"?"":"'s"} rating</th></tr></thead><tbody>
   ${rows.map(r=>{const t=brandTier(r.brand);return `<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"Not identified")}</td><td>${esc(r.model||"")}${r.serial?`<div class="small muted">Serial ${esc(r.serial)}</div>`:""}</td><td>${t?`<b class="tier-${t[0]}">${esc(t[1])}</b><div class="small muted">${esc(t[2])}</div>`:'<span class="muted">Not rated</span>'}</td></tr>`}).join("")}</tbody></table></div>
   <p class="small muted">Recorded ${esc(new Date().toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}))}</p></section>`}
-function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};
-  return `<div class="card"><h2>Brands & quality ratings</h2><p class="small muted" style="margin:0">Your company's rating of each brand. It prints on the customer report next to the equipment found on their property. Leave a brand "Not rated" to show no rating.</p>
-  <div class="acts">${allBrands().map(b=>`<div class="act"><div class="al">${esc(b)}</div><div class="chips">${TIERS.map(t=>`<button class="chip" data-tier="${esc(b)}|${t[0]}" aria-pressed="${tiers[b]===t[0]}" ${adm?"":"disabled"}>${t[1].replace(" grade","")}</button>`).join("")}<button class="chip" data-tier="${esc(b)}|" aria-pressed="${!tiers[b]}" ${adm?"":"disabled"}>Not rated</button></div></div>`).join("")}</div>
+function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};const sug=allBrands().filter(b=>tiers[b]===undefined&&BRAND_TIER_DEFAULTS[b]).length;
+  return `<div class="card"><h2>Brands & quality ratings</h2><p class="small muted" style="margin:0">Your company's rating of each brand. It prints on the customer report next to the equipment found on their property. Leave a brand "Not rated" to show no rating.${sug?` <b>${sug} brand${sug===1?" has a":"s have"} a suggested grade</b> from public information (sales channel, product line, warranty). Tap a grade to confirm or change it.`:""}</p>
+  <div class="acts">${allBrands().map(b=>{const k=brandTierKey(b);const isSug=tiers[b]===undefined&&BRAND_TIER_DEFAULTS[b];return `<div class="act"><div class="al">${esc(b)}${isSug?`<div class="ap">Suggested: ${esc(BRAND_TIER_DEFAULTS[b][1])}</div>`:""}</div><div class="chips">${TIERS.map(t=>`<button class="chip" data-tier="${esc(b)}|${t[0]}" aria-pressed="${k===t[0]}" ${adm?"":"disabled"}>${t[1].replace(" grade","")}</button>`).join("")}<button class="chip" data-tier="${esc(b)}|none" aria-pressed="${!k}" ${adm?"":"disabled"}>Not rated</button></div></div>`}).join("")}</div>
   <label class="f"><span>Note printed above the equipment list</span><textarea id="p-_brandNote" data-price="_brandNote" ${adm?"":"disabled"}>${esc(S.pricing._brandNote||BRAND_NOTE_DEFAULT)}</textarea></label></div>`}
 
 /* ---------------- Controller-first setup ----------------
@@ -2469,7 +2491,7 @@ app.addEventListener("click",ev=>{
   if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
   if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;S.custPick=false;if(sb&&isOffice()&&!S.team)loadTeam();const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
-  if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});if(t)S.pricing._brandTiers[bn]=t;else delete S.pricing._brandTiers[bn];savePricing();rr();return}
+  if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});S.pricing._brandTiers[bn]=t||"none";savePricing();rr();return}
   if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
   if(d.set==="inv.status"&&d.v==="paid"){j.inv=j.inv||{};if(!j.inv.paidDate)j.inv.paidDate=today()}
