@@ -289,6 +289,13 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 .compi{gap:8px}
 .addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
 .terms{white-space:pre-wrap;font-size:.85rem;max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;background:var(--surface)}
+.ohmrows{display:grid;gap:8px}
+.ohmrow{border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;gap:6px;background:var(--surface)}
+.ohmrow.none{border-color:var(--water)}.ohmrow.short,.ohmrow.open,.ohmrow.float{border-color:var(--tl-r)}.ohmrow.high{border-color:var(--tl-y)}
+.ozn{min-width:4.5em}.ohmchip{padding:6px 10px}.ohmchip .small{opacity:.75;font-weight:400}
+.ohmchip.short[aria-pressed="true"],.ohmchip.open[aria-pressed="true"],.ohmchip.float[aria-pressed="true"]{background:var(--tl-r);border-color:var(--tl-r);color:#fff}
+.ohmchip.high[aria-pressed="true"]{background:var(--tl-y);border-color:var(--tl-y);color:#2B2100}
+.ohmfix{border-top:1px dashed var(--line);padding-top:6px}
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.chip,.tool,.btn{transition:background .12s,border-color .12s}}
 </style>
@@ -382,6 +389,10 @@ const PRICE_DEFAULTS=(()=>{
   add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
   add("rain_replace","Controller","Replace rain/freeze sensor","each",125,1);
   add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
+  add("wire_splice","Controller","Locate & splice zone wire","zone",95);
+  add("wire_run","Controller","Run new zone wire","zone",175,1);
+  add("zone_splitter","Controller","Install zone splitter module","each",145,1);
+  add("wire_nut","Controller","Repair common / wire-nut connections","zone",75);
   add("decoder","Controller","Replace 2-wire decoder","each",120,1);
   add("module","Controller","Replace controller module","each",95,1);
   return P;
@@ -546,9 +557,13 @@ const OHM_TXT={short:"Short",high:"High · rebuild valve",float:"Floating common
 const OHM_LONG={short:"short circuit",high:"high resistance, valve needs a rebuild",float:"floating common, likely a bad wire-nut connection",open:"open circuit, wire repair needed"};
 function ohmState(v){if(v===""||v==null)return "";const t=String(v).trim();if(/^(ol|o\.l\.?|open|inf|∞)/i.test(t))return "open";const n=parseFloat(t);if(isNaN(n))return "";const c=ohmCuts();
   if(n<c.short)return "short";if(n>c.float)return "float";if(n>c.high)return "high";return "ok"}
+/* Each zone's wire reading is picked as a range; an exact reading is optional */
+const OHM_FIX={short:[["wire_trouble","Wire repair"],["valve_sol","Replace solenoid"]],high:[["valve_rebuild","Rebuild valve"],["valve_sol","Replace solenoid"]],float:[["wire_nut","Repair common / wire-nut"],["wire_splice","Locate & splice"]],open:[["wire_splice","Locate & splice"],["wire_run","Run new wire"],["zone_splitter","Zone splitter module"]]};
+function zoneBand(c,z){const b=(c.ohmBand||{})[z];return b||ohmState((c.ohms||{})[z])}
+function zoneFix(c,z){const st=zoneBand(c,z);const f=OHM_FIX[st];if(!f)return null;const pick=(c.ohmFix||{})[z];return f.some(x=>x[0]===pick)?pick:f[0][0]}
 function ctlFlags(c){
-  const f={ohm:[],decoders:[],failedMods:0};
-  if(c.wiring==="conventional"){for(let z=1;z<=num(c.zones);z++){const st=ohmState((c.ohms||{})[z]);if(st&&st!=="ok")f.ohm.push({z,st,v:c.ohms[z]})}}
+  const f={ohm:[],decoders:[],failedMods:0,unread:0};
+  if(c.wiring==="conventional"){for(let z=1;z<=num(c.zones);z++){const st=zoneBand(c,z);if(!st)f.unread++;else if(st!=="ok")f.ohm.push({z,st,v:(c.ohms||{})[z]||"",fix:zoneFix(c,z)})}}
   f.wire=f.ohm.filter(x=>x.st!=="high");f.rebuild=f.ohm.filter(x=>x.st==="high");
   if(c.wiring==="2wire"){f.decoders=String(c.badDecoders||"").split(/[,\s]+/).filter(Boolean)}
   if(c.modular==="yes")f.failedMods=(c.modules||[]).filter(m=>m.status==="Failed").length;
@@ -571,8 +586,7 @@ function buildEstimate(j){
     if(c.power==="no"&&c.powerIssue==="transformer"&&a.transformer!==false&&!a.replace)add(sec,"transformer",1);
     if(c.rain==="no"&&a.rainAdd!==false)add(sec,"rain_add",1);
     if(c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")&&a.rainFix!==false)add(sec,"rain_replace",1);
-    if(f.wire.length&&a.wire!==false)add(sec,"wire_trouble",f.wire.length,"zones "+f.wire.map(x=>x.z).join(", "));
-    if(f.rebuild.length&&a.rebuild!==false)add(sec,"valve_rebuild",f.rebuild.length,"zones "+f.rebuild.map(x=>x.z).join(", "));
+    {const g={};f.ohm.forEach(x=>{if(x.fix)(g[x.fix]=g[x.fix]||[]).push(x.z)});Object.entries(g).forEach(([k,zs])=>add(sec,k,zs.length,"zone"+(zs.length>1?"s ":" ")+zs.join(", ")))}
     if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,"#"+f.decoders.join(", #"));
     if(f.failedMods&&a.module!==false)add(sec,"module",f.failedMods);
   });
@@ -608,8 +622,9 @@ function seg(label,path,opts,cls){const v=getP(job(),path);
 function multi(label,path,opts){const v=getP(job(),path)||[];
   return `<div class="q"><span class="ql">${label}</span><div class="chips">${opts.map(o=>{const [val,l]=Array.isArray(o)?o:[o,o];return `<button type="button" class="chip" data-tog="${path}" data-v="${esc(val)}" aria-pressed="${v.includes(val)}">${esc(l)}</button>`}).join("")}</div></div>`}
 const YN=[["yes","Yes"],["no","No"]];
-function stepRow(label,path,pk,unit){const q=num(getP(job(),path));const p=pk?price(pk):null;
-  return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${p!=null?`<div class="ap num">${money(p)}${unit&&unit!=="each"?" / "+unit:""}</div>`:""}</div>
+/* Recommendation screens show what to do, not prices; prices live on the Estimate */
+function stepRow(label,path,pk,unit){const q=num(getP(job(),path));
+  return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${unit&&unit!=="each"?`<div class="ap">per ${esc(unit)}</div>`:""}</div>
   <div class="step"><button type="button" data-step="${path}" data-d="-1" aria-label="Less">−</button><input type="number" inputmode="numeric" id="f-${path}" data-f="${path}" data-num="1" value="${q||""}" placeholder="0" aria-label="${esc(label)} quantity"><button type="button" data-step="${path}" data-d="1" aria-label="More">+</button></div></div>`}
 function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Approved:"ok",Declined:"bad",Completed:"ok"};return `<span class="pill ${m[status]||"neutral"}">${esc(status)}</span>`}
 function delBtn(id,label){const armed=S.armed===id;return `<button type="button" class="btn danger sm ${armed?"armed":""}" data-arm="${esc(id)}">${armed?"Tap again to remove":label||"Remove"}</button>`}
@@ -670,6 +685,7 @@ function pricesView(){
   return `${isAdmin()?"":`<div class="note info">Only admins can change prices and business info. Ask Bradley if a price needs updating.</div>`}<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
   ${termsCard()}
   ${brandsCard()}
+  ${ohmRangesCard()}
   <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
   <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
@@ -1071,7 +1087,7 @@ function mainlineTab(){const j=job();
     ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo"><h4>Backflow preventer</h4>
-    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${fld("Model",b+".bf.model")}${fld("Serial number",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     <div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date")}</div>
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}</div>
@@ -1112,27 +1128,26 @@ function controllersTab(){const j=job();
     ${c.power==="no"&&c.powerIssue==="transformer"?chk(b+".act.transformer","Replace transformer","transformer",true):""}
     ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add",true):""}
     ${c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")?chk(b+".act.rainFix","Replace rain/freeze sensor","rain_replace",true):""}
-    ${f.wire.length?chk(b+".act.wire",`Wire troubleshooting · zones ${f.wire.map(x=>x.z).join(", ")}`,"wire_trouble",true):""}
-    ${f.rebuild.length?chk(b+".act.rebuild",`Rebuild valve · zones ${f.rebuild.map(x=>x.z).join(", ")}`,"valve_rebuild",true):""}
+
     ${f.decoders.length?chk(b+".act.decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"decoder",true):""}
     ${f.failedMods?chk(b+".act.module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"module",true):""}
   </div></div>
   ${fld("Notes",b+".notes","textarea")}
   <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+(S.addingCtl&&S.ctlDraft?ctlSetupForm("Add another controller",false):`<div><button class="btn ghost" data-addctl="1">+ Add another controller</button></div>`);
 }
-function ohmBlock(c,b,zn){
-  const cut=ohmCuts();const ans=S.pricing._ohm_ok;const edit=ans==="no"||S.ohmEdit;
-  const bands=`Under ${cut.short} Ω = short · ${cut.short}–${cut.high} Ω = normal · ${cut.high+1}–${cut.float} Ω = high, rebuild valve · over ${cut.float} Ω = floating common · OL / infinite = open circuit`;
-  const test=`<div class="ohmtest"><div class="eyebrow">Function test</div><b>Are these ohm ranges correct?</b><p class="small" style="margin:0">${bands}</p>
-    ${edit?`<div class="grid3"><label class="f"><span>Short below (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_short" data-price="_ohm_short" data-ohmcut="1" value="${cut.short}"></label><label class="f"><span>High above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_high" data-price="_ohm_high" data-ohmcut="1" value="${cut.high}"></label><label class="f"><span>Floating above (Ω)</span><input type="number" inputmode="decimal" id="p-_ohm_float" data-price="_ohm_float" data-ohmcut="1" value="${cut.float}"></label></div>
-      <div class="row"><button class="btn sm" data-ohmans="yes">Save, these are correct now</button></div>`
-    :`<div class="row"><button class="btn sm" data-ohmans="yes">Yes</button><button class="btn danger sm" data-ohmans="no">No</button></div>`}</div>`;
-  if(ans!=="yes"&&isAdmin())return `<div class="combo"><h4>Zone wire readings (ohms)</h4>${test}<p class="small muted" style="margin:0">Answer the question above to enter readings.</p></div>`;
-  return `<div class="combo"><h4>Zone wire readings (ohms)</h4><p class="small muted" style="margin:0">${bands}. Type OL for an open reading. ${isAdmin()?`<button class="linkbtn" data-ohmans="edit">Change ranges</button>`:(ans!=="yes"?"An admin still needs to confirm these ranges.":"")}</p>
-    <div class="ohms">${Array.from({length:zn},(_,i)=>{const z=i+1;const v=(c.ohms||{})[z];const st=ohmState(v);return `<label class="ohm ${st}"><b>Zone ${z}</b><input type="text" inputmode="decimal" autocomplete="off" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" data-ohm="1" value="${esc(v)}" aria-label="Zone ${z} ohms"><span class="ohst">${st?OHM_TXT[st]:"&nbsp;"}</span><button type="button" class="olbtn" data-ol="${b}.ohms.${z}">OL</button></label>`}).join("")}</div></div>`;
+function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
+  const bands=[["short",`Short`,`under ${cut.short}`],["ok","Normal",`${cut.short}–${cut.high}`],["high","High",`${cut.high+1}–${cut.float}`],["float","Floating",`over ${cut.float}`],["open","Open","OL"]];
+  return `<div class="combo"><h4>Zone wire readings</h4><p class="small muted" style="margin:0">Pick each zone's range on your meter. ${f.unread?`<b>${f.unread} zone${f.unread===1?"":"s"} still to read.</b>`:"All zones read."}</p>
+  <div class="ohmrows">${Array.from({length:zn},(_,i)=>{const z=i+1;const st=zoneBand(c,z);const fx=OHM_FIX[st];
+    return `<div class="ohmrow ${st||"none"}"><div class="row"><b class="ozn">Zone ${z}</b><div class="chips">${bands.map(([v,l,r])=>`<button type="button" class="chip ohmchip ${v}" data-ohmband="${c.id}|${z}|${v}" aria-pressed="${st===v}">${l}<span class="small"> ${r}</span></button>`).join("")}</div></div>
+      ${fx?`<div class="row ohmfix"><span class="small">${esc(OHM_LONG[st].replace(/^./,m=>m.toUpperCase()))}. Fix:</span><div class="chips">${fx.map(([k,l])=>`<button type="button" class="chip" data-ohmfix="${c.id}|${z}|${k}" aria-pressed="${zoneFix(c,z)===k}">${l}</button>`).join("")}</div></div>`:""}
+      ${st?`<div class="row"><label class="f" style="max-width:170px"><span>Exact reading (optional)</span><input type="text" inputmode="decimal" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" value="${esc((c.ohms||{})[z])}" placeholder="Ω"></label></div>`:""}</div>`}).join("")}</div></div>`;
 }
+function ohmRangesCard(){const adm=isAdmin();const cut=ohmCuts();
+  return `<div class="card"><h2>Ohm ranges</h2><p class="small muted" style="margin:0">The cut-offs shown on each zone's wire-reading buttons.</p>
+  <div class="grid3"><label class="f"><span>Short below (Ω)</span><input type="number" id="p-_ohm_short" data-price="_ohm_short" value="${cut.short}" ${adm?"":"disabled"}></label><label class="f"><span>High above (Ω)</span><input type="number" id="p-_ohm_high" data-price="_ohm_high" value="${cut.high}" ${adm?"":"disabled"}></label><label class="f"><span>Floating above (Ω)</span><input type="number" id="p-_ohm_float" data-price="_ohm_float" value="${cut.float}" ${adm?"":"disabled"}></label></div></div>`}
 function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==false:!!v;
-  return `<div class="act ${on?"on":""}"><div class="al">${esc(label)}<div class="ap num">${money(price(pk))}${PRICE_DEFAULTS[pk].u!=="each"?" / "+PRICE_DEFAULTS[pk].u:""}</div></div><button type="button" class="chip" data-chk="${path}" data-def="${defOn?1:0}" aria-pressed="${on}">${on?"On estimate":"Add"}</button></div>`}
+  return `<div class="act ${on?"on":""}"><div class="al">${esc(label)}</div><button type="button" class="chip" data-chk="${path}" data-def="${defOn?1:0}" aria-pressed="${on}">${on?"On estimate":"Add"}</button></div>`}
 
 /* ---- zones ---- */
 function zonesTab(){const j=job();
@@ -1165,7 +1180,7 @@ function zonesTab(){const j=job();
     ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["locate","Locate valve"]])}
     ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
   <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
-    <p class="small muted">Repair price covers the first 3 ft; longer runs add per-foot pipe.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
+    <p class="small muted">A repair covers the first 3 ft; longer runs add pipe by the foot.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
   <div class="combo"><h4>Add heads</h4>${(z.adds||[]).map((h,hi)=>`<div class="grid3" style="align-items:end">${sel("Type",`${b}.adds.${hi}.type`,[["spray","Spray"],["mp","MP rotator"],["rotor","Rotor"]])}${sel("Size",`${b}.adds.${hi}.size`,SIZES.map(s=>[s,s+'"']))}${fld("Distance (ft)",`${b}.adds.${hi}.ft`,"number")}<div>${delBtn("add:"+zo+":"+hi,"Remove")}</div></div>`).join("")}
     <div><button class="btn ghost sm" data-add="${b}.adds" data-tpl="add">+ Add head</button></div></div>
   <div class="combo"><h4>Custom items</h4>${(z.custom||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`${b}.custom.${ci}.desc`)}${fld("Qty",`${b}.custom.${ci}.qty`,"number")}${fld("Price each",`${b}.custom.${ci}.price`,"number")}<div>${delBtn("cus:"+zo+":"+ci,"Remove")}</div></div>`).join("")}
@@ -1212,7 +1227,7 @@ function findings(j,tech){
     it.push(`${[ctlBrand(c),c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
     if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":"transformer failed"}`:""}`);
     if(c.rain==="no")it.push("No rain/freeze sensor installed. One is recommended.");else if(c.rain==="yes")it.push(c.rainStatus==="working"?"Rain/freeze sensor installed and working":c.rainStatus==="notworking"?`<span class="flag">Rain/freeze sensor not working</span>`:c.rainStatus==="bypassed"?`<span class="flag">Rain/freeze sensor bypassed or disconnected</span>`:"Rain/freeze sensor installed");
-    f.ohm.forEach(x=>it.push(`<span class="flag">Zone ${x.z}: ${OHM_LONG[x.st]}</span>${tech?` (${esc(String(x.v))}${/^\d/.test(String(x.v))?" Ω":""})`:""}`));
+    f.ohm.forEach(x=>it.push(`<span class="flag">Zone ${x.z}: ${OHM_LONG[x.st]}</span>${tech&&x.v?` (${esc(String(x.v))}${/^\d/.test(String(x.v))?" Ω":""})`:""}`));if(c.wiring==="conventional"&&!f.ohm.length&&!f.unread&&num(c.zones))it.push("All zone wire readings normal");
     if(c.overcurrent==="yes")it.push(`<span class="flag">Overcurrent on the 2-wire path</span>${c.ocZones?`, affecting ${esc(c.ocZones)} zones`:""}`);
     if(f.decoders.length)it.push(`Decoder${f.decoders.length>1?"s":""} not communicating: #${f.decoders.map(esc).join(", #")}`);
     if(f.failedMods)it.push(`${f.failedMods} failed module${f.failedMods>1?"s":""}`);
@@ -1379,7 +1394,7 @@ function mapIncluded(j){return j.mapSold==="sold"||j.mapSold==="included"}
 function mapTeaser(){return `<section><h2>Property map</h2><div class="addon"><b>Your irrigation system was mapped on this visit.</b><div class="small">Your technician recorded the valves, heads and pipe routes on your property. The full map is available as an add-on. Ask us to add it to your invoice.</div></div></section>`}
 function mapChoiceCard(j){if(!(j.map.items.length||j.map.lines.length))return "";
   return `<div class="card"><div class="cardhead"><h2>Property map</h2>${mapIncluded(j)?'<span class="pill ok">In report</span>':'<span class="pill neutral">Teaser only</span>'}</div>
-  ${seg("Map in this report?","mapSold",[["","Not included"],["sold",`Sold as add-on (${money(price("map_pkg",j))})`],["included","Included (premium customer)"]])}
+  ${seg("Map in this report?","mapSold",[["","Not included"],["sold","Sold as add-on"],["included","Included (premium customer)"]])}
   <p class="small muted" style="margin:0">Not included: the customer sees a note that a map is available. Sold: adds the Property map package to the estimate and invoice.</p></div>`}
 function reportTab(){const j=job();loadBg(j.id);
   const miss=missingCustomer(j);
@@ -1541,7 +1556,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l;const e
   <div class="card"><h3>Their system</h3><div class="small">${(sysJob.controllers||[]).map(x=>`${esc(ctlBrand(x)||"Controller")} ${esc(x.model||"")} · ${num(x.zones)} zones · ${x.wiring==="2wire"?"2-wire":"conventional"} · rain sensor: ${x.rain==="yes"?(x.rainStatus||"yes"):x.rain==="no"?"none":"not checked"}`).join("<br>")||"No controller recorded"}</div>
     ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
-  <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div><span class="small num">${money(i.total)}</span></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
+  <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
   <div class="card"><h3>History</h3><div class="acts">${c.jobs.map(j=>`<div class="act"><div class="al"><a href="#" data-open="${j.id}">${esc(j.info.date||"No date")}</a> · ${esc(j.info.workType||"")}<div class="ap">${(j.revs||[]).length?"Audit Rev "+revNo(j.revs[j.revs.length-1].n):"No audit"}${j.completion&&j.completion.issuedAt?" · completed":""}</div></div>${pillFor(j.info.status)}</div>`).join("")}</div></div>`}
 /* New job for a returning customer: contact info plus their system, without old findings */
 function startJobFrom(c){const src=c.jobs[0];const nj=newJob();
@@ -1561,7 +1576,7 @@ function startJobFrom(c){const src=c.jobs[0];const nj=newJob();
    Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
-const RED_KEYS=new Set(["main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+const RED_KEYS=new Set(["wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
@@ -1635,7 +1650,7 @@ function completionTab(){const j=job();const s=syncCompletion(j);
   return outcomeCard(j)+`<div class="card"><div class="cardhead"><h2>Completed work</h2><span class="muted small">Audit Rev ${revNo(c.rev)}</span></div>
     <p class="small muted" style="margin:0">Mark each audit item once the work is finished. The invoice bills only items marked Done.</p>
     <div class="row">${tlDot("r")} ${n.r} fix now · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
-  ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)} · ${money(i.total)}</div></div></div>
+  ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div></div>
       ${seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
       ${i.status?fld("Note (optional)",`completion.items.${ix}.note`):""}
       ${i.status==="done"?`<div class="q"><span class="ql">After photo (optional)</span>${photoStrip(`completion.items.${ix}.pic`).replace("Photo required","Add photo").replace('class="phadd req"','class="phadd"')}</div>`:""}</div>`).join("")
@@ -1782,7 +1797,7 @@ function jobSteps(j){
   const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
   return [
     {k:"mainline",label:"Mainline",done:ml,todo:"Check the water meter with the system off: is it moving?"},
-    {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>c.rain==="no"||(c.rain==="yes"&&c.rainStatus)),todo:j.controllers.length?"Controller: answer the rain/freeze sensor question.":"Set up the controller."},
+    {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>(c.rain==="no"||(c.rain==="yes"&&c.rainStatus))&&!ctlFlags(c).unread),todo:!j.controllers.length?"Set up the controller.":j.controllers.some(c=>ctlFlags(c).unread)?`Controller: pick the wire reading for ${j.controllers.reduce((a,c)=>a+ctlFlags(c).unread,0)} zone(s).`:"Controller: answer the rain/freeze sensor question."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
     {k:"dispatch",label:"Customer",done:!missingCustomer(j).length,todo:"Add the customer's details."},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the audit report."},
@@ -2302,6 +2317,8 @@ app.addEventListener("click",ev=>{
   if(d.mkreport){render();window.scrollTo(0,0);return}
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
   if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else printDoc(invoiceHtml(j));return}
+  if(d.ohmband){const [cid,z,v]=d.ohmband.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmBand=Object.assign({},c.ohmBand||{},{[z]:v});scheduleSave(S.cur);rr()}return}
+  if(d.ohmfix){const [cid,z,k]=d.ohmfix.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmFix=Object.assign({},c.ohmFix||{},{[z]:k});scheduleSave(S.cur);rr()}return}
   if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
     S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
