@@ -825,6 +825,7 @@ function custBar(j){const i=j.info;const miss=missingCustomer(j);const tel=Strin
     <div class="small">${esc([i.address,i.city].filter(Boolean).join(", "))}${i.gate?` · <b>Gate ${esc(i.gate)}</b>`:""}${tel?` · <a href="tel:${esc(tel)}">${esc(i.phone)}</a>`:""}${i.window?" · "+esc(i.window):""}</div>
     ${i.notes?`<div class="small"><b>Problem reported:</b> ${esc(i.notes)}</div>`:""}
     ${j.assign?`<div class="small muted">${sb&&S.me&&j.assign.id===S.me.id?"Assigned to you":"Assigned to "+esc(j.assign.name)}</div>`:""}
+    ${!(j.revs||[]).length&&i.date&&i.date>today()?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Scheduled for ${esc(new Date(i.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}))}</b>, today is ${esc(new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}))}. Today's work is recorded as today's inspection.</div>`:""}
     ${miss.length?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Needed for the report:</b> ${esc(miss.join(", "))}</div>`:""}</div>
     <button class="btn ${open?"":"ghost"} sm" data-showdetails="1" aria-expanded="${open}">${open?"Close":"Details"}</button></div>
     ${open?`<div class="custdetails">${dispatchTab()}</div>`:""}</div>`}
@@ -846,7 +847,7 @@ function intakeView(j){const off=sb&&isOffice();
   <div class="wrap"><main>${banner()}
   ${j.custId&&S.custs[j.custId]?`<div class="card"><div class="eyebrow">New job · Step 2 of 2</div><h2>${esc(j.info.customer)}</h2><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}${j.info.gate?" · Gate "+esc(j.info.gate):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>`
     :`<div class="card"><div class="eyebrow">Step 1</div><h2>Customer</h2>${customerFields()}</div>`}
-  <div class="card"><div class="eyebrow">Step 2</div><h2>Visit</h2><div class="grid2">${fld("Date","info.date","date")}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}</div>
+  <div class="card"><div class="eyebrow">Step 2</div><h2>Visit</h2><div class="grid2">${fld("Scheduled date","info.date","date")}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}</div>
     ${off?`<div class="grid2">${assignSel(j)}${fld("Truck","info.truck")}</div>`:""}
     ${fld("Problem reported / notes for the technician","info.notes","textarea")}</div>
   <div class="card"><div class="eyebrow">Step 3</div><h2>What kind of property is this?</h2><p class="muted small">Commercial work is priced ${commPct()}% above residential rates.</p>
@@ -858,7 +859,7 @@ function intakeView(j){const off=sb&&isOffice();
   </main></div>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
-  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
+  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld((j.revs||[]).length?"Inspection date":"Scheduled date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
   <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
   <div class="f"><span>Status</span><div>${pillFor(jobStatus(j))} <span class="small muted">Set automatically from the job's progress and Outcome.</span></div></div>
@@ -1571,6 +1572,8 @@ function reportTab(){const j=job();loadBg(j.id);
   else status=`<div class="note">This report is a draft. Issue it as <b>Rev 00</b> to print, copy or save it.</div>`;
   const issueBox=cur?"":`<div class="combo"><h4>Issue Rev ${revNo(nextN)}</h4>
     ${last?fld("What changed? (required)","est.revNote","text",'placeholder="e.g. Added zone 6 drip repair per customer"'):""}
+    ${(()=>{const t=today();const d=j.info.date;const insp=!d||d>t?t:d;const fmt=x=>new Date(x+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+      return `<p class="small" style="margin:0"><b>Inspection date on this report:</b> ${fmt(insp)}${d&&d>t?` <span class="muted">(scheduled for ${fmt(d)}; today's date is used because the work was done today)</span>`:insp<t?` <span class="muted">(not today; open Details to correct it if needed)</span>`:""}</p>`})()}
     <div class="row"><button class="btn" data-issue="1">Issue Rev ${revNo(nextN)}</button><span class="small muted">Locks this version and records who issued it.</span></div></div>`;
   const hist=revs.length?`<div class="card"><h3>Revision history</h3><div class="tbl"><table><thead><tr><th>Rev</th><th>Issued</th><th>By</th><th>Change</th><th></th></tr></thead><tbody>
     ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
