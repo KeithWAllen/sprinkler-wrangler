@@ -734,7 +734,7 @@ function jobView(){
     ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}</main></div>`;
   if(!j.setupDone&&!j.controllers.length){if(!S.ctlDraft)S.ctlDraft=newDraft();return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · Start of job</div><h1>Controller setup</h1></div>${acctChip()}</div></header></div>
-  <div class="wrap"><main>${banner()}${custSummary(j)}${ctlSetupForm("What controller is on site?",true)}
+  <div class="wrap"><main>${banner()}${custSummary(j)||`<div class="card need"><div class="eyebrow">Customer details missing</div>${customerFields()}</div>`}${ctlSetupForm("What controller is on site?",true)}
     ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}</main></div>`}
   if(S.tab==="dispatch")S.tab="mainline";
   const v={map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
@@ -2195,7 +2195,11 @@ async function authSubmit(kind){
   }catch(e){go({err:authMsg(e)})}
 }
 /* Sign out on this phone right away; never wait on the network */
-async function signOut(){S.acctOpen=false;
+async function flushAll(){const ids=Object.keys(timers).filter(id=>dirty[id]);ids.forEach(id=>clearTimeout(timers[id]));
+  Object.keys(custTimers).forEach(id=>clearTimeout(custTimers[id]));
+  const work=ids.map(id=>flush(id));if(S.mode==="db"&&!S.ro)Object.keys(custTimers).forEach(id=>{const c=S.custs[id];if(c)work.push(db.doc("customers/"+id).set(JSON.parse(JSON.stringify(c))).catch(()=>{}))});custTimers={};
+  await Promise.race([Promise.all(work),new Promise(r=>setTimeout(r,4000))])}
+async function signOut(){S.acctOpen=false;if(!S.training){toast("Saving…");try{await flushAll()}catch(e){}}
   try{await Promise.race([sb.auth.signOut({scope:"local"}),new Promise(r=>setTimeout(r,1500))])}catch(e){}
   try{Object.keys(localStorage).filter(k=>/^sb-.*-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(e){}
   resetToSignIn();toast("Signed out")}
