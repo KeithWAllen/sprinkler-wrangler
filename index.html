@@ -306,6 +306,7 @@ details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;p
 .presp{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 12px;margin-top:8px}.presp.ok{border-left-color:var(--tl-g)}
 .note.ok{background:rgba(46,158,91,.10);border-color:var(--tl-g)}.note.warn{background:rgba(242,183,5,.12);border-color:var(--tl-y)}
 .changelog{margin:4px 0 0;padding-left:18px;max-height:220px;overflow:auto}
+.compbox{max-width:560px;width:100%;display:grid;gap:10px;text-align:left}.compbox textarea{font:inherit;font-size:.92rem}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -727,6 +728,7 @@ function render(){
   const app=document.getElementById("app");
   const sy=window.scrollY;const keepScroll=render.keep;render.keep=false;
   app.innerHTML=S.mode==="auth"?authView():S.mode==="portal"?portalView():S.mode==="error"?`<div class="authwrap"><div class="authcard"><h2>Can't connect</h2><p>${esc(S.err)}</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`:S.cur&&job()?jobView():homeView();
+  if(S.compose&&S.mode==="db")app.insertAdjacentHTML("beforeend",composeModal());
   if(keepScroll)window.scrollTo(0,sy);
   hydratePhotos(app);
 }
@@ -1748,6 +1750,17 @@ function custSchedule(c){const now=new Date();const out=[];const lj=c.jobs[0];co
   c.jobs.forEach(j=>(j.mainline||[]).forEach(m=>{const t=(m.bf||{}).lastTest;if(t)push("backflow","Annual backflow test",addMonths(new Date(t+"T12:00"),12),"12 months after the last test")}));
   const seen={};return out.filter(x=>{if(seen[x.k]&&x.k!=="backflow")return false;seen[x.k]=1;return true}).sort((a,b)=>a.due-b.due)}
 function dueLabel(d){const days=Math.round((d-new Date())/864e5);return days<0?`${-days} day${days===-1?"":"s"} overdue`:days===0?"due today":days<=31?`due in ${days} day${days===1?"":"s"}`:d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+function reminderMsg(c,r){const b=bizInfo();return {to:c.email,subj:`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`,
+  body:`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`}}
+/* In-app email window: Gmail, mail app or copy. Nothing is marked sent until the user says so. */
+function composeModal(){const m=S.compose;if(!m)return "";const enc=encodeURIComponent;
+  const gmail=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;const mailto=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`;
+  return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Email"><div class="phcard compbox"><div class="row" style="flex-wrap:nowrap"><h3 style="margin:0;flex:1">${esc(m.title||"Email customer")}</h3><button class="btn quiet sm" data-compclose="1">Close</button></div>
+    <label class="f"><span>To</span><input type="email" id="cmp-to" value="${esc(m.to)}" data-cmp="to"></label>
+    <label class="f"><span>Subject</span><input type="text" id="cmp-subj" value="${esc(m.subj)}" data-cmp="subj"></label>
+    <label class="f"><span>Message</span><textarea id="cmp-body" rows="9" data-cmp="body">${esc(m.body)}</textarea></label>
+    <div class="row"><a class="btn sm" href="${gmail}" target="_blank" rel="noopener" data-cmpsent="gmail">Open in Gmail</a><a class="btn ghost sm" href="${mailto}" data-cmpsent="mail">Open in Mail app</a><button class="btn ghost sm" data-cmpcopy="1">Copy message</button></div>
+    ${m.onSent?`<div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="spacer small muted">Sent it? This takes the reminder off the list.</span><button class="btn sm" data-cmpdone="1">Mark as sent</button></div>`:""}</div></div>`}
 function reminderMail(c,r){const b=bizInfo();const subj=`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`;
   const body=`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`;
   return `mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`}
@@ -1757,7 +1770,7 @@ function remindersView(){const cs=customers();const now=new Date();const horizon
     <p class="small muted" style="margin:0">Built from each customer's audits. Email the customer, start the job, or mark it handled.</p></div>
   ${rows.length?rows.map(({c,r})=>`<div class="card"><div class="row" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>${esc(r.label)}</b> <span class="pill ${r.due<now?"bad":"warn"}">${esc(dueLabel(r.due))}</span>
       <div class="small"><a href="#" data-cust="${esc(c.key)}">${esc(c.name)}</a> · ${esc(c.address)}</div><div class="small muted">${esc(r.why)}${c.remOff?" · opted out of reminders":""}</div></div></div>
-    <div class="row">${c.email&&!c.remOff?`<a class="btn sm" href="${reminderMail(c,r)}" data-remsent="${esc(c.key)}|${esc(r.id)}">Email customer</a>`:`<span class="small muted">${c.remOff?"No email: opted out":"No email on file"}${c.phone?" · call "+esc(c.phone):""}</span>`}
+    <div class="row">${c.email&&!c.remOff?`<button class="btn sm" data-remcompose="${esc(c.key)}|${esc(r.id)}">Email customer</button>`:`<span class="small muted">${c.remOff?"No email: opted out":"No email on file"}${c.phone?" · call "+esc(c.phone):""}</span>`}
       <button class="btn ghost sm" data-startjob="${esc(c.key)}">Start job</button><button class="btn quiet sm" data-remdone="${esc(c.key)}|${esc(r.id)}">Mark handled</button></div></div>`).join("")
     :`<div class="card empty"><h2>Nothing due</h2><p class="muted">Reminders appear here as customers come due for seasonal service, annual audits, backflow tests and follow-ups.</p></div>`}`}
 function cfld(label,k,type,extra){const v=(S.custEdit||{})[k];return `<label class="f"><span>${label}</span>${type==="textarea"?`<textarea data-cf="${k}" id="cf-${k}" rows="3">${esc(v||"")}</textarea>`:`<input type="${type||"text"}" data-cf="${k}" id="cf-${k}" value="${esc(v||"")}" ${extra||""}>`}</label>`}
@@ -2666,6 +2679,7 @@ app.addEventListener("input",ev=>{
   const t=ev.target;
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
+  if(t.dataset.cmp&&S.compose){S.compose[t.dataset.cmp]=t.value;const box=t.closest(".compbox");if(box){const m=S.compose,enc=encodeURIComponent;const g=box.querySelector('[data-cmpsent="gmail"]'),ml=box.querySelector('[data-cmpsent="mail"]');if(g)g.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;if(ml)ml.href=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`}return}
   if(t.dataset.cf&&S.custEdit){S.custEdit[t.dataset.cf]=t.value;custLive();return}
   const p=t.dataset.f;if(!p||!job())return;
   if(t.tagName==="SELECT")return;
@@ -2725,13 +2739,14 @@ app.addEventListener("click",ev=>{
   }
 },true);
 app.addEventListener("click",ev=>{
-  const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent]");if(!t)return;const d=t.dataset;const j=job();
+  const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent],a[data-cmpsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
   if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
-  if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const a=document.createElement("a");a.href=approveMail(p||{email:em},S.custs[cid]);a.click()});return}
+  if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const pp=p||{email:em};const rec=S.custs[cid];const b=bizInfo();
+    S.compose={title:"Tell the customer their account is active",to:pp.email,subj:`Your ${b.name||"Sprinkler Wrangler"} account is active`,body:`Hi ${(pp.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${pp.email} to see your inspection reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`,onSent:null};render()});return}
   if(d.revoke){setAccess(d.revoke,false).then(ok=>ok&&toast("Portal access switched off"));return}
   if(d.custcancel){S.custEdit=null;render();return}
   if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
@@ -2757,6 +2772,10 @@ app.addEventListener("click",ev=>{
   if(d.opencust){S.cur=d.opencust;S.tab="mainline";S.showDetails=true;render();window.scrollTo(0,0);return}
   if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
   if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;S.custPick=false;if(sb&&isOffice()&&!S.team)loadTeam();const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
+  if(d.remcompose){const [ck,rid]=d.remcompose.split("|");const c=customers().find(x=>x.key===ck);if(!c)return;const r=custSchedule(c).find(x=>x.id===rid);if(!r)return;S.compose=Object.assign(reminderMsg(c,r),{title:r.label+" reminder",onSent:{ck,rid}});render();return}
+  if(d.compclose){S.compose=null;render();return}
+  if(d.cmpcopy&&S.compose){const m=S.compose;const txt=`To: ${m.to}\nSubject: ${m.subj}\n\n${m.body}`;(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Message copied")).catch(()=>toast("Couldn't copy. Select the text and copy it."));return}
+  if(d.cmpdone&&S.compose){const o=S.compose.onSent;S.compose=null;if(o){const c=customers().find(x=>x.key===o.ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[o.rid]:Date.now()});scheduleSave(lj.id)}}render();toast("Marked as sent");return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
   if(d.ltier!=null){if(!isAdmin())return;const i=d.ltier.lastIndexOf("|");const key=d.ltier.slice(0,i),t=d.ltier.slice(i+1);S.pricing._lineTiers=Object.assign({},S.pricing._lineTiers||{});S.pricing._lineTiers[key]=t||"none";savePricing();rr();return}
   if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});S.pricing._brandTiers[bn]=t||"none";savePricing();rr();return}
