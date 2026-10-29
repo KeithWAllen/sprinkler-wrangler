@@ -530,6 +530,16 @@ function saveCust(c,linkedToo){c.updatedAt=Date.now();S.custs[c.id]=c;
   clearTimeout(custTimers[c.id]);custTimers[c.id]=setTimeout(async()=>{
     if(S.mode==="local")LS.set(KP()+"custs",S.custs);
     else if(S.mode==="db"&&!S.ro){try{await db.doc("customers/"+c.id).set(JSON.parse(JSON.stringify(c)))}catch(e){handleWriteErr(e)}}},400)}
+/* Older jobs made before customer profiles: give each customer a saved, numbered profile.
+   The id comes from the customer's email/address, so two devices doing this at once produce the same profile. */
+function hashStr(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return (h>>>0).toString(36)}
+function migrateLegacyCusts(){if(S.training||(sb&&!isOffice())||S.custsErr)return;if(S.mode==="db"&&!(S.loaded&&S.custsLoaded))return;
+  const groups={};Object.values(S.jobs).forEach(j=>{if(!j.info||(j.custId&&S.custs[j.custId]))return;if(!j.info.customer&&!j.info.address)return;const k=custKey(j);(groups[k]=groups[k]||[]).push(j)});
+  const keys=Object.keys(groups);if(!keys.length)return;
+  keys.forEach(k=>{const js=groups[k].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const id="cl"+hashStr(k);let c=S.custs[id];
+    if(!c){c=custFromJob(js[0]);delete S.custs[c.id];c.id=id;c.createdAt=Math.min(...js.map(x=>x.createdAt||Date.now()));c.custNo=undefined;S.custs[id]=c}
+    js.forEach(j=>{j.custId=id;scheduleSave(j.id)})});
+  ensureCustNos()}
 function custFromJob(j){const c=newCust();CUST_FIELDS.forEach(k=>c[k]=j.info[k]||"");c.propType=j.info.propType||"";c.remindersOff=!!j.info.remindersOff;return c}
 /* Admins (owner + developer) change prices; technicians only read them */
 function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
@@ -557,7 +567,7 @@ async function saveBg(id,img){
   else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 function startLocal(){
-  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};ensureCustNos();render();
+  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};ensureCustNos();migrateLegacyCusts();render();
 }
 async function boot(){
   render();
@@ -2224,7 +2234,7 @@ function startDb(d){
       S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
-    if(!S.loaded){S.loaded=true;ensureCustNos()}
+    if(!S.loaded){S.loaded=true;ensureCustNos();migrateLegacyCusts()}
     const ae=document.activeElement;
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     if(ME.open)return;
@@ -2233,7 +2243,7 @@ function startDb(d){
   db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
   db.collection("customers").onSnapshot(snap=>{if(S.training)return;S.custsErr=false;
     for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}if(custTimers[id]&&S.custs[id])continue;const d=ch.doc.data();const prev=S.custs[id];if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
-    if(S.loaded)ensureCustNos();
+    S.custsLoaded=true;if(S.loaded){ensureCustNos();migrateLegacyCusts()}
     const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;if(!ME.open)render()},()=>{S.custsErr=true;render()});
   setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},8000);
   render();
