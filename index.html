@@ -302,6 +302,8 @@ details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left
 button.custjob{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer;padding:8px 0}button.custjob:hover{background:var(--sunk,rgba(0,0,0,.03))}
 details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;padding:14px 16px;display:grid;gap:2px}details.admsec>summary::-webkit-details-marker{display:none}details.admsec>summary .admt{font-family:var(--display);font-size:1.25rem;font-weight:700}details.admsec>summary .admt::after{content:" ▸";color:var(--muted)}details.admsec[open]>summary .admt::after{content:" ▾"}.admbody{padding:0 16px 14px}.admbody>.card{box-shadow:none;border:0;padding:0;margin:0 0 12px}.admbody .card .card{box-shadow:none}details.nohead .admbody>.card>h2:first-child,details.nohead .admbody>.card>.cardhead>h2{display:none}
 .bellbtn{position:relative;background:none;border:1.5px solid rgba(255,255,255,.55);color:inherit;border-radius:999px;width:42px;height:42px;display:grid;place-items:center;cursor:pointer;margin-right:6px}.bellct{position:absolute;top:-4px;right:-4px;background:#d93a2f;color:#fff;border-radius:999px;font-size:11px;font-weight:800;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border:2px solid var(--accent)}.notifs{min-width:290px;max-width:min(360px,92vw)}.notif{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.presp{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 12px;margin-top:8px}.presp.ok{border-left-color:var(--tl-g)}
+.note.ok{background:rgba(46,158,91,.10);border-color:var(--tl-g)}.note.warn{background:rgba(242,183,5,.12);border-color:var(--tl-y)}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -1601,7 +1603,11 @@ function jobPrint(j){
   const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
   return hashStr(JSON.stringify({c:[i.customer||"",i.address||"",i.city||"",i.propType||""],
     f:findings(j,false).map(([h,it])=>[h,(it||[]).map(strip)]),
-    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||""}))}
+    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||"",v:3}))}
+/* Option totals (with tax) for the portal: Fix now (incl. service), Recommended, All work */
+function estOptions(j){const e=buildEstimate(j);const rate=num(j.est.tax)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});
+  const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
+  return {rate:num(j.est.tax),fix:t(g.s+g.r),rec:g.y?t(g.y):null,all:t(e.sub,e.disc)}}
 function fpReady(){return S.mode==="local"||(S.mode==="db"&&S.loaded&&S.pricingReady)}
 function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];if(!last)return null;
   if(last.fpv!==2){if(!fpReady())return last;last.fp=jobPrint(j);last.fpv=2;if(S.mode==="db"&&!S.ro&&!S.training)scheduleSave(j.id)}
@@ -1618,7 +1624,7 @@ async function issueRev(j){
   const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total,audit:auditSnapshot(j)};
   const html=reportHtml(j,rev);
   delete j.est.revNote;
-  rev.fp=jobPrint(j);rev.fpv=2;revs.push(rev);
+  rev.fp=jobPrint(j);rev.fpv=2;rev.options=estOptions(j);revs.push(rev);
   await putRevHtml(j,n,html);
   scheduleSave(S.cur);rr();toast("Rev "+revNo(n)+" issued");
 }
@@ -1894,6 +1900,7 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
   ${figs.length?`<section><h2>After photos</h2><div class="rphs">${figs.join("")}</div></section>`:""}`}
 function outcomeCard(j){const biz=bizInfo().name||"us";
   return `<div class="card"><div class="cardhead"><h2>Outcome</h2>${j.outcome==="approved"?'<span class="pill ok">Approved</span>':j.outcome==="declined"?'<span class="pill neutral">Audit only</span>':'<span class="pill warn">Waiting</span>'}</div>
+    ${(r=>r?`<div class="note ${r.choice==="decline"?"info":"ok"} small"><b>${r.choice==="decline"?"Customer said “Not right now” in the portal":"Customer approved "+esc(CHOICE_L[r.choice])+" in the portal"}</b> on ${esc(new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))}.${(r.choice==="decline"?j.outcome!=="declined":j.outcome!=="approved")?` <button class="btn sm" data-outcome="${r.choice==="decline"?"declined":"approved"}">${r.choice==="decline"?"Mark as audit only":"Mark as approved"}</button>`:""}</div>`:"")(latestResp(j))}
     <div class="q"><span class="ql">Did the customer hire ${esc(biz)} for the work?</span><div class="chips">${[["approved","Yes, approved"],["declined","No, audit only"],["waiting","Waiting to hear"]].map(([v,l])=>`<button class="chip ${v==="declined"?"bad":""}" data-outcome="${v}" aria-pressed="${(j.outcome||"waiting")===v}">${l}</button>`).join("")}</div></div>
     ${j.outcome==="declined"?`<p class="small" style="margin:0">The invoice bills the service call only, so the audit is still paid for. The audit report stays on file.</p>`:j.outcome==="approved"?"":`<p class="small muted" style="margin:0">Follow up with the customer. The job stays on the open list until you know.</p>`}</div>`}
 function completionTab(){const j=job();const s=syncCompletion(j);
@@ -2242,7 +2249,9 @@ function makeSupaDb(){
         if(col==="photos")return up("ph/"+id+".jpg",d.img);
         if(col==="revisions"){const j=S.jobs[d.job]||{info:{},revs:[]};const r=(j.revs||[]).find(x=>x.n===d.n)||{};
           const html=await inlinePhotos(d.html);
-          const {error}=await sb.from("reports").upsert(Object.assign({id,job_id:d.job,rev:d.n,html,total:r.total||0,issued_at:new Date(r.at||Date.now()).toISOString(),issued_by:r.by||""},custOf(j)));
+          const row=Object.assign({id,job_id:d.job,rev:d.n,html,total:r.total||0,issued_at:new Date(r.at||Date.now()).toISOString(),issued_by:r.by||"",options:r.options||estOptions(j)},custOf(j));
+          let {error}=await sb.from("reports").upsert(row);
+          if(error&&/options/i.test(error.message||"")){delete row.options;({error}=await sb.from("reports").upsert(row))}
           if(error)throw sbErr(error);return}
       },
       async delete(){
@@ -2306,6 +2315,7 @@ function startDb(d){
     for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}const d=ch.doc.data();const prev=S.custs[id];if(prev&&d&&d.custNo&&prev.custNo!==d.custNo)prev.custNo=d.custNo;if(custTimers[id]&&prev)continue;if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
     S.custsLoaded=true;if(S.loaded){ensureCustNos();migrateLegacyCusts()}
     const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;if(!ME.open)render()},()=>{S.custsErr=true;render()});
+  loadResponses();try{sb.channel("col-customer_responses").on("postgres_changes",{event:"INSERT",schema:"public",table:"customer_responses"},()=>loadResponses()).subscribe()}catch(e){}
   setTimeout(()=>{S.pricingReady=true;if(!S.loaded){S.loaded=true;render()}},8000);
   render();
 }
@@ -2443,6 +2453,8 @@ function jobMenu(j){if(!isChief())return "";
 /* ---- Notifications (bell) ---- */
 function seenMap(){try{return JSON.parse(localStorage.getItem("irr.seen."+((S.me||{}).id||""))||"{}")}catch(e){return {}}}
 function markSeen(id){try{const m=seenMap();m[id]=Date.now();localStorage.setItem("irr.seen."+((S.me||{}).id||""),JSON.stringify(m))}catch(e){}}
+async function loadResponses(){if(!sb)return;try{const {data,error}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});if(!error){S.responses=data||[];if(!ME.open){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))render()}}}catch(e){}}
+function latestResp(j){return (S.responses||[]).find(r=>r.job_id===j.id)||null}
 function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return L;
   if(isOffice()){if(!S.team)loadTeam();
     ownerAccounts().filter(p=>!p.approved).forEach(p=>{const m=custMatch({email:p.email});L.push({t:`${p.name||p.email} wants portal access`,s:m?`Matches ${m.customer}${m.custNo?" (Customer "+m.custNo+")":""}`:`${p.email}: no matching customer profile yet`,b:`<button class="btn sm" data-approve="${esc(p.email)}|${esc(m?m.id:"")}">Approve</button>`})});
@@ -2452,6 +2464,9 @@ function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return 
     if(stale)L.push({t:`${stale} job${stale===1?"":"s"} waiting to hear for over a week`,s:"Follow up with the customer",b:`<button class="btn ghost sm" data-notgo="jobs">Open</button>`});
     const nc=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).length;
     if(nc)L.push({t:`${nc} job${nc===1?"":"s"} missing customer details`,s:"Shown on the Customers tab",b:`<button class="btn ghost sm" data-notgo="customers">Open</button>`})}
+  {const seen=seenMap();const latest={};(S.responses||[]).forEach(r=>{if(!latest[r.job_id])latest[r.job_id]=r});
+    Object.values(latest).forEach(r=>{const j=S.jobs[r.job_id];if(!j||seen["resp:"+r.id])return;if(!isOffice()&&!(j.assign&&j.assign.id===S.me.id))return;
+      L.push({t:`${j.info.customer||"Customer"} ${r.choice==="decline"?"said not right now":"approved "+CHOICE_L[r.choice]}`,s:`${jobTitle(j)} · ${new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,b:`<button class="btn sm" data-open="${j.id}">Open</button>`})})}
   const seen=seenMap();Object.values(S.jobs).filter(j=>j.assign&&j.assign.id===S.me.id&&!seen[j.id]&&j.createdBy!==S.me.id&&j.info.status!=="Completed"&&j.info.status!=="Declined").forEach(j=>L.push({t:`New job: ${jobTitle(j)}`,s:`${j.info.customer||"Customer"}${j.info.date?" · "+new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):""}`,b:`<button class="btn sm" data-open="${j.id}">Open</button>`}));
   return L}
 function bellChip(){if(!sb||!S.me||S.mode!=="db")return "";const L=notifList();
@@ -2554,13 +2569,21 @@ async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_emai
 
 /* ---------- Owner portal ---------- */
 async function loadPortal(){
-  const [r,i]=await Promise.all([sb.from("reports").select("id,job_id,rev,total,customer_name,address,issued_at,issued_by").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at")]);
+  const [r,i]=await Promise.all([sb.from("reports").select("*").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at")]);
   const by={};(r.data||[]).forEach(x=>{(by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.issued_at}).reports.push(x)});
   (i.data||[]).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
   S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  try{const {data}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});S.portal.resp=data||[]}catch(e){S.portal.resp=[]}
   if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
   render();
 }
+const CHOICE_L={fix:"Option 1: Fix now only",all:"Option 2: All work",decline:"Not right now"};
+function portalOptions(g,r){const o=r.options;const resp=(S.portal.resp||[]).find(x=>x.job_id===g.job);const fmt=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  if(!o)return `<p class="small muted" style="margin:6px 0 0">Open the report to see the estimate. Your technician will issue an updated report with options you can approve here.</p>`;
+  if(resp&&!S.portal.changing)return `<div class="presp ${resp.choice==="decline"?"":"ok"}"><b>${resp.choice==="decline"?"You chose: Not right now":"You approved "+esc(CHOICE_L[resp.choice])}</b> on ${esc(fmt(resp.created_at))}.<div class="small">${resp.choice==="decline"?"No problem. The report stays here if you change your mind.":"Thank you! We'll contact you to schedule the work."}</div><button class="linkbtn" data-pchange="1">Change my answer</button></div>`;
+  const tile=(cls,title,sub,t,choice,btn)=>`<div class="totblk ${cls}"><div class="tbh"><span>${title}</span><span class="small muted">${sub}</span></div><div><span>Subtotal</span><span>${money(t.sub)}</span></div>${t.disc?`<div><span>Discount</span><span>−${money(t.disc)}</span></div>`:""}<div><span>Tax (${o.rate}%)</span><span>${money(t.tax)}</span></div><div class="grand"><span>Total</span><span>${money(t.total)}</span></div>${choice?`<button class="btn sm" style="margin-top:6px" data-presp="${choice}|${esc(r.id)}|${esc(g.job)}|${r.rev}">${btn}</button>`:""}</div>`;
+  return `<div class="pchoose"><div class="eyebrow" style="margin-top:8px">Your options</div><div class="totals3">${tile("tb-r",`${tlDot("r")} ${o.rec?"Option 1: ":""}Fix now only`,"Stops damage and water loss. Includes the service call.",o.fix,"fix",o.rec?"Approve Option 1":"Approve")}${o.rec?tile("tb-y",`${tlDot("y")} Recommended items`,"Included in Option 2.",o.rec,null)+tile("tb-all","Option 2: All work","Fix now + Recommended.",o.all,"all","Approve Option 2"):""}</div>
+    <div class="row" style="margin-top:6px"><button class="btn quiet sm" data-presp="decline|${esc(r.id)}|${esc(g.job)}|${r.rev}">Not right now</button><span class="small muted">Approving tells us to schedule the work. We'll confirm with you first.</span></div></div>`}
 function portalCustCard(){const c=S.portal.cust||{};const g=(S.portal.list||[])[0]||{};const name=c.customer||g.name||(S.me.name||"");if(!name&&!c.address&&!g.address)return "";
   const tel=String(c.phone||"").replace(/[^\d+]/g,"");
   return `<div class="card pcust"><div class="eyebrow">Your account</div><h2 style="margin:2px 0">${esc(name)}${c.custNo?` <span class="small muted">Customer ${esc(c.custNo)}</span>`:""}</h2>
@@ -2587,6 +2610,7 @@ function portalView(){
   else body=p.list.map(g=>{const r=g.reports[0];const inv=g.inv;
     return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
       ${r?`<div class="act"><div class="al">Inspection report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
+      ${r?portalOptions(g,r):""}
       ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button></div>`:""}</div>`}).join("");
   return head+`<div class="wrap"><main>${portalCustCard()}${body}</main></div>`;
 }
@@ -2634,7 +2658,7 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
     if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
@@ -2648,6 +2672,9 @@ app.addEventListener("click",ev=>{
     if(d.entertrain){enterTraining();return}
     if(d.exittrain){exitTraining();return}
     if(d.accteam){S.acctOpen=false;S.cur=null;S.home="team";render();window.scrollTo(0,0);return}
+    if(d.pchange){S.portal.changing=true;render();return}
+    if(d.presp){const [choice,rid,jid,rev]=d.presp.split("|");(async()=>{const {error}=await sb.from("customer_responses").insert({job_id:jid,report_id:rid,rev:+rev,choice,customer_email:String(S.me.email).toLowerCase()});
+      if(error){toast("Couldn't send your answer. Please try again.");return}S.portal.changing=false;toast(choice==="decline"?"Thanks for letting us know":"Approved. We'll be in touch to schedule");loadPortal()})();return}
     if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
     if(d.pback){S.portal.view=null;render();return}
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
@@ -2659,7 +2686,7 @@ app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
-  if(d.open){ev.preventDefault();markSeen(d.open);S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
   if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const a=document.createElement("a");a.href=approveMail(p||{email:em},S.custs[cid]);a.click()});return}
