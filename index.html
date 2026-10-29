@@ -321,7 +321,7 @@ table.dgridt{table-layout:fixed;width:100%}
 .twcirc{border-radius:50%!important;width:50px;height:50px;padding:0!important}.twcirc small{font-size:.55rem;font-weight:600}.twz{font-size:1rem;font-weight:800;line-height:1}.twplus{font-size:1.4rem;border-style:dashed;color:var(--muted)!important;background:transparent}
 .twsb{border:2px solid var(--line);padding:12px 6px!important;font-size:.9rem!important}.twsb.tws-g.on{background:#2E9E5B;color:#fff;border-color:#2E9E5B}.twsb.tws-o.on{background:#E8860C;color:#fff;border-color:#E8860C}.twsb.tws-r.on{background:#D23B32;color:#fff;border-color:#D23B32}.twsb.tws-x.on{background:#8E959C;color:#fff;border-color:#8E959C}
 .tws-g{border-color:#2E9E5B}.tws-o{border-color:#E8860C}.tws-r{border-color:#D23B32}.tws-x{border-color:#8E959C}
-.twleg .twleg{margin-top:6px}.twscroll{overflow-x:auto;max-width:100%}.twscroll svg{display:block;color:var(--ink,#1a1a1a)}.twroot{display:flex;align-items:center;gap:8px}.twctl{border-radius:8px;width:42px;height:42px;background:var(--ink,#222);color:#fff;border-color:var(--ink,#222)}
+.twleg .twleg{margin-top:6px}.twscroll{overflow-x:auto;max-width:100%}.twprev svg{width:100%;height:auto;color:var(--ink,#1a1a1a)}#te-svg{width:100%;height:100%;display:block;touch-action:none;color:var(--ink,#1a1a1a)}#te-stage{touch-action:none;background:var(--surface)}.tn{cursor:pointer}.te-sheet{display:grid;gap:8px;padding:10px 12px;max-height:46vh;overflow:auto}.te-mode{gap:6px}.twscroll svg{display:block;color:var(--ink,#1a1a1a)}.twroot{display:flex;align-items:center;gap:8px}.twctl{border-radius:8px;width:42px;height:42px;background:var(--ink,#222);color:#fff;border-color:var(--ink,#222)}
 .twv{display:grid;justify-items:start}.twvr{display:flex;align-items:center;gap:10px}.twvr .twn{border-radius:50%;width:42px;height:42px;padding:0;flex:none}
 .twvw{width:2px;height:16px;background:var(--muted);margin-left:20px;position:relative}.twvw.oc{background:#D23B32;width:3px}.twvw.cut{background:none;border-left:2px dashed #D23B32;height:26px}.twvw.cut span{position:absolute;left:10px;top:4px;white-space:nowrap;color:#D23B32;font-weight:800;font-size:.75rem}
 .twvb{margin-left:20px;padding:6px 0 6px 16px;border-left:2px solid var(--muted)}.twroot-leg{margin-top:4px}.twvend{margin:4px 0 0 4px}.twtree .twchain .twn:not(.twrun){border-radius:50%;width:42px;height:42px;padding:0}.twtree .twchain .twn small{font-size:.58rem}.twrun{border-radius:21px!important}.twkey .twn{border-radius:50%}
@@ -1347,17 +1347,19 @@ function twoWire(c){const bad=[],sols=[],breaks=[],legOc=[];_dupCache=dupZones(c
     if(tail>=0){const from=reach<0?legFromLabel(c,L):"D"+(reach+1);breaks.push({li,from,reach,to:"D"+(tail+1),where:`Leg ${li+1}, between ${from} and D${tail+1}`})}
     if(c.overcurrent==="yes"&&L.oc==="yes"){const r=splitRange(L);legOc.push({li,where:`Leg ${li+1}`+(r.done?", "+r.where:" (overcurrent)"),r})}});
   return {bad,sols,breaks,legOc}}
-function twoWireTree(c){const legs=c.legs||[];if(!legs.some(L=>(L.decoders||[]).length))return "";const tw=twoWire(c);const dz=dupZones(c);
-  /* Drawn like Bradley's paper sketch: controller on top, legs run down, branches split off to the side at their decoder,
-     decoders in the same valve box sit side by side. One bubble per decoder, labeled by zone. Scrolls as far as it needs to. */
-  const CW=58,RH=60,R=19,PAD=34;const occ={};const pos={};let maxC=0,maxR=0;
+/* Drawn like Bradley's paper sketch: controller on top, legs run down, branches split off to the side at their decoder,
+   decoders in the same valve box sit side by side. One bubble per decoder, labeled by zone.
+   opts.edit = interactive (full-screen tree editor): bubbles are tappable, a "+" bubble ends each leg, selection ring. */
+function twSvgParts(c,opts){opts=opts||{};const ed=!!opts.edit;const legs=c.legs||[];const tw=twoWire(c);const dz=dupZones(c);
+  const CW=58,RH=60,R=19,PAD=34;const occ={};const pos={},start={};let maxC=0,maxR=0;
   const kids=li=>legs.map((M,lb)=>[M,lb]).filter(([M])=>M.from&&+String(M.from).split(":")[0]===li).sort((x,y)=>+x[0].from.split(":")[1]-+y[0].from.split(":")[1]).map(x=>x[1]);
   const layout=(li,minCol,r0)=>{const ds=legs[li].decoders||[];const rel=[];let r=0,cx=0,w=1;
     ds.forEach((d,k)=>{if(k>0&&d.box){cx++;}else if(k>0){r++;cx=0}rel.push([r,cx]);w=Math.max(w,cx+1)});
-    const rows=ds.length?r+1:0;let col=minCol;
-    const free=cc=>{for(let rr=r0;rr<r0+Math.max(rows,1);rr++)for(let q=cc;q<cc+w;q++)if(occ[rr+":"+q])return false;return true};
+    const rows=(ds.length?r+1:0)+(ed?1:0)||1;let col=minCol;
+    const free=cc=>{for(let rr=r0;rr<r0+rows;rr++)for(let q=cc;q<cc+w;q++)if(occ[rr+":"+q])return false;return true};
     while(!free(col))col++;
-    for(let rr=r0;rr<r0+Math.max(rows,1);rr++)for(let q=col;q<col+w;q++)occ[rr+":"+q]=1;
+    for(let rr=r0;rr<r0+rows;rr++)for(let q=col;q<col+w;q++)occ[rr+":"+q]=1;
+    start[li]={r:r0,c:col,end:{r:r0+(ds.length?r+1:0),c:col}};maxR=Math.max(maxR,r0+rows-1);maxC=Math.max(maxC,col);
     pos[li]=rel.map(([rr,q])=>{maxC=Math.max(maxC,col+q);maxR=Math.max(maxR,r0+rr);return {r:r0+rr,c:col+q}});
     kids(li).forEach(lb=>{const k=+legs[lb].from.split(":")[1]-1;const p=pos[li][k];if(p)layout(lb,col+w,p.r+1)})};
   const roots=legs.map((L,li)=>{const pi=L.from?+String(L.from).split(":")[0]:-1;return pi<0||!legs[pi]||pi>=li?li:-1}).filter(v=>v>=0);
@@ -1365,21 +1367,28 @@ function twoWireTree(c){const legs=c.legs||[];if(!legs.some(L=>(L.decoders||[]).
   const X=cc=>PAD+cc*CW,Y=rr=>PAD+rr*RH;const COL={g:"#2E9E5B",o:"#E8860C",r:"#D23B32",x:"#8E959C"};
   let lines="",nodes="";
   const seg=(x1,y1,x2,y2,kind)=>{if(kind==="cut"){const mx=(x1+x2)/2,my=(y1+y2)/2;return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#D23B32" stroke-width="2.5" stroke-dasharray="5 4"/><text x="${mx+8}" y="${my+5}" font-size="15" font-weight="800" fill="#D23B32">✕</text>`}
+    if(kind==="ghost")return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#7a8288" stroke-width="1.5" stroke-dasharray="3 4"/>`;
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${kind==="oc"?"#D23B32":"#7a8288"}" stroke-width="${kind==="oc"?4:2}"/>`};
-  legs.forEach((L,li)=>{const ds=L.decoders||[];const P=pos[li];if(!P||!ds.length)return;
+  const sel=opts.sel||null;
+  legs.forEach((L,li)=>{const ds=L.decoders||[];const P=pos[li];if(!P)return;
     const br=tw.breaks.find(x=>x.li===li);const oc=c.overcurrent==="yes"&&L.oc==="yes"?splitRange(L):null;const cut=br&&!(oc&&oc.done)?br.reach+1:-1;
     const kind=i=>i===cut||(oc&&oc.done&&oc.single&&i===oc.lo)?"cut":oc&&i>=oc.lo&&i<=oc.hi?"oc":"";
     let o;if(L.from&&roots.indexOf(li)<0){const [pl,k]=L.from.split(":").map(Number);const pp=(pos[pl]||[])[k-1];o=pp?[X(pp.c),Y(pp.r)]:[X(0),Y(0)]}else o=[X(0),Y(0)];
     ds.forEach((d,k)=>{const from=k===0?o:[X(P[k-1].c),Y(P[k-1].r)];lines+=seg(from[0],from[1],X(P[k].c),Y(P[k].r),kind(k))});
-    if(oc&&oc.hi>=ds.length){const l=P[ds.length-1];lines+=seg(X(l.c),Y(l.r),X(l.c),Y(l.r)+RH*0.6,kind(ds.length))}
+    if(oc&&oc.hi>=ds.length&&ds.length){const l=P[ds.length-1];lines+=seg(X(l.c),Y(l.r),X(l.c),Y(l.r)+RH*0.6,kind(ds.length))}
     ds.forEach((d,k)=>{const p=P[k];const cl=dstCls(d.st);const fill=COL[cl]||"#fff";const lab=d.zones||("D"+(k+1));const fs=lab.length>4?9:lab.length>2?12:14;
-      const dupA=d.addr&&zoneList(d).some(z=>dz.includes(z));
-      nodes+=`<g><title>${esc(decLabel(li,k,d))}${d.st?" · "+esc(DST.find(q=>q[0]===d.st)[1]):""}</title><circle cx="${X(p.c)}" cy="${Y(p.r)}" r="${R}" fill="${fill}" stroke="${cl==="n"?"#7a8288":fill}" stroke-width="2" ${cl==="n"?'stroke-dasharray="4 3"':""}/><text x="${X(p.c)}" y="${Y(p.r)+fs*0.36}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${cl==="n"?"currentColor":"#fff"}">${esc(lab)}</text>${dupA?`<text x="${X(p.c)}" y="${Y(p.r)+R+11}" text-anchor="middle" font-size="9" fill="currentColor">#${esc(d.addr)}</text>`:""}</g>`})});
-  const W=X(maxC)+PAD,H=Y(maxR)+PAD+10;
+      const dupA=d.addr&&zoneList(d).some(z=>dz.includes(z));const isSel=sel&&sel[0]===li&&sel[1]===k;
+      nodes+=`<g ${ed?`data-tn="${li}|${k}" class="tn"`:""}><title>Leg ${li+1} · ${esc(decLabel(li,k,d).split(" · ")[1])}${d.st?" · "+esc(DST.find(q=>q[0]===d.st)[1]):""}</title>${isSel?`<circle cx="${X(p.c)}" cy="${Y(p.r)}" r="${R+6}" fill="none" stroke="#1D6B47" stroke-width="3"/>`:""}<circle cx="${X(p.c)}" cy="${Y(p.r)}" r="${R}" fill="${fill}" stroke="${cl==="n"?"#7a8288":fill}" stroke-width="2" ${cl==="n"?'stroke-dasharray="4 3"':""}/><text x="${X(p.c)}" y="${Y(p.r)+fs*0.36}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${cl==="n"?"currentColor":"#fff"}" pointer-events="none">${esc(lab)}</text>${dupA?`<text x="${X(p.c)}" y="${Y(p.r)+R+11}" text-anchor="middle" font-size="9" fill="currentColor" pointer-events="none">#${esc(d.addr)}</text>`:""}${ed?`<circle cx="${X(p.c)}" cy="${Y(p.r)}" r="${R+8}" fill="transparent"/>`:""}</g>`});
+    if(ed){const g=start[li].end;const last=ds.length?[X(P[ds.length-1].c),Y(P[ds.length-1].r)]:o;const gx=X(g.c),gy=Y(g.r);
+      lines+=seg(last[0],last[1],gx,gy,"ghost");
+      nodes+=`<g data-tadd="${li}" class="tn"><title>Add the next decoder on Leg ${li+1}</title><circle cx="${gx}" cy="${gy}" r="${R-3}" fill="var(--surface,#fff)" stroke="#1D6B47" stroke-width="2" stroke-dasharray="4 3"/><text x="${gx}" y="${gy+7}" text-anchor="middle" font-size="20" font-weight="700" fill="#1D6B47" pointer-events="none">+</text><circle cx="${gx}" cy="${gy}" r="${R+8}" fill="transparent"/></g>`}});
+  const W=X(maxC)+PAD+(ed?40:0),H=Y(maxR)+PAD+10;
   const ctl=`<rect x="${X(0)-R}" y="${Y(0)-R}" width="${2*R}" height="${2*R}" rx="6" fill="#1f2a24"/><text x="${X(0)}" y="${Y(0)+6}" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">C</text>`;
-  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twscroll"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="2-wire path tree">${lines}${ctl}${nodes}</svg></div>
-    <div class="small muted">Bubbles show the zone number. Side-by-side bubbles share a valve box.</div>
-    <div class="small muted twkey">${DST.map(([,l,k])=>`<span><span class="twn tw-${k}"></span> ${l.toLowerCase()}</span>`).join("")}<span><span class="twn tw-n"></span> not checked</span><span><b style="color:var(--bad)">✕</b> likely break</span><span><span class="tww oc"></span> fault in this stretch</span></div></div>`}
+  return {inner:lines+ctl+nodes,W,H}}
+function twLegend(){return `<div class="small muted twkey">${DST.map(([,l,k])=>`<span><span class="twn tw-${k}"></span> ${l.toLowerCase()}</span>`).join("")}<span><span class="twn tw-n"></span> not checked</span><span><b style="color:var(--bad)">✕</b> likely break</span><span><span class="tww oc"></span> fault in this stretch</span></div>`}
+function twoWireTree(c){const legs=c.legs||[];if(!legs.some(L=>(L.decoders||[]).length))return "";const t=twSvgParts(c);
+  return `<div class="twtree" aria-label="2-wire path diagram"><div class="twscroll"><svg width="${t.W}" height="${t.H}" viewBox="0 0 ${t.W} ${t.H}" role="img" aria-label="2-wire path tree">${t.inner}</svg></div>
+    <div class="small muted">Bubbles show the zone number. Side-by-side bubbles share a valve box.</div>${twLegend()}</div>`}
 /* Binary search on a shorted leg. Nodes: 0 = controller, k = decoder k. Segment s = wire from node s to node s+1 (s = N is past the last decoder).
    Each split "cut after D k": fault on controller side -> segments 0..k-1, far side -> k..N. */
 function splitRange(L){const N=(L.decoders||[]).length;let lo=0,hi=N;(L.splits||[]).forEach(x=>{const k=+x.after;if(!k||!x.side)return;if(x.side==="near")hi=Math.min(hi,k-1);else lo=Math.max(lo,k)});
@@ -1388,30 +1397,94 @@ function splitRange(L){const N=(L.decoders||[]).length;let lo=0,hi=N;(L.splits||
   const next=!bad&&hi>lo?Math.floor((lo+hi+1)/2):0;
   return {lo,hi,N,where,done:(L.splits||[]).some(x=>x.after&&x.side),single:lo===hi,next:next>=1&&next<=N?next:0}}
 function legFromLabel(c,L){if(!L.from)return "the controller";const [lj,k]=String(L.from).split(":").map(Number);const d=((c.legs[lj]||{}).decoders||[])[k-1]||{};return `Leg ${lj+1} · D${k}${d.zones?" (zone "+d.zones+")":""}`}
-function twEditor(c,b,ci){const dz=dupZones(c);const sel=String(S.twSel||"").split("|");const mode=S.twMode==="edit"?"edit":"status";
-  return `<p class="small muted" style="margin:0">Start at the controller. At each decoder, add the next one or branch off. Tap a circle to change its status.</p>
-  <div class="q"><span class="ql">Tapping a circle</span><div class="chips"><button type="button" class="chip" data-twmode="status" aria-pressed="${mode==="status"}">Changes its status</button><button type="button" class="chip" data-twmode="edit" aria-pressed="${mode==="edit"}">Opens it (zone, branch)</button></div></div>
-  <div class="small twkey">${DST.map(([,l,k])=>`<span><span class="twn tw-${k}"></span> ${l}</span>`).join("")}<span><span class="twn tw-n"></span> Not checked</span></div>
+function twEditor(c,b,ci){const dz=dupZones(c);const t=(c.legs||[]).length?twSvgParts(c):null;
+  return `<p class="small muted" style="margin:0">Log the path as you tone it out: start at the controller, add each decoder, branch off where the wire splits, and tap the bubbles to set their color.</p>
+  ${t&&(c.legs||[]).some(L=>(L.decoders||[]).length)?`<button type="button" class="mapprev twprev" data-twopen="${ci}" aria-label="Open the 2-wire tree editor"><svg viewBox="0 0 ${t.W} ${Math.min(t.H,520)}" preserveAspectRatio="xMidYMin meet" style="max-height:260px">${t.inner}</svg><span class="mapopen">Edit tree</span></button>`:""}
+  <div class="row"><button type="button" class="btn" data-twopen="${ci}">${(c.legs||[]).length?"Open 2-wire tree editor":"Start the 2-wire tree"}</button></div>
   ${dz.length?`<div class="note warn small"><b>Duplicate decoder:</b> zone ${dz.map(esc).join(", ")} is on more than one decoder. Add the address to each one so they can be told apart.</div>`:""}
-  ${(c.legs||[]).map((L,li)=>{const ds=L.decoders||[];const cnt=st=>ds.filter(d=>d.st===st).length;const nu=cnt("");const isSel=mode==="edit"&&+sel[0]===ci&&+sel[1]===li&&sel[2]!==""&&ds[+sel[2]];const di=isSel?+sel[2]:-1;const d=isSel?ds[di]:null;
+  ${(c.legs||[]).map((L,li)=>{const ds=L.decoders||[];const cnt=st=>ds.filter(d=>d.st===st).length;const nu=cnt("");
     const sum=[["sol","shorted solenoid"],["dec","shorted decoder"],["nc","no comm."]].map(([k,l])=>cnt(k)?`<span class="twc-${dstCls(k)}">${cnt(k)} ${l}</span>`:"").filter(Boolean).join(" · ");
-    return `<div class="twedit"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><b>Leg ${li+1}</b> <span class="small muted">· ${L.from?"branches off "+esc(legFromLabel(c,L)):"from the controller"} · ${ds.length} decoder${ds.length===1?"":"s"}</span>${sum?`<div class="small">${sum}</div>`:""}</div>${delBtn("twleg:"+ci+":"+li,"Remove leg")}</div>
+    return `<div class="twedit"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><b>Leg ${li+1}</b> <span class="small muted">· ${L.from?"branches off "+esc(legFromLabel(c,L)):"from the controller"} · ${ds.length} decoder${ds.length===1?"":"s"}${nu&&ds.length?` · ${nu} not checked`:""}</span>${sum?`<div class="small">${sum}</div>`:""}</div>${delBtn("twleg:"+ci+":"+li,"Remove leg")}</div>
       ${c.overcurrent==="yes"?seg("Overcurrent on this leg?",`${b}.legs.${li}.oc`,YN,{yes:"bad"}):""}
-      <div class="twgrid">${ds.map((x,k)=>`<button type="button" class="twn twcirc tw-${dstCls(x.st)} ${k===di?"sel":""}" data-twtap="${ci}|${li}|${k}" aria-label="${esc(decLabel(li,k,x))}: ${esc((DST.find(q=>q[0]===x.st)||[0,"not checked"])[1])}">${x.zones?`<span class="twz">${esc(x.zones)}</span><small>D${k+1}</small>`:`D${k+1}`}${x.box&&k>0?`<small>box</small>`:""}${(c.legs||[]).some(M=>M.from===li+":"+(k+1))?`<small class="twbr">⑂</small>`:""}</button>`).join("")}<button type="button" class="twn twcirc twplus" data-twadd="${ci}|${li}" aria-label="Add the next decoder">+</button></div>
-      ${d?`<div class="twdet"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">D${di+1}${d.zones?` · zone ${esc(d.zones)}`:""}</b><button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|">Close</button></div>
-        <div class="grid2"><label class="f"><span>Zone(s)</span><input type="text" inputmode="numeric" data-f="${b}.legs.${li}.decoders.${di}.zones" data-rr="1" value="${esc(d.zones)}" placeholder="e.g. 3 or 3, 4"></label><label class="f ${zoneList(d).some(z=>dz.includes(z))&&!d.addr?"need":""}"><span>Address${zoneList(d).some(z=>dz.includes(z))?" *":" (optional)"}</span><input type="text" data-f="${b}.legs.${li}.decoders.${di}.addr" data-rr="1" value="${esc(d.addr)}"></label></div>
-        ${di>0?`<div class="q"><span class="ql">Location</span><div class="chips"><button type="button" class="chip" data-twbox="${ci}|${li}|${di}|0" aria-pressed="${!d.box}">Further down the wire</button><button type="button" class="chip" data-twbox="${ci}|${li}|${di}|1" aria-pressed="${!!d.box}">Same valve box as D${di}</button></div></div>`:""}
-        <div class="twst">${DST.map(([v,l,k])=>`<button type="button" class="btn twsb tws-${k} ${d.st===v?"on":""}" data-twst="${ci}|${li}|${di}|${v}" aria-pressed="${d.st===v}">${l}${di<ds.length-1?" ›":""}</button>`).join("")}</div>
-        <div class="row" style="gap:6px">${di>0?`<button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|${di-1}">‹ D${di}</button>`:""}${di<ds.length-1?`<button type="button" class="btn quiet sm" data-twtap="${ci}|${li}|${di+1}">D${di+2} ›</button>`:""}</div>
-        <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" data-twins="${ci}|${li}|${di}">+ Decoder after D${di+1}</button><button type="button" class="btn ghost sm" data-twins="${ci}|${li}|${di}|box">+ Same valve box</button><button type="button" class="btn ghost sm" data-twbranch="${ci}|${li}|${di}">⑂ Branch off D${di+1}</button><span style="flex:1"></span><button type="button" class="btn quiet sm" data-twdel="${ci}|${li}|${di}">Remove</button></div></div>`:""}
       <div class="twbulk"><span class="small">Add zones</span><input type="number" inputmode="numeric" id="twf-${ci}-${li}" placeholder="from" aria-label="From zone"><span class="small">to</span><input type="number" inputmode="numeric" id="twt-${ci}-${li}" placeholder="to" aria-label="To zone"><button type="button" class="btn ghost sm" data-twbulk="${ci}|${li}">Add</button>${nu&&ds.length?`<button type="button" class="btn quiet sm" data-twrest="${ci}|${li}">Mark the ${nu} not checked as good</button>`:""}</div>
       ${c.overcurrent==="yes"&&L.oc==="yes"&&(L.decoders||[]).length?(()=>{const r=splitRange(L);return `<div class="twsplit"><div class="small"><b>Split test (binary search)</b> · cut the path after a decoder and check which side still shows overcurrent.</div>
         ${(L.splits||[]).map((x,si)=>`<div class="row" style="flex-wrap:nowrap;gap:6px"><label class="f" style="flex:none;width:110px"><span>Cut after</span><select data-f="${b}.legs.${li}.splits.${si}.after" data-rr="1">${(L.decoders||[]).map((d,di)=>`<option value="${di+1}" ${+x.after===di+1?"selected":""}>D${di+1}${d.zones?" · Z "+esc(d.zones):""}</option>`).join("")}</select></label>
           <div class="chips">${[["near","Controller side"],["far","Far side"]].map(([v,l])=>`<button type="button" class="chip" data-set="${b}.legs.${li}.splits.${si}.side" data-v="${v}" aria-pressed="${x.side===v}">${l}</button>`).join("")}</div>
           <button type="button" class="btn quiet sm" data-rmp="${b}.legs.${li}.splits|${si}" aria-label="Remove split">✕</button></div>`).join("")}
         <div class="small ${r.done?"":"muted"}">${r.done?`Fault narrowed to: <b>${esc(r.where)}</b>.`:"No splits yet."}${r.next?` Next: cut after <b>D${r.next}</b>.`:r.done&&r.single?" Located.":""}</div>
-        ${r.next||!r.done?`<div><button type="button" class="btn ghost sm" data-addsplit="${b}.legs.${li}|${r.next||Math.ceil(r.N/2)}">+ Add split${r.next?` (after D${r.next})`:""}</button></div>`:""}</div>`})():""}</div>`}).join("")}
-  <div><button type="button" class="btn ghost sm" data-add="${b}.legs" data-tpl="leg">+ Leg from the controller</button></div>`}
+        ${r.next||!r.done?`<div><button type="button" class="btn ghost sm" data-addsplit="${b}.legs.${li}|${r.next||Math.ceil(r.N/2)}">+ Add split${r.next?` (after D${r.next})`:""}</button></div>`:""}</div>`})():""}</div>`}).join("")}`}
+
+/* ---------------- full-screen 2-wire tree editor (works like the map editor) ----------------
+   Drag to pan, pinch / ctrl+scroll to zoom, tap a bubble to change its color (Status) or open it (Edit). */
+const TE={open:false,ci:0,vb:{x:0,y:0,w:400,h:600},sel:null,mode:"status",ptrs:new Map(),g:null,raf:0,W:400,H:600};
+function teCtl(){const j=job();return j&&j.controllers[TE.ci]}
+function openTree(ci){const j=job();if(!j)return;const c=j.controllers[ci];if(!c)return;c.legs=c.legs||[];if(!c.legs.length){c.legs.push(TPL.leg());scheduleSave(S.cur)}
+  Object.assign(TE,{open:true,ci,sel:null,mode:c.legs.some(L=>(L.decoders||[]).length)?"status":"edit",g:null});TE.ptrs=new Map();
+  const el=document.createElement("div");el.id="te";el.className="me";el.setAttribute("role","dialog");el.setAttribute("aria-label","2-wire tree editor");
+  el.innerHTML=`<div class="me-top" id="te-top"></div><div class="me-stage" id="te-stage"><svg id="te-svg" preserveAspectRatio="xMidYMin meet"></svg></div><div class="me-bottom" id="te-bottom"></div>`;
+  document.body.appendChild(el);document.body.style.overflow="hidden";
+  const st=document.getElementById("te-stage");
+  st.addEventListener("pointerdown",teDown);st.addEventListener("pointermove",teMove);st.addEventListener("pointerup",teUp);st.addEventListener("pointercancel",teUp);
+  st.addEventListener("wheel",teWheel,{passive:false});el.addEventListener("click",teClick);el.addEventListener("input",teInput);el.addEventListener("change",teInput);
+  teChrome();teDraw();teFit();}
+function closeTree(){TE.open=false;const el=document.getElementById("te");if(el)el.remove();document.body.style.overflow="";rr()}
+function teStage(){return document.getElementById("te-stage").getBoundingClientRect()}
+function teFit(){const r=teStage();if(!r.width)return;const w=Math.max(TE.W,Math.min(TE.W*2.2,320));TE.vb={x:(TE.W-w)/2,y:0,w,h:w*r.height/r.width};teApply()}
+function teApply(){const v=TE.vb;const svg=document.getElementById("te-svg");if(svg)svg.setAttribute("viewBox",`${v.x} ${v.y} ${v.w} ${v.h}`)}
+function teClamp(){const v=TE.vb;const r=teStage();const a=r.width?r.height/r.width:1.5;v.w=Math.max(120,Math.min(Math.max(TE.W,TE.H/a)*1.4,v.w));v.h=v.w*a;
+  v.x=Math.max(-v.w*0.5,Math.min(TE.W-v.w*0.5,v.x));v.y=Math.max(-v.h*0.3,Math.min(TE.H-v.h*0.3,v.y))}
+function teDraw(){const c=teCtl();if(!c)return;const t=twSvgParts(c,{edit:true,sel:TE.mode==="edit"?TE.sel:null});TE.W=t.W;TE.H=t.H;const svg=document.getElementById("te-svg");if(svg)svg.innerHTML=t.inner;teApply()}
+function teSelDec(){const c=teCtl();if(!c||!TE.sel)return null;const L=c.legs[TE.sel[0]];return L&&(L.decoders||[])[TE.sel[1]]||null}
+function teChrome(){const c=teCtl();if(!c)return;
+  document.getElementById("te-top").innerHTML=`<div class="me-title">2-wire tree · ${esc(c.name)}</div><button class="me-btn" data-te="zout" aria-label="Zoom out">−</button><button class="me-btn" data-te="zin" aria-label="Zoom in">+</button><button class="me-btn" data-te="fit">Fit</button><button class="me-btn strong" data-te="done">Done</button>`;
+  const d=teSelDec();const [li,k]=TE.sel||[];const L=TE.sel?c.legs[li]:null;const ds=L?L.decoders:[];const dz=dupZones(c);
+  const modeRow=`<div class="chips te-mode"><button type="button" class="chip" data-temode="status" aria-pressed="${TE.mode==="status"}">Tap = change color</button><button type="button" class="chip" data-temode="edit" aria-pressed="${TE.mode==="edit"}">Tap = open (zone, branch)</button><button type="button" class="chip" data-te="addleg">+ Leg from controller</button></div>`;
+  let body;
+  if(TE.mode==="edit"&&d){const dup=zoneList(d).some(z=>dz.includes(z));
+    body=`<div class="row" style="flex-wrap:nowrap"><b style="flex:1">Leg ${li+1} · D${k+1}${d.zones?` · zone ${esc(d.zones)}`:""}</b>${k>0?`<button class="btn quiet sm" data-te="prev">‹</button>`:""}${k<ds.length-1?`<button class="btn quiet sm" data-te="next">›</button>`:""}<button class="btn quiet sm" data-te="desel">Close</button></div>
+      <div class="grid2"><label class="f"><span>Zone(s)</span><input type="text" inputmode="numeric" data-tel="zones" value="${esc(d.zones)}" placeholder="e.g. 3 or 3, 4"></label><label class="f ${dup&&!d.addr?"need":""}"><span>Address${dup?" *":" (optional)"}</span><input type="text" data-tel="addr" value="${esc(d.addr)}"></label></div>
+      ${k>0?`<div class="chips"><button type="button" class="chip" data-tebox="0" aria-pressed="${!d.box}">Further down the wire</button><button type="button" class="chip" data-tebox="1" aria-pressed="${!!d.box}">Same valve box as D${k}</button></div>`:""}
+      <div class="twst">${DST.map(([v,l,kk])=>`<button type="button" class="btn twsb tws-${kk} ${d.st===v?"on":""}" data-test="${v}" aria-pressed="${d.st===v}">${l}</button>`).join("")}</div>
+      <div class="row" style="gap:6px"><button class="btn ghost sm" data-te="after">+ Next decoder</button><button class="btn ghost sm" data-te="box">+ Same valve box</button><button class="btn ghost sm" data-te="branch">⑂ Branch off here</button><span style="flex:1"></span><button class="btn quiet sm" data-te="del">Remove</button></div>`}
+  else body=`<div class="small muted">${TE.mode==="status"?"Tap a bubble to cycle its color: green good → orange shorted solenoid → red shorted decoder → grey no communication → not checked. Tap <b>+</b> to add the next decoder.":"Tap a bubble to open it: set its zone, put it in the same valve box, or branch off it. Tap <b>+</b> to add the next decoder."} Drag to move around, pinch to zoom.</div>${twLegend()}`;
+  document.getElementById("te-bottom").innerHTML=`<div class="te-sheet">${modeRow}${body}</div>`}
+function teSave(){scheduleSave(S.cur);teDraw()}
+/* keep the bubble being worked on (or the leg's + bubble) on screen */
+function teEnsure(sel){const svg=document.getElementById("te-svg");const el=svg&&svg.querySelector(sel);if(!el)return;const b=el.getBBox();const v=TE.vb;const m=30;
+  if(b.y+b.height+m>v.y+v.h)v.y=b.y+b.height+m-v.h*0.85;if(b.y-m<v.y)v.y=b.y-m-v.h*0.15;if(b.x+b.width+m>v.x+v.w)v.x=b.x+b.width+m-v.w;if(b.x-m<v.x)v.x=b.x-m;teApply()}
+function teAdd(li,box){const c=teCtl();const L=c.legs[li];L.decoders=L.decoders||[];const prev=L.decoders[L.decoders.length-1];const nd={addr:"",zones:prev&&/^\d+$/.test(prev.zones)?String(+prev.zones+1):"",st:""};if(box)nd.box=true;L.decoders.push(nd);if(TE.mode==="edit")TE.sel=[li,L.decoders.length-1];teSave();teChrome();teEnsure(`[data-tadd="${li}"]`)}
+function teClick(ev){const b=ev.target.closest("[data-te],[data-temode],[data-test],[data-tebox]");if(!b)return;const c=teCtl();const d=teSelDec();
+  if(b.dataset.temode){TE.mode=b.dataset.temode;if(TE.mode==="status")TE.sel=null;teDraw();teChrome();return}
+  if(b.dataset.test&&d){d.st=d.st===b.dataset.test?"":b.dataset.test;const L=c.legs[TE.sel[0]];if(d.st&&TE.sel[1]<L.decoders.length-1)TE.sel=[TE.sel[0],TE.sel[1]+1];teSave();teChrome();return}
+  if(b.dataset.tebox&&d){d.box=b.dataset.tebox==="1";teSave();teChrome();return}
+  const a=b.dataset.te;const r=teStage();
+  if(a==="done"){closeTree();return}
+  if(a==="zin"||a==="zout"){const v=TE.vb;const f=a==="zin"?0.75:1.33;const cx=v.x+v.w/2,cy=v.y+v.h/2;v.w*=f;v.h*=f;v.x=cx-v.w/2;v.y=cy-v.h/2;teClamp();teApply();return}
+  if(a==="fit"){teFit();return}
+  if(a==="addleg"){c.legs.push(TPL.leg());TE.mode="edit";TE.sel=null;teSave();teChrome();toast(`Leg ${c.legs.length} added. Tap its + to add decoders.`);return}
+  if(a==="desel"){TE.sel=null;teDraw();teChrome();return}
+  if(!TE.sel)return;const [li,k]=TE.sel;const L=c.legs[li];
+  if(a==="prev"&&k>0)TE.sel=[li,k-1];if(a==="next"&&k<L.decoders.length-1)TE.sel=[li,k+1];
+  if(a==="after"||a==="box"){const nd={addr:"",zones:/^\d+$/.test(d.zones)?String(+d.zones+1):"",st:""};if(a==="box")nd.box=true;L.decoders.splice(k+1,0,nd);TE.sel=[li,k+1];teSave()}
+  if(a==="branch"){c.legs.push({oc:"",from:li+":"+(k+1),decoders:[{addr:"",zones:"",st:""}]});TE.sel=[c.legs.length-1,0];toast(`Leg ${c.legs.length} branches off D${k+1}`);teSave()}
+  if(a==="del"){L.decoders.splice(k,1);c.legs.forEach(M=>{if(M.from&&M.from.startsWith(li+":")){const kk=+M.from.split(":")[1];if(kk===k+1)M.from=k>0?li+":"+k:"";else if(kk>k+1)M.from=li+":"+(kk-1)}});TE.sel=L.decoders.length?[li,Math.min(k,L.decoders.length-1)]:null;teSave()}
+  teDraw();teChrome();if(TE.sel)teEnsure(`[data-tn="${TE.sel[0]}|${TE.sel[1]}"]`)}
+function teInput(ev){const t=ev.target;if(!t.dataset.tel)return;const d=teSelDec();if(!d)return;d[t.dataset.tel]=t.value;scheduleSave(S.cur);teDraw();if(ev.type==="change")teChrome()}
+function tePt(x,y){const r=teStage();const v=TE.vb;return [v.x+(x-r.left)*v.w/r.width,v.y+(y-r.top)*v.h/r.height]}
+function teWheel(ev){ev.preventDefault();const v=TE.vb;if(ev.ctrlKey||ev.metaKey){const p=tePt(ev.clientX,ev.clientY);const f=Math.exp(ev.deltaY*0.01);v.x=p[0]-(p[0]-v.x)*f;v.y=p[1]-(p[1]-v.y)*f;v.w*=f;v.h*=f}else{const r=teStage();const k=v.w/r.width;v.x+=ev.deltaX*k;v.y+=ev.deltaY*k}teClamp();teApply()}
+function teDown(ev){const st=document.getElementById("te-stage");try{st.setPointerCapture(ev.pointerId)}catch(e){}TE.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(TE.ptrs.size===2){const [a,b]=[...TE.ptrs.values()];TE.g={type:"pinch",d0:Math.hypot(a.x-b.x,a.y-b.y)||1,c0:tePt((a.x+b.x)/2,(a.y+b.y)/2),vb0:Object.assign({},TE.vb)};return}
+  if(TE.ptrs.size>2)return;const tEl=ev.target.closest("[data-tn],[data-tadd]");TE.g={type:"pending",sx:ev.clientX,sy:ev.clientY,vb0:Object.assign({},TE.vb),el:tEl?{tn:tEl.dataset.tn,tadd:tEl.dataset.tadd}:null}}
+function teMove(ev){if(!TE.ptrs.has(ev.pointerId))return;TE.ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});const g=TE.g;if(!g)return;const r=teStage();
+  if(g.type==="pinch"&&TE.ptrs.size>=2){const [a,b]=[...TE.ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y)||1;const w=g.vb0.w*g.d0/d;const h=w*r.height/r.width;const cx=(a.x+b.x)/2-r.left,cy=(a.y+b.y)/2-r.top;TE.vb={w,h,x:g.c0[0]-cx*w/r.width,y:g.c0[1]-cy*h/r.height};teClamp();teApply();return}
+  if(g.type!=="pending"&&g.type!=="pan")return;if(g.type==="pending"&&Math.hypot(ev.clientX-g.sx,ev.clientY-g.sy)>7)g.type="pan";
+  if(g.type==="pan"){TE.vb.x=g.vb0.x-(ev.clientX-g.sx)*g.vb0.w/r.width;TE.vb.y=g.vb0.y-(ev.clientY-g.sy)*g.vb0.h/r.height;teClamp();teApply()}}
+function teUp(ev){TE.ptrs.delete(ev.pointerId);const g=TE.g;if(g&&g.type==="pinch"){TE.g=TE.ptrs.size?{type:"done"}:null;return}if(TE.ptrs.size)return;TE.g=null;if(!g||g.type!=="pending"||ev.type==="pointercancel")return;
+  const c=teCtl();if(!g.el){if(TE.sel){TE.sel=null;teDraw();teChrome()}return}
+  if(g.el.tadd!=null){teAdd(+g.el.tadd);return}
+  const [li,k]=g.el.tn.split("|").map(Number);const d=c.legs[li].decoders[k];
+  if(TE.mode==="status"){d.st=DST_NEXT[d.st||""];teSave();return}
+  TE.sel=[li,k];teDraw();teChrome()}
 function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def,qty,detail)=>R.push({k,label,why,pk,def:!!def,qty:qty||1,detail:detail||""});
   const tier=gradeFor("controller",ctlBrand(c),c.line);
   const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push(c.line&&lineInfo("controller",ctlBrand(c),c.line)?"economy-grade model with a shorter service life":"economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
@@ -2935,6 +3008,7 @@ app.addEventListener("click",ev=>{
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
   if(d.step){const v=Math.max(0,num(getP(j,d.step))+num(d.d));setP(j,d.step,v);scheduleSave(S.cur);rr();return}
   if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
+  if(d.twopen!=null){openTree(+d.twopen);return}
   if(d.twmode){S.twMode=d.twmode;rr();return}
   if(d.twtap!=null){const [ci,li,di]=d.twtap.split("|");if(di===""||S.twMode==="edit"){S.twSel=d.twtap;rr();return}const dd=j.controllers[+ci].legs[+li].decoders[+di];dd.st=DST_NEXT[dd.st||""];scheduleSave(S.cur);rr();return}
   if(d.twadd){const [ci,li]=d.twadd.split("|").map(Number);const L=j.controllers[ci].legs[li];L.decoders=L.decoders||[];const prev=L.decoders[L.decoders.length-1];const z=prev&&/^\d+$/.test(prev.zones)?String(+prev.zones+1):"";L.decoders.push({addr:"",zones:z,st:""});if(S.twMode==="edit")S.twSel=`${ci}|${li}|${L.decoders.length-1}`;scheduleSave(S.cur);rr();return}
