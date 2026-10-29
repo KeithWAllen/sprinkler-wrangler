@@ -1523,11 +1523,15 @@ function remindersView(){const cs=customers();const now=new Date();const horizon
     :`<div class="card empty"><h2>Nothing due</h2><p class="muted">Reminders appear here as customers come due for seasonal service, annual audits, backflow tests and follow-ups.</p></div>`}`}
 function customersView(){const cs=customers();
   if(S.custOpen){const c=cs.find(x=>x.key===S.custOpen);if(c)return customerDetail(c);S.custOpen=null}
+  const nocust=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const nocustCard=nocust.length?`<div class="card"><div class="cardhead"><h3>Jobs without customer details</h3><span class="pill warn">${nocust.length}</span></div>
+    <p class="small muted" style="margin:0">Add a name and address on the job's Customer tab to build the customer's profile.</p>
+    <div class="acts">${nocust.map(j=>`<div class="act"><div class="al">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")} · ${j.zones.length} zone${j.zones.length===1?"":"s"}<div class="ap">${esc(j.info.status)}</div></div><button class="btn ghost sm" data-opencust="${j.id}">Add details</button></div>`).join("")}</div></div>`:"";
   return `<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Profiles build automatically from each customer's jobs and audits.</p></div>
   ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
     return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
       <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")}</div>`
-    :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Customers appear once a job has a name and address.</p></div>`}`}
+    :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Customers appear once a job has a name and address.</p></div>`}${nocustCard}`}
 function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l;const eq=equipmentRows(sysJob);const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
   return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
   <div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
@@ -2269,6 +2273,7 @@ app.addEventListener("click",ev=>{
   if(d.back){S.cur=null;render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;render();return}
   if(d.filter){S.filter=d.filter;rr();return}
+  if(d.opencust){S.cur=d.opencust;S.tab="dispatch";render();window.scrollTo(0,0);return}
   if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
   if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
