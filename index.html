@@ -539,10 +539,22 @@ function saveCust(c,linkedToo){c.updatedAt=Date.now();S.custs[c.id]=c;
 /* Older jobs made before customer profiles: give each customer a saved, numbered profile.
    The id comes from the customer's email/address, so two devices doing this at once produce the same profile. */
 function hashStr(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return (h>>>0).toString(36)}
+/* Find an existing customer profile for these details (same email, or same street address + city). */
+function normAddr(a,c){return (String(a||"")+"|"+String(c||"")).toLowerCase().replace(/[.,#]/g," ").replace(/\b(road|rd)\b/g,"rd").replace(/\b(street|st)\b/g,"st").replace(/\b(drive|dr)\b/g,"dr").replace(/\b(court|ct)\b/g,"ct").replace(/\b(lane|ln)\b/g,"ln").replace(/\b(avenue|ave)\b/g,"ave").replace(/\s+/g," ").trim()}
+function custMatch(info,exceptId){const e=String(info.email||"").trim().toLowerCase();const a=String(info.address||"").trim()?normAddr(info.address,info.city):"";
+  const live=Object.values(S.custs).filter(c=>c&&!c.mergedInto&&c.id!==exceptId);
+  return (a&&live.find(c=>String(c.address||"").trim()&&normAddr(c.address,c.city)===a))||(e&&live.find(c=>String(c.email||"").trim().toLowerCase()===e))||null}
+/* Merge automatic duplicates into the customer's real profile (team can't delete, so the duplicate is marked merged and hidden). */
+function dedupeCusts(){if(S.training&&false)return;const recs=Object.values(S.custs).filter(c=>c&&!c.mergedInto).sort((a,b)=>(String(a.id).startsWith("cl")?1:0)-(String(b.id).startsWith("cl")?1:0)||(jnParse(a.custNo)||1e9)-(jnParse(b.custNo)||1e9));
+  const keep=[];let changed=false;
+  recs.forEach(c=>{const a=String(c.address||"").trim()?normAddr(c.address,c.city):"";const twin=a&&keep.find(k=>String(k.address||"").trim()&&normAddr(k.address,k.city)===a&&String(k.customer||"").trim().toLowerCase()===String(c.customer||"").trim().toLowerCase());
+    if(!twin){keep.push(c);return}
+    Object.values(S.jobs).filter(j=>j.custId===c.id).forEach(j=>{j.custId=twin.id;scheduleSave(j.id)});c.mergedInto=twin.id;saveCust(c);changed=true});
+  return changed}
 function migrateLegacyCusts(){if(S.training||(sb&&!isOffice())||S.custsErr)return;if(S.mode==="db"&&!(S.loaded&&S.custsLoaded))return;
   const groups={};Object.values(S.jobs).forEach(j=>{if(!j.info||(j.custId&&S.custs[j.custId]))return;if(!j.info.customer&&!j.info.address)return;const k=custKey(j);(groups[k]=groups[k]||[]).push(j)});
-  const keys=Object.keys(groups);if(!keys.length)return;
-  keys.forEach(k=>{const js=groups[k].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const id="cl"+hashStr(k);let c=S.custs[id];
+  const keys=Object.keys(groups);dedupeCusts();if(!keys.length)return;
+  keys.forEach(k=>{const js=groups[k].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const m=custMatch(js[0].info);if(m){js.forEach(j=>{j.custId=m.id;scheduleSave(j.id)});return}const id="cl"+hashStr(k);let c=S.custs[id];
     if(!c){c=custFromJob(js[0]);delete S.custs[c.id];c.id=id;c.createdAt=Math.min(...js.map(x=>x.createdAt||Date.now()));c.custNo=undefined;S.custs[id]=c}
     js.forEach(j=>{j.custId=id;scheduleSave(j.id)})});
   ensureCustNos()}
@@ -1663,8 +1675,8 @@ function termsAgreeBlock(j){const ok=j.info.termsAgreed;
 
 /* ---------------- Customers, maintenance calendar, reminders ---------------- */
 const MAINT=[{k:"spring",label:"Spring start-up",month:2},{k:"summer",label:"Summer check & seasonal adjust",month:5},{k:"winter",label:"Winterization / freeze prep",month:10}];
-function custKey(j){if(j.custId&&S.custs[j.custId])return "c:"+j.custId;const e=String(j.info.email||"").trim().toLowerCase();return e?"e:"+e:"a:"+(String(j.info.address||"").trim()+"|"+String(j.info.city||"").trim()).toLowerCase()}
-function customers(){const map={};Object.values(S.custs).forEach(r=>{if(r&&r.id)map["c:"+r.id]={key:"c:"+r.id,rec:r,jobs:[]}});
+function custKey(j){if(j.custId&&S.custs[j.custId]){const r=S.custs[j.custId];return "c:"+(r.mergedInto&&S.custs[r.mergedInto]?r.mergedInto:j.custId)}const e=String(j.info.email||"").trim().toLowerCase();return e?"e:"+e:"a:"+(String(j.info.address||"").trim()+"|"+String(j.info.city||"").trim()).toLowerCase()}
+function customers(){const map={};Object.values(S.custs).forEach(r=>{if(r&&r.id&&!r.mergedInto)map["c:"+r.id]={key:"c:"+r.id,rec:r,jobs:[]}});
   Object.values(S.jobs).forEach(j=>{if(!j.info)return;const linked=j.custId&&S.custs[j.custId];if(!linked&&!j.info.customer&&!j.info.address)return;if(!linked&&!myJob(j))return;const k=custKey(j);(map[k]=map[k]||{key:k,jobs:[]}).jobs.push(j)});
   return Object.values(map).map(c=>{c.jobs.sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||(b.updatedAt||0)-(a.updatedAt||0));const i=c.rec||c.jobs[0].info;
     c.name=i.customer||"(no name)";c.email=i.email||"";c.phone=i.phone||"";c.gate=i.gate||"";c.address=[i.address,i.city].filter(Boolean).join(", ");
@@ -1703,9 +1715,11 @@ function custForm(){const c=S.custEdit;const isNew=!S.custs[c.id];const miss=cus
     <div class="f"><span>Property type *</span><div class="grid2">${pt("residential","Residential")}${pt("commercial","Commercial")}</div></div>
     ${cfld("Property notes (dogs, parking, where the controller is…)","notes","textarea")}
     <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;margin:8px 0"><input type="checkbox" data-cfcheck="remindersOff" ${c.remindersOff?"checked":""} style="width:20px;height:20px;flex:none"><span>Customer opted out of maintenance reminders</span></label>
+    <div id="cust-dup">${custDupNote(c)}</div>
     <p class="small" id="cust-miss" style="margin:0" ${miss.length?"":"hidden"}><b>Still needed:</b> <span>${esc(miss.join(", "))}</span></p>
     <button class="btn" id="cust-save" style="width:100%;min-height:52px" data-custsave="1" ${miss.length?"disabled":""}>${S.custPick?"Save & set up the job":isNew?"Save customer":"Save changes"}</button></div>`}
-function custLive(){const c=S.custEdit;if(!c)return;const m=custMissing(c);const p=document.getElementById("cust-miss"),b=document.getElementById("cust-save");if(p){p.hidden=!m.length;p.querySelector("span").textContent=m.join(", ")}if(b)b.disabled=!!m.length}
+function custDupNote(c){const m=custMatch(c,c.id);return m?`<div class="note warn small"><b>${esc(m.customer||"A customer")}${m.custNo?" (Customer "+esc(m.custNo)+")":""}</b> already has this ${String(c.address||"").trim()&&normAddr(m.address,m.city)===normAddr(c.address,c.city)?"address":"email"}. <button type="button" class="linkbtn" data-cust="c:${esc(m.id)}" data-dupopen="1">Open that profile instead</button></div>`:""}
+function custLive(){const c=S.custEdit;if(!c)return;{const el=document.getElementById("cust-dup");if(el)el.innerHTML=custDupNote(c)}const m=custMissing(c);const p=document.getElementById("cust-miss"),b=document.getElementById("cust-save");if(p){p.hidden=!m.length;p.querySelector("span").textContent=m.join(", ")}if(b)b.disabled=!!m.length}
 function customersView(){if(S.custEdit)return custForm();const cs=customers();
   if(S.custOpen&&!S.custPick){const c=cs.find(x=>x.key===S.custOpen);if(c)return customerDetail(c);S.custOpen=null}
   const nocust=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -2593,6 +2607,7 @@ app.addEventListener("click",ev=>{
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
   if(d.custcancel){S.custEdit=null;render();return}
+  if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
   if(d.custpickcancel){S.custPick=false;S.home="jobs";render();return}
   if(d.cfset&&S.custEdit){S.custEdit[d.cfset]=d.v;render();return}
   if(d.editcust){const c=customers().find(x=>x.key===d.editcust);if(!c)return;let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)});S.custOpen="c:"+rec.id}S.custEdit=JSON.parse(JSON.stringify(rec));render();window.scrollTo(0,0);return}
