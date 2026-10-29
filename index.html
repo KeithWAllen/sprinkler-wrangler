@@ -406,7 +406,15 @@ const MAP_POINTS=[
   ["ctl","Controller","C","--accent"],["sensor","Sensor","S","--accent"],["zv","Zone valve","Z","--soil"],["valve","Valve","V","--soil"],
   ["pump","Pump","P","--water"],["head","Head","•","--ink"]];
 const MAP_LINES=[["main","Mainline","--water",7,""],["lateral","Lateral","--water",3.5,"10 7"],["drip","Dripline","--soil",3,"2 6"]];
-const STATUSES=["Scheduled","In progress","Audited","Approved","Declined","Completed"];
+const STATUSES=["Scheduled","In progress","Audited","Waiting","Approved","Declined","Completed"];
+/* Status is worked out from the job itself (never picked by hand), so the open list always matches the Outcome. */
+function jobStatus(j){const o=j.outcome;
+  if(o==="declined")return "Declined";
+  if(o==="approved")return j.completion&&j.completion.issuedAt?"Completed":"Approved";
+  if(o==="waiting")return "Waiting";
+  if((j.revs||[]).length)return "Audited";
+  if((j.controllers||[]).length||(j.mainline||[]).some(m=>(m.meters||[]).some(w=>w.flow)))return "In progress";
+  return "Scheduled"}
 const PROGS=["A","B","C","D"];
 const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
 
@@ -465,7 +473,7 @@ const IDB=(()=>{let dbp=null;
 function KP(){return S.training?"irr.train.":"irr."}
 const LS={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 function scheduleSave(id){
-  const j=S.jobs[id];if(!j)return;j.updatedAt=Date.now();dirty[id]=true;
+  const j=S.jobs[id];if(!j)return;j.updatedAt=Date.now();j.info.status=jobStatus(j);dirty[id]=true;
   clearTimeout(timers[id]);timers[id]=setTimeout(()=>flush(id),700);
 }
 async function flush(id){
@@ -562,7 +570,7 @@ function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTARE
 /* Fill in any missing pieces so an older or partial job can never break a screen */
 function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info=Object.assign({customer:"",phone:"",email:"",address:"",city:"",date:"",status:"Scheduled"},j.info||{});
-  if(j.info.status==="Inspected"||j.info.status==="Quoted")j.info.status="Audited";
+  j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
@@ -650,7 +658,8 @@ const YN=[["yes","Yes"],["no","No"]];
 function stepRow(label,path,pk,unit){const q=num(getP(job(),path));
   return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${unit&&unit!=="each"?`<div class="ap">per ${esc(unit)}</div>`:""}</div>
   <div class="step"><button type="button" data-step="${path}" data-d="-1" aria-label="Less">−</button><input type="number" inputmode="numeric" id="f-${path}" data-f="${path}" data-num="1" value="${q||""}" placeholder="0" aria-label="${esc(label)} quantity"><button type="button" data-step="${path}" data-d="1" aria-label="More">+</button></div></div>`}
-function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Approved:"ok",Declined:"bad",Completed:"ok"};return `<span class="pill ${m[status]||"neutral"}">${esc(status)}</span>`}
+function statusLabel(st){return {Waiting:"Waiting to hear",Declined:"Audit only"}[st]||st}
+function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Waiting:"warn",Approved:"ok",Declined:"bad",Completed:"ok"};const label=statusLabel(status);return `<span class="pill ${m[status]||"neutral"}">${esc(label)}</span>`}
 function delBtn(id,label){const armed=S.armed===id;return `<button type="button" class="btn danger sm ${armed?"armed":""}" data-arm="${esc(id)}">${armed?"Tap again to remove":label||"Remove"}</button>`}
 
 /* ---------------- views ---------------- */
@@ -741,7 +750,7 @@ function jobView(){
   if(S.tab==="dispatch")S.tab="mainline";
   const v={map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
-    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(j.info.status)} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
+    <div style="flex:1;min-width:0"><div class="sub">${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(statusLabel(j.info.status))} · ${money(e.total)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
   <div class="wrap"><main>${banner()}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
@@ -792,7 +801,7 @@ function dispatchTab(){const j=job();const miss=missingCustomer(j);
   <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
   <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
-  ${seg("Status","info.status",STATUSES)}
+  <div class="f"><span>Status</span><div>${pillFor(jobStatus(j))} <span class="small muted">Set automatically from the job's progress and Outcome.</span></div></div>
   ${fld("Problem reported / dispatch notes","info.notes","textarea")}</div>
   ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Removes this job and its map for good.</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}`;
 }
@@ -1511,7 +1520,6 @@ async function issueRev(j){
   const html=reportHtml(j,rev);
   delete j.est.revNote;
   rev.fp=jobPrint(j);revs.push(rev);
-  if(j.info.status==="Scheduled"||j.info.status==="In progress")j.info.status="Audited";
   await putRevHtml(j,n,html);
   scheduleSave(S.cur);rr();toast("Rev "+revNo(n)+" issued");
 }
@@ -2468,8 +2476,8 @@ app.addEventListener("click",ev=>{
     if(kind==="lat"){z.laterals=z.laterals||[];z.laterals.push(TPL.lateral());toast("Lateral break added. Fill in its size and length below")}
     scheduleSave(S.cur);rr();return}
   if(d.tl){j.est.tl=Object.assign({},j.est.tl||{});const l=buildEstimate(j).lines.find(x=>lineKey(x)===d.tl);if(l){j.est.tl[d.tl]=lineColor(j,l)==="r"?"y":"r"}scheduleSave(S.cur);rr();return}
-  if(d.outcome){j.outcome=d.outcome;if(d.outcome==="approved"&&j.info.status!=="Completed")j.info.status="Approved";if(d.outcome==="declined")j.info.status="Declined";if(d.outcome==="waiting"&&j.info.status!=="Completed")j.info.status="Audited";scheduleSave(S.cur);rr();return}
-  if(d.compissue){const c=j.completion;if(!c)return;c.issuedAt=Date.now();c.by=(S.me&&S.me.name)||j.info.tech||"";c.fp=compPrint(j);c.html=completionHtml(j);j.info.status="Completed";scheduleSave(S.cur);rr();toast("Completion report issued");return}
+  if(d.outcome){j.outcome=d.outcome;scheduleSave(S.cur);rr();return}
+  if(d.compissue){const c=j.completion;if(!c)return;c.issuedAt=Date.now();c.by=(S.me&&S.me.name)||j.info.tech||"";c.fp=compPrint(j);c.html=completionHtml(j);j.info.status=jobStatus(j);scheduleSave(S.cur);rr();toast("Completion report issued");return}
   if(d.compprint){printDoc(j.completion.html||completionHtml(j));return}
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
