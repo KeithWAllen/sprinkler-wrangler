@@ -453,7 +453,8 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hid
    TYPE-MMDDYY-CUSTNO-REV, e.g. A-102926-1001-00 (A = audit). Same customer, same day → 1001B, 1001C. */
 function jnParse(n){const m=String(n||"").match(/(\d+)$/);return m?+m[1]:0}
 function nextCustNo(){const pre=S.training?"T":"";const max=Object.values(S.custs).filter(c=>c.custNo&&String(c.custNo).startsWith("T")===!!S.training).reduce((m,c)=>Math.max(m,jnParse(c.custNo)),1000);return pre+(max+1)}
-function ensureCustNos(){Object.values(S.custs).filter(c=>c&&!c.custNo).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)||String(a.id).localeCompare(String(b.id))).forEach(c=>{c.custNo=nextCustNo();saveCust(c)})}
+function localNumbering(){return S.training||S.mode!=="db"}
+function ensureCustNos(){if(!localNumbering())return;Object.values(S.custs).filter(c=>c&&!c.custNo).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)||String(a.id).localeCompare(String(b.id))).forEach(c=>{c.custNo=nextCustNo();saveCust(c)})}
 function mmddyy(d){const x=d instanceof Date?d:new Date(d);return String(x.getMonth()+1).padStart(2,"0")+String(x.getDate()).padStart(2,"0")+String(x.getFullYear()).slice(2)}
 function jobTitle(j){if(!j)return "";const c=S.custs[j.custId];const cn=c&&c.custNo?String(c.custNo):"";const d=j.info&&j.info.date?new Date(j.info.date+"T12:00"):new Date(j.createdAt||Date.now());
   const day=mmddyy(d);let suf="";if(cn){const same=Object.values(S.jobs).filter(x=>x.custId===j.custId&&mmddyy(x.info&&x.info.date?new Date(x.info.date+"T12:00"):new Date(x.createdAt||0))===day).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));const i=same.findIndex(x=>x.id===j.id);if(i>0)suf=String.fromCharCode(65+i)}
@@ -525,14 +526,16 @@ async function deleteJob(id){
 }
 /* ---------- Customer profiles (created first, jobs hang off them) ---------- */
 const CUST_FIELDS=["customer","phone","email","address","city","gate"];
-function newCust(){return {id:uid("c"),custNo:nextCustNo(),createdAt:Date.now(),updatedAt:Date.now(),createdBy:(S.me&&S.me.id)||"",customer:"",phone:"",email:"",address:"",city:"",gate:"",propType:"",notes:"",remindersOff:false}}
+function newCust(){return {id:uid("c"),custNo:localNumbering()?nextCustNo():"",createdAt:Date.now(),updatedAt:Date.now(),createdBy:(S.me&&S.me.id)||"",customer:"",phone:"",email:"",address:"",city:"",gate:"",propType:"",notes:"",remindersOff:false}}
 function custMissing(c){const m=[];if(!String(c.customer||"").trim())m.push("Customer name");if(!String(c.address||"").trim())m.push("Street address");if(!String(c.city||"").trim())m.push("City");if(!String(c.phone||"").trim()&&!String(c.email||"").trim())m.push("Phone or email");if(!c.propType)m.push("Residential or commercial");return m}
 let custTimers={};
 function saveCust(c,linkedToo){c.updatedAt=Date.now();S.custs[c.id]=c;
   if(linkedToo)Object.values(S.jobs).filter(j=>j.custId===c.id).forEach(j=>{let ch=false;CUST_FIELDS.forEach(k=>{if((j.info[k]||"")!==(c[k]||"")){j.info[k]=c[k]||"";ch=true}});if(!!j.info.remindersOff!==!!c.remindersOff){j.info.remindersOff=!!c.remindersOff;ch=true}if(ch)scheduleSave(j.id)});
   clearTimeout(custTimers[c.id]);custTimers[c.id]=setTimeout(async()=>{
     if(S.mode==="local")LS.set(KP()+"custs",S.custs);
-    else if(S.mode==="db"&&!S.ro){try{await db.doc("customers/"+c.id).set(JSON.parse(JSON.stringify(c)))}catch(e){handleWriteErr(e)}}},400)}
+    else if(S.mode==="db"&&!S.ro){try{await db.doc("customers/"+c.id).set(JSON.parse(JSON.stringify(c)));
+      if(!c.custNo){const r=await db.doc("customers/"+c.id).get();const n=r.exists&&(r.data()||{}).custNo;if(n&&S.custs[c.id]){S.custs[c.id].custNo=n;const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))render()}}}catch(e){handleWriteErr(e)}}
+    delete custTimers[c.id]},400)}
 /* Older jobs made before customer profiles: give each customer a saved, numbered profile.
    The id comes from the customer's email/address, so two devices doing this at once produce the same profile. */
 function hashStr(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return (h>>>0).toString(36)}
@@ -1726,6 +1729,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
     ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
   <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
+  ${isChief()?`<div class="card sunk"><div class="row"><div class="spacer small muted">${c.jobs.length?`Deletes this customer and their ${c.jobs.length} job${c.jobs.length===1?"":"s"} (reports and invoices included) for everyone. It can't be undone.`:"Deletes this customer for everyone. It can't be undone."}</div>${delBtn("cust:"+c.key.replace(/:/g,"~"),c.jobs.length?`Delete customer + ${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"Delete customer")}</div></div>`:""}
   <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<button type="button" class="act custjob" data-open="${j.id}"><div class="al">${jobNoTag(j)}<div class="small">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</div><div class="ap">${(j.revs||[]).length?"Report Rev "+revNo(j.revs[j.revs.length-1].n):"No report yet"}${j.completion&&j.completion.issuedAt?" · completion report issued":""}</div></div>${pillFor(j.info.status)}</button>`).join("")}</div></div>`}
 /* New job for a returning customer: contact info plus their system, without old findings */
 function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)})}
@@ -2177,6 +2181,7 @@ function makeSupaDb(){
       async get(){
         if(col==="jobs"){const {data,error}=await sb.from("jobs").select("data").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
         if(col==="settings"){const {data,error}=await sb.from("settings").select("data").eq("key",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
+        if(col==="customers"){const {data,error}=await sb.from("customers").select("data").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
         if(col==="jobmedia"){const img=await down("bg/"+id+".jpg");return snap(id,img?{img}:null)}
         if(col==="photos"){const img=await down("ph/"+id+".jpg");return snap(id,img?{img}:null)}
         if(col==="revisions"){const {data,error}=await sb.from("reports").select("html").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data?{html:data.html}:null)}
@@ -2195,6 +2200,7 @@ function makeSupaDb(){
       },
       async delete(){
         if(col==="jobs"){await sb.from("invoices").delete().eq("job_id",id);await sb.from("reports").delete().eq("job_id",id);const {error}=await sb.from("jobs").delete().eq("id",id);if(error)throw sbErr(error);return}
+        if(col==="customers"){const {error}=await sb.from("customers").delete().eq("id",id);if(error)throw sbErr(error);return}
         if(col==="jobmedia"){await sb.storage.from(BUCKET).remove(["bg/"+id+".jpg"]);return}
         if(col==="photos"){await sb.storage.from(BUCKET).remove(["ph/"+id+".jpg"]);return}
       },
@@ -2250,7 +2256,7 @@ function startDb(d){
   },()=>toast("Lost connection to saved jobs. Check your signal."));
   db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
   db.collection("customers").onSnapshot(snap=>{if(S.training)return;S.custsErr=false;
-    for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}if(custTimers[id]&&S.custs[id])continue;const d=ch.doc.data();const prev=S.custs[id];if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
+    for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}const d=ch.doc.data();const prev=S.custs[id];if(prev&&d&&d.custNo&&prev.custNo!==d.custNo)prev.custNo=d.custNo;if(custTimers[id]&&prev)continue;if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
     S.custsLoaded=true;if(S.loaded){ensureCustNos();migrateLegacyCusts()}
     const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;if(!ME.open)render()},()=>{S.custsErr=true;render()});
   setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},8000);
@@ -2321,8 +2327,8 @@ function authView(){
     <button class="btn" ${busy}>${a.busy?"Saving…":"Save new password"}</button></form>
     <button class="linkbtn" data-auth="signin">Back to sign in</button>`;
   if(a.step==="waiting")body=(S.me||{}).account==="tech"
-    ?`<h2>Account created</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>. Your technician account is waiting for approval from Sprinkler Wrangler. Once you're approved, sign in again and your jobs will be here.</p><button class="btn quiet" data-signout="1">Sign out</button>`
-    :`<h2>Thanks for signing up</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>.</p><p>Your customer portal is on its way. Soon you'll be able to see your inspection reports, estimates and invoices here. We'll let you know when it's ready.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
+    ?`<h2>Account created</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>. Your technician account isn't active yet. You'll be notified when it's approved; then sign in again and your jobs will be here.</p><button class="btn quiet" data-signout="1">Sign out</button>`
+    :`<h2>Thanks for signing up</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>.</p><p>Your account isn't active yet. We'll notify you by email at this address as soon as it is. Then you'll be able to sign in and see your inspection reports, estimates and invoices.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
   if(a.step==="newpass")body=`<h2>Choose a new password</h2>${msg}
     <form data-authform="newpass" class="authf"><label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
     <button class="btn" ${busy}>Save new password</button></form>`;
@@ -2696,6 +2702,10 @@ function doRemove(key){
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
+  if(k==="cust"){if(!isChief())return;const ck=key.slice(5).replace(/~/g,":");const c=customers().find(x=>x.key===ck);if(!c)return;
+    c.jobs.forEach(jj=>deleteJob(jj.id));
+    if(c.rec){const id=c.rec.id;delete S.custs[id];if(S.mode==="local")LS.set(KP()+"custs",S.custs);else if(S.mode==="db"&&!S.ro)db.doc("customers/"+id).delete().catch(handleWriteErr)}
+    S.custOpen=null;S.cur=null;S.home="customers";render();toast("Customer deleted");return}
   if(k==="job"){const jj=S.jobs[a];if(!jj||!canDeleteJob(jj))return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
   const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
