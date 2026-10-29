@@ -391,6 +391,7 @@ const PRICE_DEFAULTS=(()=>{
   add("mv_replace","Mainline","Replace master valve","each",245,1);
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
+  add("ctl_program","Controller","Reprogram controller schedule","each",45,1);
   add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
   add("rain_replace","Controller","Replace rain/freeze sensor","each",125,1);
   add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
@@ -580,7 +581,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
   if(j.controllers.length)j.setupDone=true;
-  j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.modules=c.modules||[]});
+  j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
   j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
   return j}
 function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
@@ -618,11 +619,10 @@ function buildEstimate(j){
   });
   (j.controllers||[]).forEach(c=>{
     const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
-    if(a.replace)add(sec,"ctl_replace",1,[ctlBrand(c),c.model].filter(Boolean).join(" "));
-    if(c.power==="no"&&c.powerIssue==="transformer"&&a.transformer!==false&&!a.replace)add(sec,"transformer",1);
-    if(c.rain==="no"&&a.rainAdd!==false)add(sec,"rain_add",1);
-    if(c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")&&a.rainFix!==false)add(sec,"rain_replace",1);
+    {const on=ctlRecs(c).filter(r=>r.pk&&recOn(c,r));const rep=on.some(r=>r.k==="replace");let prog=false;
+      on.forEach(r=>{if(r.k==="transformer"&&rep)return;if(r.k==="decoder"||r.k==="module")return;if(r.pk==="ctl_program"){if(prog)return;prog=true}add(sec,r.pk,r.qty,r.detail)})}
     {const g={};f.ohm.forEach(x=>{if(x.fix)(g[x.fix]=g[x.fix]||[]).push(x.z)});Object.entries(g).forEach(([k,zs])=>add(sec,k,zs.length,"zone"+(zs.length>1?"s ":" ")+zs.join(", ")))}
+    (c.custom||[]).forEach(x=>addC(sec,x.desc,x.qty||1,x.price));
     if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,"#"+f.decoders.join(", #"));
     if(f.failedMods&&a.module!==false)add(sec,"module",f.failedMods);
   });
@@ -1193,7 +1193,7 @@ function controllersTab(){const j=job();
   <div class="grid2">${fld("Name",b+".name")}${fld("Location",b+".location","text",'placeholder="Garage wall"')}${sel("Brand",b+".brandPick",[["",c.brand?"(entered: "+c.brand+")":"Choose…"]].concat(CTL_BRANDS))}${c.brandPick==="Other"?fld("Brand name",b+".brandOther"):""}${fld("Model",b+".model")}</div>
   <div class="grid3">${fld("Number of zones",b+".zones","number",'data-rr="1" min="1" max="200"')}</div>
   ${seg("Power to controller?",b+".power",YN,{no:"bad"})}
-  ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"]]):""}
+  ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"],["controller","Controller itself"]]):""}
   ${seg("Wiring",b+".wiring",[["conventional","Conventional"],["2wire","2-wire"]])}
   ${rainBlock(c,b)}
   ${seg("Modular?",b+".modular",YN)}
@@ -1209,18 +1209,37 @@ function controllersTab(){const j=job();
     ${multi("Water days",pb+".days",DAYS)}
     <div class="rt">${Array.from({length:zn},(_,i)=>`<label>Z${i+1} min<input type="number" inputmode="numeric" id="f-${pb}.runtimes.${i+1}" data-f="${pb}.runtimes.${i+1}" value="${esc((p.runtimes||{})[i+1])}"></label>`).join("")}</div></div>`}).join("")}
   <div style="padding-top:8px"><button class="btn ghost sm" data-addprog="${ci}">+ Add program</button></div></details>
-  <div class="combo"><h4>Recommend</h4><div class="acts">
-    ${chk(b+".act.replace","Replace controller","ctl_replace")}
-    ${c.power==="no"&&c.powerIssue==="transformer"?chk(b+".act.transformer","Replace transformer","transformer",true):""}
-    ${c.rain==="no"?chk(b+".act.rainAdd","Add rain/freeze sensor","rain_add",true):""}
-    ${c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed")?chk(b+".act.rainFix","Replace rain/freeze sensor","rain_replace",true):""}
-
-    ${f.decoders.length?chk(b+".act.decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"decoder",true):""}
-    ${f.failedMods?chk(b+".act.module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"module",true):""}
-  </div></div>
+  ${recsBlock(c,ci)}
   ${fld("Notes",b+".notes","textarea")}
   <div>${delBtn("ctl:"+ci,"Remove controller")}</div></div>`}).join("")+(S.addingCtl&&S.ctlDraft?ctlSetupForm("Add another controller",false):`<div><button class="btn ghost" data-addctl="1">+ Add another controller</button></div>`);
 }
+/* ---- Controller recommendations: built from what the tech entered ----
+   Each rec: k (stored in c.act), label, why, pk (price key, or null = advice only), qty, detail, def (starts added?) */
+function parseStarts(t){return String(t||"").split(/[,;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean).map(x=>{const m=x.match(/^(\d{1,2})(?::(\d{2}))?\s*(a|am|p|pm)?$/);if(!m)return null;let h=+m[1];const mi=+(m[2]||0);const ap=m[3];if(ap&&ap[0]==="p"&&h<12)h+=12;if(ap&&ap[0]==="a"&&h===12)h=0;return h*60+mi}).filter(x=>x!=null)}
+function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def,qty,detail)=>R.push({k,label,why,pk,def:!!def,qty:qty||1,detail:detail||""});
+  const tier=brandTier(ctlBrand(c));
+  const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push("economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.overcurrent==="yes")replaceWhy.push("overcurrent on the 2-wire path");if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
+  if(replaceWhy.length)add("replace","Replace controller","Because of: "+replaceWhy.join(", ")+".","ctl_replace",false,1,[ctlBrand(c),c.model].filter(Boolean).join(" "));
+  if(c.power==="no"&&c.powerIssue==="transformer")add("transformer","Replace transformer","No power and the transformer failed.","transformer",true);
+  if(c.power==="no"&&c.powerIssue==="outlet")add("outlet","Customer to have an electrician restore power to the outlet","The outlet has no power. Check the GFCI and breaker first.",null,true);
+  if(c.rain==="no")add("rainAdd","Add rain/freeze sensor","No rain/freeze sensor installed. Stops watering in rain and freezing weather.","rain_add",true);
+  if(c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed"))add("rainFix","Replace rain/freeze sensor",`The sensor is ${c.rainStatus==="bypassed"?"bypassed":"not working"}.`,"rain_replace",true);
+  if(c.wiring==="2wire"&&f.decoders.length)add("decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"Decoder"+(f.decoders.length>1?"s":"")+" not communicating: #"+f.decoders.join(", #"),"decoder",true,f.decoders.length,"#"+f.decoders.join(", #"));
+  if(f.failedMods)add("module",`Replace ${f.failedMods} failed module${f.failedMods>1?"s":""}`,"Module marked failed.","module",true,f.failedMods);
+  const progs=c.programs||[];
+  const day=progs.filter(p=>parseStarts(p.starts).some(t=>t>=600&&t<1080)).map(p=>p.name);
+  if(day.length)add("schedDay","Move start times outside 10 am to 6 pm",`Program ${day.join(", ")} starts during the day. Daytime watering loses water to evaporation, and many Texas cities restrict it.`,"ctl_program",false);
+  const many=progs.filter(p=>(p.days||[]).length>2).map(p=>p.name);
+  if(many.length)add("schedDays","Cut watering to 2 days a week or fewer",`Program ${many.join(", ")} waters more than twice a week. Check the city's watering rules.`,"ctl_program",false);
+  const hi=progs.filter(p=>num(p.seasonal)>100).map(p=>p.name);
+  if(hi.length)add("schedSeason","Set seasonal adjust back to 100% or lower",`Program ${hi.join(", ")} has seasonal adjust above 100%, which over-waters.`,"ctl_program",false);
+  return R}
+function recOn(c,r){const v=(c.act||{})[r.k];return v===undefined?r.def:!!v}
+function recsBlock(c,ci){const recs=ctlRecs(c);const cus=c.custom||[];
+  return `<div class="combo recs"><h4>Recommendations</h4><p class="small muted" style="margin:0">Built from what you entered on this page. Tap Add to put one on the estimate. Prices are set on the Estimate tab.</p>
+  <div class="acts">${recs.map(r=>{const on=recOn(c,r);return `<div class="act ${on?"on":""}"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}${r.pk?"":" (advice on the report, no charge)"}</div></div><button type="button" class="chip recbtn" data-rec="${ci}|${r.k}" aria-pressed="${on}">${on?"✓ Added":"+ Add"}</button></div>`}).join("")||'<p class="small muted" style="margin:0">Nothing flagged from what you entered so far.</p>'}
+  ${cus.map((x,xi)=>`<div class="act on"><div class="al">${esc(x.desc)}<div class="ap">Your recommendation${num(x.price)?"":" · price it on the Estimate tab"}</div></div>${delBtn("ccus:"+ci+":"+xi,"✕")}</div>`).join("")}</div>
+  <div class="row" style="flex-wrap:nowrap;gap:8px"><input type="text" id="ctlrec-${ci}" placeholder="Add your own recommendation" style="flex:1;min-width:0" data-ctlrecin="${ci}"><button type="button" class="btn sm" data-ctlrecadd="${ci}">Add</button></div></div>`}
 function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
   const bands=[["short",`Short`,`under ${cut.short}`],["ok","Normal",`${cut.short}–${cut.high}`],["high","High",`${cut.high+1}–${cut.float}`],["float","Floating",`over ${cut.float}`],["open","Open","OL"]];
   return `<div class="combo"><h4>Zone wire readings</h4><p class="small muted" style="margin:0">Pick each zone's range on your meter. ${f.unread?`<b>${f.unread} zone${f.unread===1?"":"s"} still to read.</b>`:"All zones read."}</p>
@@ -1292,6 +1311,8 @@ function estimateTab(){const j=job();const e=buildEstimate(j);
   <div class="card"><h2>Adjustments</h2><div class="acts">${chk("est.trip","Service call / trip charge","trip",true)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
   <div class="grid3">${fld("Discount ($)","est.discount","number",'data-rr="1"')}${fld("Sales tax %","est.tax","number",'data-rr="1"')}</div>
   <p class="small muted">Texas charges sales tax on most residential lawn sprinkler repair; 8.25% is the common combined rate. Check your local rate.</p>
+  ${(()=>{const rows=[];j.controllers.forEach((c,ci)=>(c.custom||[]).forEach((x,xi)=>rows.push([c,ci,x,xi])));if(!rows.length)return "";const need=rows.filter(r=>!num(r[2].price)).length;
+    return `<div class="combo ${need?"need":""}"><h4>Technician recommendations</h4><p class="small muted" style="margin:0">Added on the Controller tab. ${need?`<b>${need} still need${need===1?"s":""} a price.</b>`:"All priced."}</p>${rows.map(([c,ci,x,xi])=>`<div class="grid3" style="align-items:end"><div class="f"><span>${esc(c.name)}</span><div>${esc(x.desc)}</div></div>${fld("Qty",`controllers.${ci}.custom.${xi}.qty`,"number")}${fld("Price each",`controllers.${ci}.custom.${xi}.price`,"number",'inputmode="decimal" step="0.01"')}</div>`).join("")}</div>`})()}
   <div class="combo"><h4>Additional items</h4>${(j.est.extra||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`est.extra.${ci}.desc`)}${fld("Qty",`est.extra.${ci}.qty`,"number")}${fld("Price each",`est.extra.${ci}.price`,"number")}<div>${delBtn("ext:"+ci,"Remove")}</div></div>`).join("")}<div><button class="btn ghost sm" data-add="est.extra" data-tpl="custom">+ Add item</button></div></div>
   ${fld("Terms shown on estimate/invoice","est.terms","textarea")}</div>`;
 }
@@ -1312,7 +1333,8 @@ function findings(j,tech){
   });
   (j.controllers||[]).forEach(c=>{const it=[];const f=ctlFlags(c);
     it.push(`${[ctlBrand(c),c.model].filter(Boolean).map(esc).join(" ")||"Controller"}${c.location?" at "+esc(c.location):""}, ${num(c.zones)} zones, ${c.wiring==="2wire"?"2-wire":"conventional wiring"}${c.modular==="yes"?", modular":""}`);
-    if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":"transformer failed"}`:""}`);
+    if(c.power==="no")it.push(`<span class="flag">No power to the controller</span>${c.powerIssue?` — ${c.powerIssue==="outlet"?"outlet has no power":c.powerIssue==="controller"?"the controller itself won't power on":"transformer failed"}`:""}`);
+    ctlRecs(c).filter(r=>!r.pk&&recOn(c,r)).forEach(r=>it.push("Recommended: "+esc(r.label)+"."));
     if(c.rain==="no")it.push("No rain/freeze sensor installed. One is recommended.");else if(c.rain==="yes")it.push(c.rainStatus==="working"?"Rain/freeze sensor installed and working":c.rainStatus==="notworking"?`<span class="flag">Rain/freeze sensor not working</span>`:c.rainStatus==="bypassed"?`<span class="flag">Rain/freeze sensor bypassed or disconnected</span>`:"Rain/freeze sensor installed");
     f.ohm.forEach(x=>it.push(`<span class="flag">Zone ${x.z}: ${OHM_LONG[x.st]}</span>${tech&&x.v?` (${esc(String(x.v))}${/^\d/.test(String(x.v))?" Ω":""})`:""}`));if(c.wiring==="conventional"&&!f.ohm.length&&!f.unread&&num(c.zones))it.push("All zone wire readings normal");
     if(c.overcurrent==="yes")it.push(`<span class="flag">Overcurrent on the 2-wire path</span>${c.ocZones?`, affecting ${esc(c.ocZones)} zones`:""}`);
@@ -2360,6 +2382,7 @@ function portalView(){
 /* ---------------- events ---------------- */
 const app=document.getElementById("app");
 function rr(){render.keep=true;render()}
+app.addEventListener("keydown",ev=>{const t=ev.target;if(ev.key==="Enter"&&t.dataset&&t.dataset.ctlrecin!=null){ev.preventDefault();const b=document.querySelector('[data-ctlrecadd="'+t.dataset.ctlrecin+'"]');if(b)b.click()}});
 app.addEventListener("input",ev=>{
   const t=ev.target;
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
@@ -2430,6 +2453,8 @@ app.addEventListener("click",ev=>{
     saveCust(c,true);S.custEdit=null;
     if(S.custPick){S.custPick=false;const cc=customers().find(x=>x.key==="c:"+c.id);const nj=startJobFrom(cc);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("Customer saved. Now set up the visit.");return}
     S.custOpen="c:"+c.id;render();window.scrollTo(0,0);toast("Customer saved");return}
+  if(d.rec&&job()){const [ci,k]=d.rec.split("|");const c=job().controllers[+ci];const r=ctlRecs(c).find(x=>x.k===k);if(!r)return;c.act=c.act||{};c.act[k]=!recOn(c,r);scheduleSave(S.cur);rr();return}
+  if(d.ctlrecadd&&job()){const ci=+d.ctlrecadd;const el=document.getElementById("ctlrec-"+ci);const v=el?el.value.trim():"";if(!v){if(el)el.focus();return}const c=job().controllers[ci];c.custom=c.custom||[];c.custom.push({desc:v,qty:1,price:""});scheduleSave(S.cur);rr();toast("Added. Set its price on the Estimate tab.");return}
   if(d.showdetails&&job()){S.showDetails=!S.showDetails;render();if(S.showDetails){const el=document.querySelector(".custdetails");if(el)el.scrollIntoView({block:"start"})}return}
   if(d.new){const nj=newJob();S.ctlDraft=null;S.jobs[nj.id]=nj;S.cur=nj.id;S.tab="mainline";scheduleSave(nj.id);if(sb&&isOffice()&&!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.intakedone&&job()){const j=job();if(intakeMissing(j).length)return;j.intake=false;delete j.intake;
@@ -2532,7 +2557,7 @@ function doRemove(key){
   if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
   if(k==="job"){const jj=S.jobs[a];if(!jj||!canDeleteJob(jj))return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
-  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
+  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
     zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
     mapclear:()=>{j.map.items=[];j.map.lines=[];toast("Map cleared")},
