@@ -226,7 +226,10 @@ ul.sol li::before{content:"✓ ";color:var(--good);font-weight:700}
 .up{border:1px dashed var(--line);border-radius:8px;padding:10px}
 .paid{display:inline-block;border:3px solid var(--good);color:var(--good);font-family:var(--display);font-size:1.6rem;font-weight:700;padding:4px 14px;border-radius:6px;letter-spacing:.08em}
 #printarea{display:none}
+/* Keep the traffic-light colors (dots, bars, pills) when printing or saving as PDF */
+.sheet,.sheet *,#printarea,#printarea *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
 @media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   #app,#toast,#me,#phbig,.phmodal,body::before{display:none!important}
   #printarea{display:block}
   body{background:#fff}
