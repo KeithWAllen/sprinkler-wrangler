@@ -600,7 +600,7 @@ async function boot(){
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     render();
   },err=>{toast("Lost connection to saved jobs");});
-  db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
   setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},6000);
 }
 function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA/.test(ae.tagName))return;render()}
@@ -1575,13 +1575,17 @@ function reportTab(){const j=job();loadBg(j.id);
 function revNo(n){return String(n).padStart(2,"0")}
 function fmtDT(t){return new Date(t).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}
 function hashStr(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return (h>>>0).toString(36)}
+/* Revision check compares only what the customer sees on the report: who/where, the findings and the estimate.
+   Behind-the-scenes data (links, emails, new app fields) never forces a new revision. */
 function jobPrint(j){
-  const info=Object.assign({},j.info);delete info.status;
-  const est=Object.assign({},j.est);delete est.revNote;
-  return hashStr(JSON.stringify({info,map:{items:j.map.items,lines:j.map.lines},mainline:j.mainline,controllers:j.controllers,zones:j.zones,upsells:j.upsells||[],est,
-    mapSold:j.mapSold||"",lines:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price])}));
-}
-function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];return last&&last.fp===jobPrint(j)?last:null}
+  const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
+  return hashStr(JSON.stringify({c:[i.customer||"",i.address||"",i.city||"",i.propType||""],
+    f:findings(j,false).map(([h,it])=>[h,(it||[]).map(strip)]),
+    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||""}))}
+function fpReady(){return S.mode==="local"||(S.mode==="db"&&S.loaded&&S.pricingReady)}
+function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];if(!last)return null;
+  if(last.fpv!==2){if(!fpReady())return last;last.fp=jobPrint(j);last.fpv=2;if(S.mode==="db"&&!S.ro&&!S.training)scheduleSave(j.id)}
+  return last.fp===jobPrint(j)?last:null}
 async function issueRev(j){
   if(missingCustomer(j).length)return;
   const revs=j.revs=j.revs||[];const last=revs[revs.length-1];
@@ -1592,7 +1596,7 @@ async function issueRev(j){
   const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total,audit:auditSnapshot(j)};
   const html=reportHtml(j,rev);
   delete j.est.revNote;
-  rev.fp=jobPrint(j);revs.push(rev);
+  rev.fp=jobPrint(j);rev.fpv=2;revs.push(rev);
   await putRevHtml(j,n,html);
   scheduleSave(S.cur);rr();toast("Rev "+revNo(n)+" issued");
 }
@@ -2254,12 +2258,12 @@ function startDb(d){
     if(ME.open)return;
     render();
   },()=>toast("Lost connection to saved jobs. Check your signal."));
-  db.doc("settings/pricing").onSnapshot(s=>{if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
   db.collection("customers").onSnapshot(snap=>{if(S.training)return;S.custsErr=false;
     for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}const d=ch.doc.data();const prev=S.custs[id];if(prev&&d&&d.custNo&&prev.custNo!==d.custNo)prev.custNo=d.custNo;if(custTimers[id]&&prev)continue;if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
     S.custsLoaded=true;if(S.loaded){ensureCustNos();migrateLegacyCusts()}
     const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;if(!ME.open)render()},()=>{S.custsErr=true;render()});
-  setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},8000);
+  setTimeout(()=>{S.pricingReady=true;if(!S.loaded){S.loaded=true;render()}},8000);
   render();
 }
 
@@ -2481,7 +2485,7 @@ function teamView(){
     <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_chief&&p.is_admin?'<span class="pill ok">Chief admin</span>':p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm&&!p.is_chief&&p.id!==me.id&&(isChief()||!p.is_admin)?`<div class="row" style="gap:6px;justify-content:flex-end">${isChief()?(p.is_admin?delBtn("unadmin:"+p.email,"Remove admin"):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`):""}${delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
     ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${adm?delBtn("staff:"+e,"Remove"):""}</div>`).join("")}</div>
     ${adm?"":"<!--"}<form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
-    <p class="small muted" style="margin:0">The new technician then creates their own account on the sign-in screen with the technician's email you entered above. If that email already has an account, they become a technician right away.</p>${adm?"":"-->"}</div>
+    <p class="small muted" style="margin:0">For technicians only. The technician then creates their own account on the sign-in screen with this email. If that email already has an account, it becomes a technician right away. <b>Customers aren't added here</b>: add them on the Customers tab, and they sign up as a property owner with the email on their profile.</p>${adm?"":"-->"}</div>
   ${SHOW_PORTAL?"":"<!--"}<div class="card"><h2>Property owners</h2><p class="small muted" style="margin:0">Owners see only the issued reports and invoices for jobs where their email is the customer email.</p>
     ${owners.length?`<div class="acts">${owners.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}</div></div></div>`).join("")}</div>`:'<p class="muted" style="margin:0">No owners have signed up yet.</p>'}</div>${SHOW_PORTAL?"":"-->"}`;
 }
