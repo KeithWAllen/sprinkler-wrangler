@@ -172,6 +172,7 @@ tr.sec td{background:var(--sunk);font-family:var(--display);font-weight:700;font
 
 /* report sheet */
 .sheet{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:22px 18px;display:grid;gap:18px}
+.sheet .dhead{text-align:center;border-bottom:3px solid var(--accent);padding-bottom:14px}.sheet .dtitle{font-family:var(--display);font-size:2.1rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;line-height:1.05;color:var(--ink)}.sheet .dsub{color:var(--muted);font-size:.92rem;margin-top:4px}.sheet .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 28px;margin-top:16px;text-align:left}.sheet .dcell{border-top:1px solid var(--line);padding-top:8px}.sheet .dlab{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:2px}.sheet .dval{font-size:.98rem;line-height:1.35}.sheet .dval b{font-size:1.12rem}
 .sheet .lh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:3px solid var(--accent);padding-bottom:12px}
 .sheet .lh h1{font-size:1.9rem}
 .sheet h2{font-size:1.15rem;border-bottom:1px solid var(--line);padding-bottom:4px}
@@ -1419,6 +1420,8 @@ function reportHtml(j,rev){
   if(S.training)return TRAIN_STAMP+reportHtmlReal(j,rev);
   return reportHtmlReal(j,rev);
 }
+/* Shared document header: centered title, then a balanced 2 x 2 block (one font throughout) */
+function docHead(title,sub,cells){return `<div class="dhead"><div class="dtitle">${title}</div>${sub?`<div class="dsub">${sub}</div>`:""}<div class="dgrid">${cells.map(([l,v])=>`<div class="dcell"><div class="dlab">${l}</div><div class="dval">${v}</div></div>`).join("")}</div></div>`}
 function reportHtmlReal(j,rev){
   const e=buildEstimate(j);const d=j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
   const f=findings(j,!!j.est.showTech);const hasMap=j.map.items.length||j.map.lines.length;
@@ -1427,8 +1430,12 @@ function reportHtmlReal(j,rev){
   const other=e.lines.filter(l=>l.sec==="Additional items");
   const ups=SHOW_UPSELLS?(j.upsells||[]).filter(u=>u.status!=="declined"&&(u.desc||u.cat)):[];
   const biz=bizInfo();
-  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} irrigation inspection report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div>${jobTitle(j)?`<div class="small"><b>Job ${esc(jobTitle(j))}</b></div>`:""}</div>
-  <div style="text-align:right">${rev?`<div class="eyebrow">Revision</div><div class="mono" style="font-size:1.15rem;font-weight:600">${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}</div>${rev.at?`<div class="small muted">Issued ${esc(fmtDT(rev.at))}</div>`:""}<div class="eyebrow" style="margin-top:6px">Inspection date</div>`:`<div class="eyebrow">Date</div>`}<div>${esc(d)}</div>${j.info.tech?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(j.info.tech)}</div>`:""}</div></div>
+  const addr=esc([j.info.address,j.info.city].filter(Boolean).join(", "));
+  return `${docHead("Irrigation Inspection Report",`${j.info.propType==="commercial"?"Commercial":"Residential"}${biz.name?" · "+esc(biz.name):""}`,[
+    ["Prepared for",`<b>${esc(j.info.customer||"Customer")}</b><div>${addr}</div>`],
+    ["Job",`<b>${esc(jobTitle(j))}</b>${rev?`<div>${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}${rev.at?" · Issued "+esc(fmtDT(rev.at)):""}</div>`:""}`],
+    [rev?"Inspection date":"Date",esc(d)||"—"],
+    ["Technician",esc(j.info.tech||"—")]])}
   <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
   ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is in the Estimate section below.</p>${scorecard(j)}</section>
   ${hasMap&&!mapIncluded(j)?mapTeaser():""}
@@ -1527,8 +1534,8 @@ function invoiceHtmlReal(j){
   return `<div class="lh"><div><div class="eyebrow">${kind}</div><h1>${esc(b.name||"Your business name")}</h1>
     <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
     <div class="small">Licensed Irrigator: ${esc(b.irr||"—")} · LI ${esc(b.lic||"—")}</div></div>
-    <div style="text-align:right"><div class="eyebrow">${kind} #</div><div class="mono">${esc(inv.no||"—")}</div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
-    ${jobTitle(j)?`<div class="eyebrow" style="margin-top:6px">Job</div><div class="mono">${esc(jobTitle(j))}</div>`:""}${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div class="mono">Rev ${revNo(cur.n)}</div>`:""}</div></div>
+    <div style="text-align:right"><div class="eyebrow">${kind} #</div><div><b>${esc(inv.no||"—")}</b></div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
+    ${jobTitle(j)?`<div class="eyebrow" style="margin-top:6px">Job</div><div>${esc(jobTitle(j))}</div>`:""}${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div>Rev ${revNo(cur.n)}</div>`:""}</div></div>
   <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
@@ -1888,8 +1895,11 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
   const nowCell=i=>i.status==="done"?`${tlDot("g")} <b>Fixed</b>`:i.status==="declined"?`${tlDot(i.c)} Declined by customer`:`${tlDot(i.c)} Not done yet`;
   const ord={r:0,y:1};const items=c.items.slice().sort((a,b)=>ord[a.c]-ord[b.c]);
   const figs=[];items.forEach(i=>(i.pic_ph||[]).forEach(id=>figs.push(`<figure class="rph"><img data-ph="${id}" alt="${esc(i.label)}"><figcaption>After: ${esc(i.label)}</figcaption></figure>`)));
-  return `<div class="lh"><div><div class="eyebrow">${biz.name?esc(biz.name)+" · ":""}Completion report</div><h1>${esc(j.info.customer||"Customer")}</h1><div class="muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div>${jobTitle(j)?`<div class="small"><b>Job ${esc(jobTitle(j))}</b></div>`:""}</div>
-    <div style="text-align:right"><div class="eyebrow">Audit</div><div class="mono">Rev ${revNo(c.rev)} · ${esc(d(rv.at))}</div><div class="eyebrow" style="margin-top:6px">Completed</div><div>${esc(d(c.issuedAt||Date.now()))}</div>${c.by?`<div class="eyebrow" style="margin-top:6px">Technician</div><div>${esc(c.by)}</div>`:""}</div></div>
+  return `${docHead("Completion Report",`${j.info.propType==="commercial"?"Commercial":"Residential"}${biz.name?" · "+esc(biz.name):""}`,[
+    ["Prepared for",`<b>${esc(j.info.customer||"Customer")}</b><div>${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div>`],
+    ["Job",`<b>${esc(jobTitle(j))}</b><div>Audit Rev ${revNo(c.rev)} · ${esc(d(rv.at))}</div>`],
+    ["Completed",esc(d(c.issuedAt||Date.now()))],
+    ["Technician",esc(c.by||j.info.tech||"—")]])}
   <section><h2>Before and after</h2><div class="ba">
     <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> fix now ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
     <div class="baarrow" aria-hidden="true">→</div>
