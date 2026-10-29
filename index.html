@@ -784,9 +784,10 @@ function assignSel(j){if(!S.team){loadTeam();return `<label class="f"><span>Assi
   const ts=techList();return `<label class="f"><span>Assigned technician</span><select data-assign="1" id="assign-sel">${j.assign?"":'<option value="">Pick a technician</option>'}${ts.map(p=>`<option value="${esc(p.id)}" ${j.assign&&j.assign.id===p.id?"selected":""}>${esc(p.name||p.email)}</option>`).join("")}</select></label>`}
 function custBar(j){const i=j.info;const miss=missingCustomer(j);const tel=String(i.phone||"").replace(/[^\d+]/g,"");const open=!!S.showDetails;
   return `<div class="card custbar ${miss.length?"need":""}"><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div style="flex:1;min-width:0">
-    <b>${esc(i.customer||"No customer yet")}</b>${j.assign?` <span class="small muted">· ${sb&&S.me&&j.assign.id===S.me.id?"Assigned to you":"Assigned to "+esc(j.assign.name)}</span>`:""}
+    <b>${esc(i.customer||"No customer yet")}</b>
     <div class="small">${esc([i.address,i.city].filter(Boolean).join(", "))}${i.gate?` · <b>Gate ${esc(i.gate)}</b>`:""}${tel?` · <a href="tel:${esc(tel)}">${esc(i.phone)}</a>`:""}${i.window?" · "+esc(i.window):""}</div>
     ${i.notes?`<div class="small"><b>Problem reported:</b> ${esc(i.notes)}</div>`:""}
+    ${j.assign?`<div class="small muted">${sb&&S.me&&j.assign.id===S.me.id?"Assigned to you":"Assigned to "+esc(j.assign.name)}</div>`:""}
     ${miss.length?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Needed for the report:</b> ${esc(miss.join(", "))}</div>`:""}</div>
     <button class="btn ${open?"":"ghost"} sm" data-showdetails="1" aria-expanded="${open}">${open?"Close":"Details"}</button></div>
     ${open?`<div class="custdetails">${dispatchTab()}</div>`:""}</div>`}
