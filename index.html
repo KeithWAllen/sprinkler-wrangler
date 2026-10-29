@@ -634,6 +634,8 @@ function buildEstimate(j){
 }
 
 /* ---------------- UI helpers ---------------- */
+/* Quantity units worth printing (ft, hr…). "each" and "zone" are already clear from the line name. */
+function showU(u){return !!u&&u!=="each"&&u!=="zone"}
 function fld(label,path,type,extra){const v=getP(job(),path);const t=type||"text";
   if(t==="textarea")return `<label class="f"><span>${label}</span><textarea id="f-${path}" data-f="${path}" ${extra||""}>${esc(v)}</textarea></label>`;
   return `<label class="f"><span>${label}</span><input id="f-${path}" type="${t}" ${t==="number"?'inputmode="decimal"':""} data-f="${path}" value="${esc(v)}" ${extra||""}></label>`}
@@ -702,7 +704,7 @@ function docketView(){
   <div class="card"><div class="cardhead"><h2>Route</h2><span class="muted small">${day.length} job${day.length===1?"":"s"}</span></div>
   ${day.length?`<div class="tbl"><table><thead><tr><th>Window</th><th>Customer</th><th>Tech / truck</th><th>Status</th></tr></thead><tbody>${day.map(j=>`<tr><td class="num">${esc(j.info.window||"—")}</td><td><a href="#" data-open="${j.id}">${esc(j.info.customer||"Unnamed")}</a><div class="small muted">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}${j.info.gate?" · Gate "+esc(j.info.gate):""}</div></td><td>${esc([j.info.tech,j.info.truck].filter(Boolean).join(" / ")||"—")}</td><td>${pillFor(j.info.status)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Nothing scheduled this day. Set a job's date on its Dispatch tab.</p>`}</div>
   <div class="card"><div class="cardhead"><h2>Load docket</h2><span class="muted small">Parts to load from estimates</span></div>
-  ${rows.length?`<div class="tbl"><table><thead><tr><th>Part / material</th><th class="r">Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td class="r mono">${r.qty}${r.unit!=="each"?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
+  ${rows.length?`<div class="tbl"><table><thead><tr><th>Part / material</th><th class="r">Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td class="r mono">${r.qty}${showU(r.unit)?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
 }
 function pricesView(){
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
@@ -1261,7 +1263,7 @@ function estTable(e,editable){
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   let rows="",last=null;
   for(const l of e.lines){if(l.sec!==last){rows+=`<tr class="sec"><td colspan="4">${esc(l.sec)}</td></tr>`;last=l.sec}
-    rows+=`<tr><td>${esc(l.label)}</td><td class="r">${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`}
+    rows+=`<tr><td>${esc(l.label)}</td><td class="r">${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`}
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}<div><span>Tax</span><span>${money(e.tax)}</span></div><div class="grand"><span>Total</span><span>${money(e.total)}</span></div></div>`;
 }
@@ -1334,7 +1336,7 @@ function reportHtmlReal(j,rev){
   <section><h2>Issues and solutions</h2>${f.length?(()=>{const SC=sectionColors(j);const ord={r:0,y:1,g:2,n:3,"":3};return f.slice().sort((a,b)=>(ord[SC[a[0]]||""])-(ord[SC[b[0]]||""]))})().map(([h,it,ph])=>{const sc=sectionColors(j)[h]||"";const sol=work.filter(l=>l.sec===h);const zz=j.zones.find(z=>zoneSecName(j,z)===h);const st=sol.length?'<span class="pill bad">Needs repair</span>':zz&&zz.works==="no"?'<span class="pill bad">Not working</span>':zz&&!zz.works?'<span class="pill neutral">Not checked</span>':'<span class="pill ok">OK</span>';
     return `<div class="isec isec-${sc||"n"}"><div class="row"><h3 class="spacer">${sc&&sc!=="n"?tlDot(sc)+" ":""}${esc(h)}</h3>${sc&&sc!=="n"?`<span class="pill tlp-${sc}">${TL[sc][0]}</span>`:st}</div>
       <div class="isgrid"><div><div class="eyebrow">What we found</div>${it.length?`<ul>${it.map(x=>`<li>${x}</li>`).join("")}</ul>`:'<p class="muted small">Nothing noted.</p>'}</div>
-      <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||l.unit!=="each"?` <span class="muted">× ${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
+      <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||showU(l.unit)?` <span class="muted">× ${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
   ${equipmentSection(j)}
@@ -1437,7 +1439,7 @@ function invoiceHtmlReal(j){
 function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
   L.push(kind+" "+(inv.no||""));L.push(b.name);L.push(b.addr);L.push([b.phone,b.email].filter(Boolean).join(" · "));L.push("Licensed Irrigator: "+b.irr+" · LI "+b.lic);L.push("");
   L.push("Bill to: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
-  let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${l.unit!=="each"?" "+l.unit:""}  ${money(l.total)}`)});
+  let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${showU(l.unit)?" "+l.unit:""}  ${money(l.total)}`)});
   L.push("");L.push("Subtotal: "+money(e.sub));if(e.disc)L.push("Discount: -"+money(e.disc));L.push("Tax: "+money(e.tax));L.push("TOTAL: "+money(e.total));
   if(inv.kind==="invoice")L.push(inv.status==="paid"?"PAID":"Amount due: "+money(e.total));
   if(j.est.terms){L.push("");L.push(j.est.terms)}L.push("");L.push(TCEQ_NOTICE);return L.join("\n")}
@@ -1688,7 +1690,7 @@ function scorecard(j){const C=sectionColors(j);const n={r:0,y:0,g:0,n:0};Object.
 function estTableTL(j,e,editable){
   const groups={r:[],y:[],s:[]};e.lines.forEach(l=>{const c=lineColor(j,l);(c?groups[c]:groups.s).push(l)});
   const sub=ls=>ls.reduce((a,l)=>a+l.total,0);
-  const row=l=>{const c=lineColor(j,l);return `<tr><td>${editable&&c?`<button class="tlbtn" data-tl="${esc(lineKey(l))}" aria-label="Change color">${tlDot(c)}</button>`:tlDot(c)} ${esc(l.label)}<div class="small muted">${esc(l.sec)}</div></td><td class="r">${l.qty}${l.unit!=="each"?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`};
+  const row=l=>{const c=lineColor(j,l);return `<tr><td>${editable&&c?`<button class="tlbtn" data-tl="${esc(lineKey(l))}" aria-label="Change color">${tlDot(c)}</button>`:tlDot(c)} ${esc(l.label)}<div class="small muted">${esc(l.sec)}</div></td><td class="r">${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`};
   const block=(k,title,ls)=>ls.length?`<tr class="sec tlsec-${k}"><td colspan="3">${k!=="s"?tlDot(k)+" ":""}${title}</td><td class="r">${money(sub(ls))}</td></tr>${ls.map(row).join("")}`:"";
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
