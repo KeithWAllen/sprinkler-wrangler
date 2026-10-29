@@ -719,9 +719,9 @@ function jobView(){
   <div class="wrap"><main>${banner()}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
-function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
+function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(SHOW_JOB_TERMS&&!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
 function customerFields(){return `<div class="grid2">${fld("Customer name *","info.customer","text",'autocomplete="name"')}${fld("Phone","info.phone","tel")}${fld("Email","info.email","email")}${fld("Gate / access code","info.gate")}</div>
-  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div>${termsAgreeBlock(job())}<p class="small muted">* Required, plus a phone or email and the terms agreement, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
+  <div class="grid2">${fld("Street address *","info.address")}${fld("City *","info.city")}</div>${SHOW_JOB_TERMS?termsAgreeBlock(job()):remOptOut(job())}<p class="small muted">* Required, plus a phone or email${SHOW_JOB_TERMS?" and the terms agreement":""}, before the report can be produced.${sb&&SHOW_PORTAL?" The customer signs in with this email to see their reports and invoices.":""}</p>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
   <div class="card"><h2>Dispatch</h2><div class="grid2">${fld("Date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
@@ -1305,6 +1305,7 @@ function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<labe
 /* ---- upgrades / upsells ---- */
 /* Upgrades/upsells are built but hidden for now — set to true to turn them back on */
 const SHOW_UPSELLS=false;
+const SHOW_JOB_TERMS=false; /* in-job "customer agreed to terms" box: hidden for now (customers agree at sign-up). Set true to bring it back. */
 const UP_CATS=["Smart controller","Rain/freeze sensor","Water-efficient nozzles","Drip conversion","Backflow protection","Pressure regulation","Master valve","Zone expansion","Maintenance plan","Landscape lighting","Other"];
 const UP_STATUS=[["open","Not presented"],["presented","Presented"],["interested","Interested"],["accepted","Accepted"],["declined","Declined"]];
 function upSections(j){return ["Whole property"].concat(j.mainline.map(m=>m.name),j.controllers.map(c=>c.name),j.zones.map(z=>`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`))}
@@ -1499,9 +1500,10 @@ function termsVer(){return S.pricing._termsVer||"1"}
 function signupTerms(){const t=S.auth&&S.auth.terms;return t&&t.text?t:{text:TERMS_DEFAULT.replace(/\[Business\]/g,"Sprinkler Wrangler"),ver:"1"}}
 async function loadSignupTerms(){if(!sb)return;try{const {data}=await sb.from("settings").select("data").eq("key","terms").maybeSingle();if(data&&data.data&&data.data.text){S.auth.terms=data.data;if(S.mode==="auth")render()}}catch(e){}}
 function termsCard(){const adm=isAdmin();
-  return `<div class="card"><h2>Terms of Service</h2><p class="small muted" style="margin:0">Customers must agree to these before an audit report is issued. Raise the version when you change the wording. Have a lawyer review them.</p>
+  return `<div class="card"><h2>Terms of Service</h2><p class="small muted" style="margin:0">Customers agree to these when they create their account. Raise the version when you change the wording. Have a lawyer review them.</p>
   <div class="grid3"><label class="f"><span>Version</span><input id="p-_termsVer" data-price="_termsVer" type="text" value="${esc(termsVer())}" ${adm?"":"disabled"}></label></div>
   <label class="f"><span>Terms text ([Business] is replaced with your business name)</span><textarea id="p-_terms" data-price="_terms" rows="14" ${adm?"":"disabled"}>${esc(S.pricing._terms||TERMS_DEFAULT)}</textarea></label></div>`}
+function remOptOut(j){return `<label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;margin:8px 0"><input type="checkbox" data-remoff="1" ${j.info.remindersOff?"checked":""} style="width:20px;height:20px;flex:none"><span>Customer opted out of maintenance reminders</span></label>`}
 function termsAgreeBlock(j){const ok=j.info.termsAgreed;
   return `<div class="zcheck ${ok?"":"need"}"><div class="eyebrow">Required</div>
     <label class="row" style="gap:10px;cursor:pointer"><input type="checkbox" data-terms="1" ${ok?"checked":""} style="width:22px;height:22px"><b>Customer agreed to the Terms of Service</b></label>
@@ -1553,7 +1555,7 @@ function customersView(){const cs=customers();
     :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Customers appear once a job has a name and address.</p></div>`}${nocustCard}`}
 function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l;const eq=equipmentRows(sysJob);const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
   return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
-  <div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
+  <div class="card"><div class="cardhead"><h2>${esc(c.name)}</h2>${!SHOW_JOB_TERMS?"":c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
     <div class="small">${esc(c.address)}</div><div class="small">${esc([c.phone,c.email].filter(Boolean).join(" · "))}</div>
     <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>
     <div class="row"><button class="btn sm" data-startjob="${esc(c.key)}">Start a new job</button></div></div>
