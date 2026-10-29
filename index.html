@@ -305,6 +305,7 @@ details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;p
 .bellbtn{position:relative;background:none;border:1.5px solid rgba(255,255,255,.55);color:inherit;border-radius:999px;width:42px;height:42px;display:grid;place-items:center;cursor:pointer;margin-right:6px}.bellct{position:absolute;top:-4px;right:-4px;background:#d93a2f;color:#fff;border-radius:999px;font-size:11px;font-weight:800;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border:2px solid var(--accent)}.notifs{min-width:290px;max-width:min(360px,92vw)}.notif{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .presp{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 12px;margin-top:8px}.presp.ok{border-left-color:var(--tl-g)}
 .note.ok{background:rgba(46,158,91,.10);border-color:var(--tl-g)}.note.warn{background:rgba(242,183,5,.12);border-color:var(--tl-y)}
+.changelog{margin:4px 0 0;padding-left:18px;max-height:220px;overflow:auto}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -1583,7 +1584,7 @@ function reportTab(){const j=job();loadBg(j.id);
   else if(last)status=`<div class="note bad"><b>The job changed after Rev ${revNo(last.n)}.</b> Issue Rev ${revNo(nextN)} before sending or printing the report.</div>`;
   else status=`<div class="note">This report is a draft. Issue it as <b>Rev 00</b> to print, copy or save it.</div>`;
   const issueBox=cur?"":`<div class="combo"><h4>Issue Rev ${revNo(nextN)}</h4>
-    ${last?fld("What changed? (required)","est.revNote","text",'placeholder="e.g. Added zone 6 drip repair per customer"'):""}
+    ${last?(()=>{const log=changeLog(j,last);return `<div class="f"><span>Changes since Rev ${revNo(last.n)} (recorded automatically)</span><ul class="small changelog">${log.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>${fld("Note for the record (optional)","est.revNote","text",'placeholder="e.g. Customer asked to add zone 6 drip repair"')}`})():""}
     ${(()=>{const t=today();const d=j.info.date;const insp=!d||d>t?t:d;const fmt=x=>new Date(x+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
       return `<p class="small" style="margin:0"><b>Inspection date on this report:</b> ${fmt(insp)}${d&&d>t?` <span class="muted">(scheduled for ${fmt(d)}; today's date is used because the work was done today)</span>`:insp<t?` <span class="muted">(not today; open Details to correct it if needed)</span>`:""}</p>`})()}
     <div class="row"><button class="btn" data-issue="1">Issue Rev ${revNo(nextN)}</button><span class="small muted">Locks this version and records who issued it.</span></div></div>`;
@@ -1615,6 +1616,24 @@ function jobPrint(j){
 function estOptions(j){const e=buildEstimate(j);const rate=num(j.est.tax)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});
   const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
   return {rate:num(j.est.tax),fix:t(g.s+g.r),rec:g.y?t(g.y):null,all:t(e.sub,e.disc)}}
+/* Automatic change log: what the customer would see differently since the last issued revision */
+function revSnap(j){const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
+  return {who:[i.customer||"",[i.address,i.city].filter(Boolean).join(", ")],date:i.date||"",
+    f:[].concat(...findings(j,false).map(([h,it])=>(it||[]).map(x=>h+": "+strip(x)))),
+    l:buildEstimate(j).lines.map(l=>({k:l.sec+"|"+l.label,label:l.label,sec:l.sec,qty:l.qty,price:l.price}))}}
+function changeLog(j,last){if(!last)return [];const now=revSnap(j);const out=[];const fmtD=d=>d?new Date(d+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
+  const old=last.snap;
+  if(old){if(old.who[0]!==now.who[0])out.push(`Customer name: ${old.who[0]||"—"} → ${now.who[0]}`);if(old.who[1]!==now.who[1])out.push(`Address: ${old.who[1]||"—"} → ${now.who[1]}`);
+    if(old.date!==now.date)out.push(`Inspection date: ${fmtD(old.date)} → ${fmtD(now.date)}`);}
+  const ol=old?old.l:((last.audit||{}).lines||[]).map(x=>({k:x.sec+"|"+x.label,label:x.label,sec:x.sec,qty:x.qty,price:x.qty?x.total/x.qty:x.total}));
+  const nl=old?now.l:now.l.filter(l=>lineColor(j,{sec:l.sec,label:l.label,key:null})!==""||true).filter(l=>l.sec!=="Service"&&l.sec!=="Add-ons");
+  const om=new Map(ol.map(x=>[x.k,x])),nm=new Map(nl.map(x=>[x.k,x]));
+  nl.forEach(x=>{const o=om.get(x.k);if(!o)out.push(`Added: ${x.label} (${x.sec})`);else if(o.qty!==x.qty)out.push(`Quantity: ${x.label} ${o.qty} → ${x.qty}`);else if(Math.abs((o.price||0)-(x.price||0))>0.005)out.push(`Price: ${x.label} ${money(o.price)} → ${money(x.price)}`)});
+  ol.forEach(o=>{if(!nm.has(o.k))out.push(`Removed: ${o.label} (${o.sec})`)});
+  if(old){const of=new Set(old.f),nf=new Set(now.f);now.f.forEach(x=>{if(!of.has(x))out.push(`New finding: ${x}`)});old.f.forEach(x=>{if(!nf.has(x))out.push(`Finding no longer applies: ${x}`)})}
+  if(!old&&!out.length)out.push("Report updated to the current format (estimate, options and corrected dates)");
+  else if(!old)out.push("Report updated to the current format (estimate and options included)");
+  return out}
 function fpReady(){return S.mode==="local"||(S.mode==="db"&&S.loaded&&S.pricingReady)}
 function currentRev(j){const r=(j.revs||[]);const last=r[r.length-1];if(!last)return null;
   if(last.fpv!==2){if(!fpReady())return last;last.fp=jobPrint(j);last.fpv=2;if(S.mode==="db"&&!S.ro&&!S.training)scheduleSave(j.id)}
@@ -1625,10 +1644,10 @@ async function issueRev(j){
   if(last&&currentRev(j))return;
   /* The audit happened today: a booked date still in the future is the schedule, not the inspection date */
   {const t=today();if(j.info.date&&j.info.date>t){j.info.scheduledDate=j.info.date;j.info.date=t}}
-  const note=String(j.est.revNote||"").trim();
-  if(last&&!note){toast("Describe what changed before issuing");const el=document.getElementById("f-est.revNote");if(el)el.focus();return}
+  const extra=String(j.est.revNote||"").trim();const log=last?changeLog(j,last):[];
+  const note=last?[log.join("; "),extra].filter(Boolean).join(" — Note: "):"";
   const n=last?last.n+1:0;const at=Date.now();
-  const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",total:buildEstimate(j).total,audit:auditSnapshot(j)};
+  const rev={n,at,by:(S.me&&S.me.name)||j.info.tech||"",note:last?note:"First issue",changes:log,total:buildEstimate(j).total,audit:auditSnapshot(j),snap:revSnap(j)};
   const html=reportHtml(j,rev);
   delete j.est.revNote;
   rev.fp=jobPrint(j);rev.fpv=2;rev.options=estOptions(j);revs.push(rev);
