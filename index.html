@@ -2718,7 +2718,9 @@ app.addEventListener("click",ev=>{
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
     if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
-    if(d.notgo){S.bellOpen=false;S.cur=null;S.home=d.notgo;S.custEdit=null;S.custPick=false;render();window.scrollTo(0,0);return}
+    if(d.notgo){S.bellOpen=false;S.cur=null;S.home=d.notgo;S.custEdit=null;S.custPick=false;S.filter=d.notgo==="jobs"?"open":S.filter;render();window.scrollTo(0,0);
+      setTimeout(()=>{const tgt=d.notgo==="reminders"?document.querySelector("main [data-remcompose],main [data-remdone]"):d.notgo==="customers"?document.querySelector("main .card.need, main [data-opencust]"):document.querySelector("main .jobs .job");
+        const el=tgt&&(tgt.closest(".card")||tgt);if(el){el.scrollIntoView({behavior:"smooth",block:"center"});el.classList.add("pulse");setTimeout(()=>el.classList.remove("pulse"),1800)}},60);return}
     if(d.accsettings){S.acctOpen=false;S.cur=null;S.home="prices";render();window.scrollTo(0,0);return}
     if(d.who!==undefined){S.auth=Object.assign(S.auth,{who:d.who,err:"",msg:""});render();return}
     if(d.auth){if(d.auth==="signup"){S.auth.who="";loadSignupTerms()}if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
