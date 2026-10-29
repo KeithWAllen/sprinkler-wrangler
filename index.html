@@ -1720,6 +1720,25 @@ function custForm(){const c=S.custEdit;const isNew=!S.custs[c.id];const miss=cus
     <button class="btn" id="cust-save" style="width:100%;min-height:52px" data-custsave="1" ${miss.length?"disabled":""}>${S.custPick?"Save & set up the job":isNew?"Save customer":"Save changes"}</button></div>`}
 function custDupNote(c){const m=custMatch(c,c.id);return m?`<div class="note warn small"><b>${esc(m.customer||"A customer")}${m.custNo?" (Customer "+esc(m.custNo)+")":""}</b> already has this ${String(c.address||"").trim()&&normAddr(m.address,m.city)===normAddr(c.address,c.city)?"address":"email"}. <button type="button" class="linkbtn" data-cust="c:${esc(m.id)}" data-dupopen="1">Open that profile instead</button></div>`:""}
 function custLive(){const c=S.custEdit;if(!c)return;{const el=document.getElementById("cust-dup");if(el)el.innerHTML=custDupNote(c)}const m=custMissing(c);const p=document.getElementById("cust-miss"),b=document.getElementById("cust-save");if(p){p.hidden=!m.length;p.querySelector("span").textContent=m.join(", ")}if(b)b.disabled=!!m.length}
+/* ---- Customer (property owner) account approval ---- */
+function ownerAccounts(){return (S.team&&S.team.people||[]).filter(p=>p.role==="owner")}
+function ownerFor(rec){const e=String((rec||{}).email||"").trim().toLowerCase();return e?ownerAccounts().find(p=>p.email===e):null}
+function approveMail(p,rec){const b=bizInfo();const subj=`Your ${b.name||"Sprinkler Wrangler"} account is active`;
+  const body=`Hi ${(p.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${p.email} to see your inspection reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`;
+  return `mailto:${encodeURIComponent(p.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`}
+function accountRequests(){if(!sb||!isOffice())return "";if(!S.team){loadTeam();return ""}
+  const waiting=ownerAccounts().filter(p=>!p.approved);if(!waiting.length)return "";
+  return `<div class="card need"><div class="cardhead"><h2>Account requests</h2><span class="pill warn">${waiting.length}</span></div><p class="small muted" style="margin:0">Customers who signed up and are waiting for access. Approving lets them see their reports and invoices, and opens an email to tell them.</p>
+  <div class="acts">${waiting.map(p=>{const m=custMatch({email:p.email});return `<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)} · signed up ${esc(new Date(p.created_at||Date.now()).toLocaleDateString("en-US"))}</div>
+    <div class="ap">${m?`Matches <b>${esc(m.customer)}${m.custNo?" (Customer "+esc(m.custNo)+")":""}</b>`:`<span style="color:var(--bad)">No customer profile has this email.</span> Add it to their profile first (Edit details), or approve anyway.`}</div></div>
+    <button class="btn sm" data-approve="${esc(p.email)}|${esc(m?m.id:"")}">Approve</button></div>`}).join("")}</div></div>`}
+function portalStatus(c){if(!sb||!c.rec)return "";if(!S.team){loadTeam();return ""}const o=ownerFor(c.rec);
+  if(!c.rec.email)return `<div class="small muted">Portal: add an email to let this customer sign up.</div>`;
+  if(!o)return `<div class="small muted">Portal: no account yet. The customer signs up as a property owner with ${esc(c.rec.email)}.</div>`;
+  return o.approved?`<div class="small">Portal: <span class="pill ok">Active</span> <button class="linkbtn" data-revoke="${esc(o.email)}">Switch off access</button></div>`
+    :`<div class="small">Portal: <span class="pill warn">Waiting for approval</span> <button class="btn sm" data-approve="${esc(o.email)}|${esc(c.rec.id)}">Approve</button></div>`}
+async function setAccess(email,on,custId){const {error}=await sb.rpc("set_customer_access",{p_email:email,p_approve:on,p_cust:custId||null});
+  if(error){toast(error.message.replace(/^.*?:\s*/,""));return false}await loadTeam();render();return true}
 function customersView(){if(S.custEdit)return custForm();const cs=customers();
   if(S.custOpen&&!S.custPick){const c=cs.find(x=>x.key===S.custOpen);if(c)return customerDetail(c);S.custOpen=null}
   const nocust=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -1729,7 +1748,7 @@ function customersView(){if(S.custEdit)return custForm();const cs=customers();
   if(S.custPick)return `<div class="card"><div class="eyebrow">New job · Step 1 of 2</div><h2>Who is the job for?</h2><p class="small muted" style="margin:0">Pick the customer, or add a new one. Every job starts from a customer profile.</p>
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button><span class="spacer"></span><button class="btn quiet sm" data-custpickcancel="1">Cancel</button></div></div>
   ${cs.length?`<div class="jobs">${cs.map(c=>`<button class="job" data-startjob="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}</span></div><div class="amt"><span class="small">Choose ›</span></div></button>`).join("")}</div>`:""}`;
-  return `<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
+  return `${accountRequests()}<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button></div></div>
   ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
     return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
@@ -1740,7 +1759,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
   return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
   <div class="card"><div class="cardhead"><h2>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</h2>${!SHOW_JOB_TERMS?"":c.terms?`<span class="pill ok">Terms v${esc(c.terms.info.termsVer||"1")}</span>`:'<span class="pill warn">No terms on file</span>'}</div>
     <div class="small">${esc(c.address)}</div><div class="small">${esc([c.phone,c.email].filter(Boolean).join(" · "))}</div>
-    <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>
+    <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>${portalStatus(c)}
     ${c.gate?`<div class="small">Gate ${esc(c.gate)}</div>`:""}${c.rec&&c.rec.notes?`<div class="small"><b>Notes:</b> ${esc(c.rec.notes)}</div>`:""}
     <div class="row"><button class="btn sm" data-startjob="${esc(c.key)}">Create a job</button>${isOffice()?`<button class="btn ghost sm" data-editcust="${esc(c.key)}">Edit details</button>`:""}</div></div>
   <div class="card"><h3>Their system</h3><div class="small">${(sysJob.controllers||[]).map(x=>`${esc(ctlBrand(x)||"Controller")} ${esc(x.model||"")} · ${num(x.zones)} zones · ${x.wiring==="2wire"?"2-wire":"conventional"} · rain sensor: ${x.rain==="yes"?(x.rainStatus||"yes"):x.rain==="no"?"none":"not checked"}`).join("<br>")||"No controller recorded"}</div>
@@ -2298,9 +2317,9 @@ async function afterSignIn(session){
   if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
-  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||""};
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||"",approved:!!p.approved,custId:p.cust_id||""};
   if(p.role==="tech"){S.home=S.me.admin?"customers":"jobs";startDb(makeSupaDb());checkLocalImport()}
-  else if(SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
+  else if(p.approved||SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
 }
 function authView(){
@@ -2481,7 +2500,7 @@ async function discardLocal(){
 /* ---------- Team & account (technicians) ---------- */
 async function loadTeam(){if(S.teamLoading)return S.teamLoading;S.teamLoading=(async()=>{try{
   const [p,s]=await Promise.all([sb.from("profiles").select("*").order("created_at"),sb.from("staff_emails").select("email")]);
-  S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.cur||S.home==="team")renderKeepFocus();
+  S.team={people:p.data||[],staff:(s.data||[]).map(x=>x.email)};if(S.cur||S.home==="team"||S.home==="customers")renderKeepFocus();
   }finally{S.teamLoading=null}})();return S.teamLoading}
 function teamView(){
   if(!isAdmin()){const me=S.me;return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill neutral">Technician</span></div>
@@ -2606,6 +2625,8 @@ app.addEventListener("click",ev=>{
   if(d.open){ev.preventDefault();S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
+  if(d.approve){const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const a=document.createElement("a");a.href=approveMail(p||{email:em},S.custs[cid]);a.click()});return}
+  if(d.revoke){setAccess(d.revoke,false).then(ok=>ok&&toast("Portal access switched off"));return}
   if(d.custcancel){S.custEdit=null;render();return}
   if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
   if(d.custpickcancel){S.custPick=false;S.home="jobs";render();return}
