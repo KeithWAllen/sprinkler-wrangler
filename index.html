@@ -289,6 +289,7 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 .compi{gap:8px}
 .addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
 .terms{white-space:pre-wrap;font-size:.85rem;max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;background:var(--surface)}
+.combo.bad{border-color:var(--bad)}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -380,6 +381,8 @@ const PRICE_DEFAULTS=(()=>{
   add("bf_repair","Mainline","Backflow preventer repair","each",190,1);
   add("bf_replace","Mainline","Replace backflow preventer","each",395,1);
   add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
+  add("bf_test","Mainline","Backflow test (certified tester)","each",95,1);
+  add("bf_install","Mainline","Install backflow preventer (none present)","each",450,1);
   add("prv_repair","Mainline","PRV repair","each",110,1);
   add("prv_replace","Mainline","Replace PRV","each",325,1);
   add("iso_repair","Mainline","Isolation valve repair","each",75,1);
@@ -454,7 +457,9 @@ function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.i
   const c=j.controllers.find(x=>x.id===src.ctl);if(c&&n>num(c.zones))c.zones=n;
   j.zones.push(z);return z}
 function comp(){return {present:"",pos:"",size:"",type:"",condition:"",action:"none"}}
-function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"yes",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},notes:""}}
+/* Backflow test is due when there's no tag/record, or the last test is over 12 months old */
+function bfTestDue(m){const bf=m.bf||{};if(bf.present!=="yes")return false;if(bf.testRec==="unknown")return true;if(bf.testRec==="tag"&&bf.lastTest){return addMonths(new Date(bf.lastTest+"T12:00"),12)<new Date()}return false}
+function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},notes:""}}
 function newController(n){return {id:uid("c"),name:"Controller "+String.fromCharCode(64+(n||1)),brand:"",model:"",location:"",wiring:"conventional",modular:"no",modules:[],rain:"",zones:5,power:"yes",powerIssue:"",programs:[{id:uid("p"),name:"A",starts:"",days:[],seasonal:100,runtimes:{}}],ohms:{},overcurrent:"",ocZones:"",badDecoders:"",act:{},notes:""}}
 function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
   return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
@@ -573,7 +578,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
-  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
+  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
   if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.modules=c.modules||[]});
   j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
@@ -607,7 +612,8 @@ function buildEstimate(j){
   (j.mainline||[]).forEach(m=>{
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
-    const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1);
+    if(bfTestDue(m))add(sec,"bf_test",1);
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note")add(sec,"bf_install",1)}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k];if(c.present!=="yes")return;if(c.action==="repair")add(sec,p+"_repair",1);if(c.action==="replace")add(sec,p+"_replace",1)});
   });
   (j.controllers||[]).forEach(c=>{
@@ -1161,11 +1167,16 @@ function mainlineTab(){const j=job();
     ${seg("Leak visible?",b+".leak.visible",YN)}
     ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
-  <div class="combo"><h4>Backflow preventer</h4>
+  <div class="combo ${m.bf.present==="no"?"bad":""}"><h4>Backflow preventer</h4>
+    ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
+    ${m.bf.present==="no"?`<div class="note bad small"><b>No backflow preventer.</b> Texas (TCEQ) requires backflow prevention on any irrigation system connected to drinking water. This is marked Fix now on the report.</div>
+    ${seg("Recommend",b+".bf.noneAction",[["install","Install one"],["note","Note only (protection is elsewhere)"]])}`:m.bf.present!=="yes"?`<p class="small muted" style="margin:0">Answer first. The backflow details appear once you pick Yes.</p>`:`
     <div class="grid3">${fld("Size",b+".bf.size","text",'placeholder="1&quot;"')}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
-    <div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date")}</div>
+    ${seg("Backflow test record",b+".bf.testRec",[["tag","Tag or record found"],["unknown","Unknown / no tag"]])}
+    ${m.bf.testRec==="tag"?`<div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date",'data-rr="1"')}</div>`:""}
+    ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Fix now.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
-    ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}</div>
+    ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"],["insulate","Add insulation"]])}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -1292,8 +1303,9 @@ function findings(j,tech){
     (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
       if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
     if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
-    const bf=m.bf;if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
-    if(bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
+    const bf=m.bf;if(bf.present==="no")it.push(`<span class="flag">No backflow preventer found.</span> Texas (TCEQ) requires backflow prevention on irrigation connected to drinking water.${bf.noneAction==="note"?" Technician noted protection may be installed elsewhere.":""}`);else if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    if(bf.present!=="no"&&bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
+    if(bfTestDue(m))it.push(`<span class="flag">Backflow test due:</span> ${bf.testRec==="unknown"?"no test tag or record was found":"last tested "+esc(new Date(bf.lastTest+"T12:00").toLocaleDateString("en-US"))+", more than 12 months ago"}.`);
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`)});
     if(m.notes)it.push(esc(m.notes));
     if(it.length)out.push([m.name||"Mainline",it]);
@@ -1391,7 +1403,7 @@ function suggestUpsells(j){
   const spray=j.zones.filter(z=>z.types.includes("spray"));
   if(spray.length)add("Water-efficient nozzles","Whole property",`Convert spray nozzles to MP rotators (${spray.length} zone${spray.length===1?"":"s"})`,"Slower, more even watering that cuts runoff on clay soil and uses less water.","cnoz_mp",spray.length*6);
   j.zones.filter(z=>z.types.includes("spray")&&z.sun==="partial").forEach(z=>add("Drip conversion",`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,`Convert zone ${z.num} beds to drip`,"Waters plant roots directly, ends overspray on walls and walks.","drip_retro"));
-  j.mainline.forEach(m=>{if(m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
+  j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
     if(m.prv.present==="no")add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.","prv_replace");
     if(m.mv.present==="no")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.","mv_replace")});
   add("Maintenance plan","Whole property","Seasonal maintenance plan","Spring start-up, mid-season check and winterization at a set yearly price.","",1);
@@ -1664,7 +1676,7 @@ function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveC
   if(src.info.termsAgreed&&String(src.info.termsVer)===String(termsVer()))Object.assign(nj.info,{termsAgreed:true,termsVer:src.info.termsVer,termsAt:src.info.termsAt});
   const idmap={};nj.controllers=(src.controllers||[]).map(x=>{const n=newController(1);idmap[x.id]=n.id;return Object.assign(n,{name:x.name,brandPick:x.brandPick,brandOther:x.brandOther,brand:x.brand,model:x.model,location:x.location,wiring:x.wiring,zones:x.zones,modular:x.modular,modules:JSON.parse(JSON.stringify(x.modules||[]))})});
   nj.zones=(src.zones||[]).map(z=>{const n=newZone(nj);return Object.assign(n,{ctl:idmap[z.ctl]||"",num:z.num,soil:z.soil,sun:z.sun,types:(z.types||[]).slice(),sizes:(z.sizes||[]).slice(),headBrand:z.headBrand,headBrandOther:z.headBrandOther,valve:{size:(z.valve||{}).size||"",brand:(z.valve||{}).brand||"",brandOther:(z.valve||{}).brandOther||"",action:"none"}})});
-  nj.mainline=(src.mainline||[]).map(m=>{const n=newMainline(1);n.name=m.name;n.bf=Object.assign({},n.bf,{size:m.bf.size,type:m.bf.type,brand:m.bf.brand,brandOther:m.bf.brandOther,model:m.bf.model,serial:m.bf.serial,lastTest:m.bf.lastTest});
+  nj.mainline=(src.mainline||[]).map(m=>{const n=newMainline(1);n.name=m.name;n.bf=Object.assign({},n.bf,{present:m.bf.present||"",testRec:m.bf.lastTest?"tag":"",size:m.bf.size,type:m.bf.type,brand:m.bf.brand,brandOther:m.bf.brandOther,model:m.bf.model,serial:m.bf.serial,lastTest:m.bf.lastTest});
     ["prv","iso","mv"].forEach(k=>{n[k]=Object.assign({},n[k],{present:m[k].present,pos:m[k].pos,size:m[k].size,brand:m[k].brand,brandOther:m[k].brandOther,model:m[k].model})});return n});
   nj.map=JSON.parse(JSON.stringify(src.map||{items:[],lines:[]}));nj.setupDone=nj.controllers.length>0;
   S.jobs[nj.id]=nj;scheduleSave(nj.id);
@@ -1675,7 +1687,7 @@ function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveC
    Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
-const RED_KEYS=new Set(["wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+const RED_KEYS=new Set(["bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
@@ -1685,7 +1697,7 @@ const worst=(a,b)=>{const o={r:3,y:2,g:1,"":0,n:0};return (o[a]||0)>=(o[b]||0)?a
 function sectionColors(j){const e=buildEstimate(j);const C={};const bump=(sec,c)=>{C[sec]=worst(C[sec]||"",c)};
   e.lines.forEach(l=>{const c=lineColor(j,l);if(c)bump(l.sec,c)});
   (j.mainline||[]).forEach(m=>{const sec=m.name||"Mainline";const parts=[m.bf,m.prv,m.iso,m.mv].filter(Boolean);
-    if(hasLeak(m)||parts.some(p=>p.condition==="Failed"))bump(sec,"r");else if(parts.some(p=>p.condition==="Poor"||p.condition==="Fair")||m.bf.insulated==="no")bump(sec,"y");else bump(sec,"g")});
+    if(hasLeak(m)||m.bf.present==="no"||bfTestDue(m)||parts.some(p=>p.condition==="Failed"))bump(sec,"r");else if(parts.some(p=>p.condition==="Poor"||p.condition==="Fair")||m.bf.insulated==="no")bump(sec,"y");else bump(sec,"g")});
   (j.controllers||[]).forEach(c=>{const sec=c.name||"Controller";const f=ctlFlags(c);
     if(c.power==="no"||f.wire.length||c.overcurrent==="yes"||f.decoders.length||f.failedMods)bump(sec,"r");
     else if(f.rebuild.length||c.rain==="no"||c.rainStatus==="notworking"||c.rainStatus==="bypassed")bump(sec,"y");else bump(sec,"g")});
@@ -1892,10 +1904,10 @@ function mapZoneCard(j){const vs=j.map.items.filter(i=>i.t==="zv"&&/^Z\d+$/.test
       <div class="row" style="gap:6px;justify-content:flex-end"><button class="chip" data-set="zones.${zo}.works" data-v="yes" aria-pressed="${z.works==="yes"}">Working</button><button class="chip bad" data-set="zones.${zo}.works" data-v="no" aria-pressed="${z.works==="no"}">Not working</button>
       ${z.works==="no"?`<button class="btn ghost sm" data-gozone="${z.id}">Details</button>`:""}</div></div>`}).join("")}</div></div>`}
 function jobSteps(j){
-  const ml=j.mainline.length>0&&j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow));
+  const ml=j.mainline.length>0&&j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow)&&(m.bf||{}).present&&((m.bf||{}).present==="no"||(m.bf||{}).testRec));
   const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
   return [
-    {k:"mainline",label:"Mainline",done:ml,todo:"Check the water meter with the system off: is it moving?"},
+    {k:"mainline",label:"Mainline",done:ml,todo:j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow))?(j.mainline.some(m=>!(m.bf||{}).present)?"Mainline: is a backflow preventer present?":"Mainline: is there a backflow test tag or record?"):"Check the water meter with the system off: is it moving?"},
     {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>(c.rain==="no"||(c.rain==="yes"&&c.rainStatus))&&!ctlFlags(c).unread),todo:!j.controllers.length?"Set up the controller.":j.controllers.some(c=>ctlFlags(c).unread)?`Controller: pick the wire reading for ${j.controllers.reduce((a,c)=>a+ctlFlags(c).unread,0)} zone(s).`:"Controller: answer the rain/freeze sensor question."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the audit report."},
