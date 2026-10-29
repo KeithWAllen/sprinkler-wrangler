@@ -458,11 +458,12 @@ function jobTitle(j){if(!j)return "";const c=S.custs[j.custId];const cn=c&&c.cus
   const day=mmddyy(d);let suf="";if(cn){const same=Object.values(S.jobs).filter(x=>x.custId===j.custId&&mmddyy(x.info&&x.info.date?new Date(x.info.date+"T12:00"):new Date(x.createdAt||0))===day).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));const i=same.findIndex(x=>x.id===j.id);if(i>0)suf=String.fromCharCode(65+i)}
   const revs=j.revs||[];const rv=revs.length?revNo(revs[revs.length-1].n):"00";return ["A",day,cn?cn+suf:"",rv].filter(Boolean).join("-")}
 function jobNoTag(j){const t=jobTitle(j);return t?`<span class="jobno">${esc(t)}</span>`:""}
+function taxRate(){const v=S.pricing._tax;return v!=null&&v!==""&&!isNaN(+v)?+v:8.25}
 function newJob(){
   const me=S.me&&sb?{id:S.me.id,name:S.me.name||String(S.me.email).split("@")[0],email:S.me.email}:null;
   return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),intake:false,createdBy:me?me.id:"",assign:me&&!isOffice()?me:null,
     info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
-    map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:"Estimate valid for 30 days."}};
+    map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:taxRate(),discount:0,extra:[],terms:"Estimate valid for 30 days."}};
 }
 /* Default layout for a new job: one controller, zones 1–4 spray (4" & 6"), zone 5 drip */
 const DEFAULT_ZONES=[{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["drip"],sizes:[]}];
@@ -754,6 +755,8 @@ function pricesView(){
   ${termsCard()}
   ${brandsCard()}
   ${ohmRangesCard()}
+  <div class="card"><h2>Sales tax</h2><div class="act"><div class="al">Sales tax rate<div class="ap">Used on every new job's estimate and invoice. Jobs already started keep the rate they started with.</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-_tax" data-price="_tax" ${isAdmin()?"":"disabled"} value="${esc(taxRate())}" aria-label="Sales tax percent"></label><span class="mono">%</span></div></div>
   <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
   <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
@@ -1337,8 +1340,6 @@ function estTable(e,editable){
 function estimateTab(){const j=job();const e=buildEstimate(j);
   return `<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTableTL(j,e,true)}</div>
   <div class="card"><h2>Adjustments</h2><div class="acts">${chk("est.trip","Service call / trip charge","trip",true)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
-  <div class="grid3">${fld("Discount ($)","est.discount","number",'data-rr="1"')}${fld("Sales tax %","est.tax","number",'data-rr="1"')}</div>
-  <p class="small muted">Texas charges sales tax on most residential lawn sprinkler repair; 8.25% is the common combined rate. Check your local rate.</p>
   ${(()=>{const rows=[];j.controllers.forEach((c,ci)=>(c.custom||[]).forEach((x,xi)=>rows.push([c,ci,x,xi])));if(!rows.length)return "";const need=rows.filter(r=>!num(r[2].price)).length;
     return `<div class="combo ${need?"need":""}"><h4>Technician recommendations</h4><p class="small muted" style="margin:0">Added on the Controller tab. ${need?`<b>${need} still need${need===1?"s":""} a price.</b>`:"All priced."}</p>${rows.map(([c,ci,x,xi])=>`<div class="grid3" style="align-items:end"><div class="f"><span>${esc(c.name)}</span><div>${esc(x.desc)}</div></div>${fld("Qty",`controllers.${ci}.custom.${xi}.qty`,"number")}${fld("Price each",`controllers.${ci}.custom.${xi}.price`,"number",'inputmode="decimal" step="0.01"')}</div>`).join("")}</div>`})()}
   <div class="combo"><h4>Additional items</h4>${(j.est.extra||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`est.extra.${ci}.desc`)}${fld("Qty",`est.extra.${ci}.qty`,"number")}${fld("Price each",`est.extra.${ci}.price`,"number")}<div>${delBtn("ext:"+ci,"Remove")}</div></div>`).join("")}<div><button class="btn ghost sm" data-add="est.extra" data-tpl="custom">+ Add item</button></div></div>
