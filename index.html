@@ -107,8 +107,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;
 .act .al{flex:1;min-width:0}
 .act .ap{font-size:.78rem;color:var(--muted)}
 .step{display:flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
-.step button{width:38px;height:38px;border:0;background:var(--sunk);font-size:1.2rem;font-weight:700}
-.step input{width:52px;border:0;border-radius:0;text-align:center;min-height:38px;padding:4px;background:var(--surface);font-family:var(--mono)}
+.step button{width:38px;height:38px;border:0;background:var(--sunk);font-size:1.2rem;font-weight:700;padding:0;margin:0;display:grid;place-items:center;line-height:1}
+.step input{width:56px;border:0;border-radius:0;text-align:center;min-height:38px;padding:0;margin:0;background:var(--surface);font-family:inherit;font-weight:700;font-size:1rem;line-height:38px;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+.step input::placeholder{text-align:center;color:var(--muted)}
+/* Number boxes: no hidden browser spinner space, so numbers sit truly centered/aligned */
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0}
 .act.on .al{font-weight:700}
 .combo{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:grid;gap:4px;background:var(--bg)}
 .combo h4{margin:0;font-family:var(--display);font-size:1rem;letter-spacing:.03em}
