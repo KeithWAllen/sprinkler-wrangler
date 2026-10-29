@@ -622,6 +622,7 @@ function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTARE
 /* Fill in any missing pieces so an older or partial job can never break a screen */
 function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info=Object.assign({customer:"",phone:"",email:"",address:"",city:"",date:"",status:"Scheduled"},j.info||{});
+  {const r0=(j.revs||[])[0];if(r0&&r0.at&&j.info.date){const d=new Date(r0.at);const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");if(j.info.date>iso){j.info.scheduledDate=j.info.scheduledDate||j.info.date;j.info.date=iso}}}
   j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
@@ -1603,6 +1604,8 @@ async function issueRev(j){
   if(missingCustomer(j).length)return;
   const revs=j.revs=j.revs||[];const last=revs[revs.length-1];
   if(last&&currentRev(j))return;
+  /* The audit happened today: a booked date still in the future is the schedule, not the inspection date */
+  {const t=today();if(j.info.date&&j.info.date>t){j.info.scheduledDate=j.info.date;j.info.date=t}}
   const note=String(j.est.revNote||"").trim();
   if(last&&!note){toast("Describe what changed before issuing");const el=document.getElementById("f-est.revNote");if(el)el.focus();return}
   const n=last?last.n+1:0;const at=Date.now();
@@ -2548,8 +2551,15 @@ async function loadPortal(){
   const [r,i]=await Promise.all([sb.from("reports").select("id,job_id,rev,total,customer_name,address,issued_at,issued_by").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at")]);
   const by={};(r.data||[]).forEach(x=>{(by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.issued_at}).reports.push(x)});
   (i.data||[]).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
-  S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));render();
+  S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
+  render();
 }
+function portalCustCard(){const c=S.portal.cust||{};const g=(S.portal.list||[])[0]||{};const name=c.customer||g.name||(S.me.name||"");if(!name&&!c.address&&!g.address)return "";
+  const tel=String(c.phone||"").replace(/[^\d+]/g,"");
+  return `<div class="card pcust"><div class="eyebrow">Your account</div><h2 style="margin:2px 0">${esc(name)}${c.custNo?` <span class="small muted">Customer ${esc(c.custNo)}</span>`:""}</h2>
+    <div class="small">${esc([c.address,c.city].filter(Boolean).join(", ")||g.address||"")}</div>
+    <div class="small muted">${esc([c.phone,c.email||S.me.email].filter(Boolean).join(" · "))}</div></div>`}
 async function openPortalDoc(kind,id){
   S.portal.view={kind,id,html:null};render();window.scrollTo(0,0);
   const q=kind==="report"?sb.from("reports").select("html").eq("id",id).maybeSingle():sb.from("invoices").select("html").eq("job_id",id).maybeSingle();
@@ -2572,7 +2582,7 @@ function portalView(){
     return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
       ${r?`<div class="act"><div class="al">Inspection report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
       ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button></div>`:""}</div>`}).join("");
-  return head+`<div class="wrap"><main><p class="muted small" style="margin:0">Signed in as ${esc(me.email)}</p>${body}</main></div>`;
+  return head+`<div class="wrap"><main>${portalCustCard()}${body}</main></div>`;
 }
 
 /* ---------------- events ---------------- */
