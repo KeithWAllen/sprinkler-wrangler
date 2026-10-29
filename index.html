@@ -297,6 +297,7 @@ details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left
 .totals3{display:grid;gap:10px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.totblk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;break-inside:avoid}.totblk>div:not(.tbh){display:flex;justify-content:space-between;gap:10px}.totblk .tbh{font-weight:800;margin-bottom:4px;display:grid;gap:2px}.totblk .tbh .small{font-weight:400}.totblk .grand{font-weight:800;border-top:1px solid var(--line);padding-top:4px}.tb-r{border-left:4px solid var(--tl-r)}.tb-y{border-left:4px solid var(--tl-y)}.tb-all{border-left:4px solid var(--accent)}
 .jobno{display:inline-block;font-family:var(--mono,monospace);font-size:.8em;font-weight:700;background:var(--accent);color:var(--accent-ink,#fff);border-radius:6px;padding:1px 6px;margin-right:2px;vertical-align:1px}.custjobs{display:grid;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-size:.85rem;grid-column:1/-1}
 button.custjob{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer;padding:8px 0}button.custjob:hover{background:var(--sunk,rgba(0,0,0,.03))}
+details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;padding:14px 16px;display:grid;gap:2px}details.admsec>summary::-webkit-details-marker{display:none}details.admsec>summary .admt{font-family:var(--display);font-size:1.25rem;font-weight:700}details.admsec>summary .admt::after{content:" ▸";color:var(--muted)}details.admsec[open]>summary .admt::after{content:" ▾"}.admbody{padding:0 16px 14px}.admbody>.card{box-shadow:none;border:0;padding:0;margin:0 0 12px}.admbody .card .card{box-shadow:none}details.nohead .admbody>.card>h2:first-child,details.nohead .admbody>.card>.cardhead>h2{display:none}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
 .ohmrows{display:grid;gap:8px}
@@ -548,6 +549,7 @@ function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 /* Chief admin (developer): only one who can delete jobs or change admins */
 function isChief(){return !S.training&&(!sb||!!(S.me&&S.me.chief))}
 /* Office side (admins + dispatch): customers, reminders, assigning jobs. Also works in training. */
+function canSettings(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 function isOffice(){return !sb||!!(S.me&&S.me.admin)}
 function canDeleteJob(j){if(S.training||!sb)return true;if(isChief())return true;return !!(S.me&&j.createdBy===S.me.id&&!j.controllers.length&&!(j.revs||[]).length)}
 function myJob(j){if(!sb||isOffice())return true;return !j.assign||j.assign.id===S.me.id||j.createdBy===S.me.id}
@@ -714,12 +716,13 @@ function banner(){
 }
 function homeView(){
   if(!isOffice()&&(S.home==="reminders"||S.home==="customers"))S.home="jobs";
-  const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[]),["prices","Price sheet"]];
+  const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[])];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
   else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
-  const side=S.home==="team"||S.home==="import";
-  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Price sheet":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?(S.custPick?"New job":"Customers"):S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
+  if(S.home==="prices"&&!canSettings())S.home="jobs";
+  const side=S.home==="team"||S.home==="import"||S.home==="prices";
+  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Admin settings":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?(S.custPick?"New job":"Customers"):S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
     ${side||S.custEdit||S.custPick?"":S.home==="customers"&&isOffice()?`<button class="iconbtn" data-newcust="1">+ New customer</button>`:`<button class="iconbtn" data-new="1">+ New job</button>`}${acctChip()}</div></header>
   ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
@@ -730,7 +733,7 @@ function jobsList(){
   const list=S.filter==="open"?open:all;
   if(!all.length)return `<div class="card empty">
     <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 6c0 0-14 16-14 26a14 14 0 0 0 28 0C42 22 28 6 28 6z" fill="none" stroke="currentColor" stroke-width="3"/><path d="M21 33a7 7 0 0 0 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-    <h2>No jobs yet</h2><p class="muted" style="max-width:36ch">Start a job when a call comes in. Walk the mainline, controllers and zones, and the estimate builds itself from the price sheet.</p>
+    <h2>No jobs yet</h2><p class="muted" style="max-width:36ch">Start a job when a call comes in. Walk the mainline, controllers and zones, and the estimate builds itself from the company's prices.</p>
     <button class="btn" data-new="1">Start a new job</button></div>`;
   return `<div class="row"><div class="chips">${[["open",`Open (${open.length})`],["all",`All (${all.length})`]].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`).join("")}</div></div>
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
@@ -750,22 +753,25 @@ function docketView(){
   ${rows.length?`<div class="tbl"><table><thead><tr><th>Part / material</th><th class="r">Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td class="r mono">${r.qty}${showU(r.unit)?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
 }
 function pricesView(){
+  if(!canSettings())return `<div class="card"><p class="muted">Admin settings are only available to admins.</p></div>`;
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
-  return `${isAdmin()?"":`<div class="note info">Only admins can change prices and business info. Ask Bradley if a price needs updating.</div>`}<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>
-  ${termsCard()}
-  ${brandsCard()}
-  ${ohmRangesCard()}
-  <div class="card"><h2>Sales tax</h2><div class="act"><div class="al">Sales tax rate<div class="ap">Used on every new job's estimate and invoice. Jobs already started keep the rate they started with.</div></div>
-    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-_tax" data-price="_tax" ${isAdmin()?"":"disabled"} value="${esc(taxRate())}" aria-label="Sales tax percent"></label><span class="mono">%</span></div></div>
-  <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
-    <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
-  <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
+  const secd=(id,title,sub,html,cls)=>`<details class="card admsec ${cls||""}" data-admsec="${id}" ${(S.admOpen||{})[id]?"open":""}><summary><span class="admt">${title}</span><span class="small muted">${sub}</span></summary><div class="admbody">${html}</div></details>`;
+  return `<p class="small muted" style="margin:0 0 4px">Company-wide settings. Only admins see this page. Tap a section to open it.</p>
+  ${secd("biz","Business &amp; license","Name, address and irrigator license printed on estimates and invoices",`<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>`,"nohead")}
+  ${secd("prices","Prices","Every repair rate (residential)",`  <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
   ${GROUP_ORDER.filter(g=>groups[g]).map(g=>`<div class="card"><h2>${esc(g)}</h2><div class="acts">${groups[g].map(([k,d])=>{const v=S.pricing[k];const changed=v!=null&&v!==""&&num(v)!==d.p;
     return `<div class="act"><div class="al">${esc(d.l)}<div class="ap">per ${esc(d.u)}${changed?` · sample ${money(d.p)}`:""} · commercial ${money(basePrice(k)*(1+commPct()/100))}</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${v!=null&&v!==""?esc(v):d.p}" aria-label="${esc(d.l)} price"></label></div>`}).join("")}</div></div>`).join("")}
-  ${isAdmin()?`<div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`:""}`;
+  ${isAdmin()?`<div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`:""}`)}
+  ${secd("tax","Tax &amp; markup","Sales tax rate and commercial markup",`  <div class="card"><h2>Sales tax</h2><div class="act"><div class="al">Sales tax rate<div class="ap">Used on every new job's estimate and invoice. Jobs already started keep the rate they started with.</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-_tax" data-price="_tax" ${isAdmin()?"":"disabled"} value="${esc(taxRate())}" aria-label="Sales tax percent"></label><span class="mono">%</span></div></div>
+  <div class="card"><h2>Commercial pricing</h2><div class="act"><div class="al">Commercial markup<div class="ap">Added to every sheet rate on commercial jobs. Custom items you price by hand aren't marked up.</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
+`,"nohead2")}
+  ${secd("brands","Brands &amp; ratings","Quality grades for brands and product lines",brandsCard(),"nohead")}
+  ${secd("ohm","Wire reading ranges","Ohm cut-offs for zone wire readings",ohmRangesCard(),"nohead")}
+  ${secd("terms","Terms of Service","Wording customers agree to at sign-up",termsCard(),"nohead")}`;
 }
-
 function jobView(){
   const j=job();const e=buildEstimate(j);
   const tl=troubleList(j);S._tp=new Set(tl.map(t=>t.path));const need=tl.filter(t=>!(getP(j,t.path+"_ph")||[]).length);
@@ -1519,7 +1525,7 @@ function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j
 function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Tap Details at the top of the job to add them.</p><div><button class="btn" data-showdetails="1">Go to Customer</button></div></div>`;
   const blocks=[];
-  if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this on the Price sheet."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
+  if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this in Admin settings."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
   if(!cur)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
   const ready=!bm.length&&cur;
   return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Unpaid</span>'):'<span class="pill neutral">Estimate</span>'}</div>
@@ -2382,7 +2388,7 @@ function jobMenu(j){if(!isChief())return "";
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.admin?"Admin":"Technician"}</span></div>
-    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+    <button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- Training mode: practice jobs on this phone only ---------- */
 function trainingSample(){const j=withDefaults(newJob());j.training=true;delete j.intake;
@@ -2509,6 +2515,7 @@ function portalView(){
 /* ---------------- events ---------------- */
 const app=document.getElementById("app");
 function rr(){render.keep=true;render()}
+app.addEventListener("toggle",ev=>{const t=ev.target;if(t.dataset&&t.dataset.admsec){S.admOpen=S.admOpen||{};S.admOpen[t.dataset.admsec]=t.open}},true);
 app.addEventListener("keydown",ev=>{const t=ev.target;if(ev.key==="Enter"&&t.dataset&&t.dataset.ctlrecin!=null){ev.preventDefault();const b=document.querySelector('[data-ctlrecadd="'+t.dataset.ctlrecin+'"]');if(b)b.click()}});
 app.addEventListener("input",ev=>{
   const t=ev.target;
@@ -2548,8 +2555,9 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
+    if(d.accsettings){S.acctOpen=false;S.cur=null;S.home="prices";render();window.scrollTo(0,0);return}
     if(d.who!==undefined){S.auth=Object.assign(S.auth,{who:d.who,err:"",msg:""});render();return}
     if(d.auth){if(d.auth==="signup"){S.auth.who="";loadSignupTerms()}if(d.auth==="resend"){authSubmit("resend");return}S.auth=Object.assign(S.auth,{step:d.auth,err:"",msg:""});render();return}
     if(d.signout){signOut();return}
