@@ -361,6 +361,8 @@ table.dgridt{table-layout:fixed;width:100%}
 .cvg-r{border:3px solid #D23B32;box-shadow:0 2px 10px rgba(210,59,50,.18)}.cvg-r .cvgh{background:#D23B32;color:#fff}.cvg-r .cvrow{border-left:6px solid #D23B32}
 .cvg-y{border:2px dashed #E0A800}.cvg-y .cvgh{background:#FFF4CC;color:#5C4600}.cvg-y .cvrow{border-left:6px solid #E0A800}
 .cvwarn{grid-column:1/-1;color:#B3261E;font-weight:700;font-size:.85rem}
+.bftag{display:inline-block;background:#B3261E;color:#fff;border-radius:6px;padding:1px 6px;font-size:.7rem;font-weight:800;margin-right:4px}.cvheld{grid-column:1/-1;color:#B3261E;font-weight:700;font-size:.85rem}
+.tab.tab-locked{opacity:.45;cursor:not-allowed}.bfhold{border:2px solid #B3261E}.talk{margin:4px 0 0;padding-left:18px;display:grid;gap:4px}
 .cvdiv{display:flex;align-items:center;gap:10px;color:var(--muted);font-weight:800;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin:6px 0}.cvdiv:before,.cvdiv:after{content:"";flex:1;border-top:2px solid var(--line)}
 .cvrow{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 12px;border-bottom:1px dashed var(--line)}.cvrow:last-child{border-bottom:0}
 .cvrow.accept{background:color-mix(in srgb,#2E9E5B 10%,transparent)}.cvrow.decline{background:color-mix(in srgb,var(--muted) 10%,transparent)}.cvrow.decline .cvl b{text-decoration:line-through;color:var(--muted)}
@@ -463,6 +465,7 @@ const PRICE_DEFAULTS=(()=>{
   add("bf_replace","Mainline","Replace backflow preventer","each",395,1);
   add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
   add("bf_test","Mainline","Backflow test (certified tester)","each",95,0);
+  add("bf_permit","Mainline","City permit & inspection (backflow install)","each",75,0);
   add("bf_install","Mainline","Install backflow preventer (none present)","each",450,1);
   add("prv_repair","Mainline","PRV repair","each",110,1);
   add("prv_replace","Mainline","Replace PRV","each",325,1);
@@ -772,7 +775,7 @@ function buildEstimate(j){
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note")add(sec,"bf_install",1)}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit!=="none")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
       if(c.present==="no"&&(k==="iso"||k==="mv")){if(c.noneAction!=="none")add(sec,p+"_install",1);return}
       if(c.present!=="yes")return;
@@ -839,7 +842,7 @@ function jobStages(j){const revs=j.revs||[];const last=revs[revs.length-1];const
   const inspDone=steps.slice(0,3).every(x=>x.done)||revs.length>0;const started=jobStatus(j)!=="Scheduled";
   const S0=[
     {k:"sched",l:"Booked",done:true,sub:j.info.date?fmtD(j.info.date):"",tab:null},
-    {k:"insp",l:"Inspect",done:inspDone,sub:inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
+    {k:"insp",l:"Inspect",done:inspDone,warn:bfHold(j),sub:bfHold(j)?"On hold":inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
     {k:"report",l:"Report",done:!!revs.length,warn:revs.length&&!cur,sub:revs.length?("Rev "+revNo(last.n)+(cur?"":" · changed")):"Not issued",tab:"report"},
     {k:"decide",l:"Approval",done:o==="approved"||o==="declined",sub:o==="approved"?"Approved":o==="declined"?((j.revs||[]).length?"Audit only":"Declined"):o==="waiting"?"Waiting":"No answer",tab:"completion"},
     {k:"work",l:"Work",done:o==="declined"||!!(o==="approved"&&j.completion&&j.completion.issuedAt),skip:o==="declined",sub:o==="declined"?"Not hired":o==="approved"?(j.completion&&j.completion.issuedAt?"Completed":"In progress"):"",tab:"completion"},
@@ -1040,8 +1043,8 @@ function jobView(){
   const v={score:scoreTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
     <div style="flex:1;min-width:0"><div class="sub">${jobTitle(j)?esc(jobTitle(j))+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(jobPhase(j).label)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
-  <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
-  <div class="wrap"><main>${banner()}${stageBar(j)}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}${S.custView?custViewHtml(j):""}`;
+  <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);const hold=bfHold(j);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";if(hold&&HOLD_TABS.has(k))return `<button class="tab tab-locked" data-locked="${k}" aria-disabled="true" title="On hold: no backflow preventer">🔒 ${l}</button>`;return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
+  <div class="wrap"><main>${banner()}${stageBar(j)}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}${S.custView?custViewHtml(j):""}${S.bfConfirm?bfConfirmModal():""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(SHOW_JOB_TERMS&&!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
@@ -1461,7 +1464,10 @@ function mainlineTab(){const j=job();
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo ${m.bf.present==="no"?"bad":""}"><h4>Backflow preventer</h4>
     ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
-    ${m.bf.present==="no"?`<div class="note bad small"><b>No backflow preventer.</b> Texas (TCEQ) requires backflow prevention on any irrigation system connected to drinking water. This is marked Urgent on the report.</div>
+    ${m.bf.present==="no"?`${(()=>{const blocked=buildEstimate(j).lines.filter(l=>bfMajorKey(l.key));return `<div class="note bad small bfrule"><b>⛔ No backflow preventer: mainline and valve work is on hold.</b> ${BF_RULE} requires an approved backflow preventer to be installed <b>before</b> any major maintenance, alteration, repair or service on a system connected to drinking water. Major work means anything that opens the mainline before the zone valves: mainline leaks, replacing or rebuilding zone valves, solenoids, master valve or PRV work.
+      <div style="margin-top:4px"><b>You can still do:</b> heads, nozzles, lateral lines, the controller and wiring.</div>
+      ${blocked.length?`<div style="margin-top:4px"><b>On hold on this job until the backflow is installed:</b> ${blocked.map(l=>esc(l.label)+" ("+esc(l.sec)+")").join("; ")}.</div>`:""}
+      <div style="margin-top:4px">The backflow install is marked Urgent on the report, and the rule is printed for the customer.</div></div>`})()}
     ${seg("Recommend",b+".bf.noneAction",[["install","Install one"],["note","Note only (protection is elsewhere)"]])}`:m.bf.present!=="yes"?`<p class="small muted" style="margin:0">Answer first. The backflow details appear once you pick Yes.</p>`:`
     <div class="grid3">${sizeSel("Size",b+".bf.size")}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${realLine(m.bf.line)?"":fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     ${seg("Backflow test record",b+".bf.testRec",[["tag","Tag or record found"],["unknown","Unknown / no tag"]])}
@@ -1796,7 +1802,8 @@ function findings(j,tech){
     (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
       if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
     if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
-    const bf=m.bf;if(bf.present==="no")it.push(`<span class="flag">No backflow preventer found.</span> Texas (TCEQ) requires backflow prevention on irrigation connected to drinking water.${bf.noneAction==="note"?" Technician noted protection may be installed elsewhere.":""}`);else if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
+    const bf=m.bf;if(bf.present==="no"&&j.bfHold&&j.bfHold.declined)it.push(`<span class="flag">Customer declined backflow installation</span> on ${esc(new Date(j.bfHold.declined.at).toLocaleDateString("en-US"))} after being informed that ${BF_RULE} requires it before repairs that open the mainline. Those repairs were not performed.`);
+    if(bf.present==="no")it.push(`<span class="flag">No backflow preventer found.</span> Texas (TCEQ) requires backflow prevention on irrigation connected to drinking water.${bf.noneAction==="note"?" Technician noted protection may be installed elsewhere.":` Under ${BF_RULE}, an approved backflow preventer must be installed before any repair that opens the mainline (mainline leaks, zone valves, master valve or pressure regulator). Repairs to heads, nozzles, lateral lines and the controller can still be done.`}`);else if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
     if(bf.present!=="no"&&bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
     if(bfTestDue(m))it.push(`<span class="flag">Backflow test due:</span> ${bf.testRec==="unknown"?"no test tag or record was found":"last tested "+esc(new Date(bf.lastTest+"T12:00").toLocaleDateString("en-US"))+", more than 12 months ago"}.`);
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&(k==="iso"||k==="mv"))it.push(`No ${l.toLowerCase()} installed.${c.noneAction!=="none"?" Installing one is recommended.":""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`);
@@ -2092,6 +2099,19 @@ function diagAmt(j){return j.est&&j.est.trip!==false?price("trip",j):0}
 /* Keith (Oct 31): the diagnostic fee is NOT credited; it stays a normal line item on everything. Credit logic kept off. */
 const DIAG_CREDIT=false;
 function diagCredits(j){return DIAG_CREDIT&&diagAmt(j)>0&&j.est.diagCredit!==false}
+/* Texas 30 TAC §344.52(a): a system connected to drinking water must have an approved backflow preventer BEFORE any
+   "major maintenance, alteration, repair, or service" (§344.1: work that opens the mainline to the air before the zone valves).
+   Work downstream of the valves (heads, nozzles, laterals, controller, wiring) can still be done. */
+const BF_MAJOR=new Set(["main_repair","valve_1","valve_15","valve_2","valve_rebuild","valve_sol","prv_repair","prv_replace","mv_repair","mv_replace","mv_relocate","mv_install"]);
+const BF_RULE="Texas rule 30 TAC §344.52(a)";
+/* Backflow hold (Bradley/Keith): no backflow preventer -> confirm -> audit on hold, go to Status for the customer conversation */
+const HOLD_TABS=new Set(["controllers","zones","map","score"]);
+function bfHold(j){return !!(j.bfHold&&!j.bfHold.cleared&&(j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note"))}
+function bfMissing(j){return (j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note")}
+function keyOf(k){return String(k||"").split("|").slice(1).join("|")}
+function bfMajorKey(k){return BF_MAJOR.has(k)}
+function bfInstallDone(j){const c=j.completion;return !!(c&&(c.items||[]).some(i=>keyOf(i.k)==="bf_install"&&i.status==="done"))}
+function bfBlocked(j,key){return bfMissing(j)&&bfMajorKey(key)&&!bfInstallDone(j)}
 function estOptions(j){const e=buildEstimate(j);const rate=jobTax(j)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;
   const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
   return {rate:jobTax(j),fix:t(g.s+g.r-cr),rec:g.y?t(g.y):null,all:t(e.sub-cr,e.disc),diag:diagAmt(j),credit:cr}}
@@ -2321,7 +2341,7 @@ function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveC
    Red = urgent (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Urgent","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
-const RED_KEYS=new Set(["mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+const RED_KEYS=new Set(["bf_permit","mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
@@ -2376,7 +2396,7 @@ function scorecard(j){const C=sectionColors(j);const n={r:0,y:0,g:0,n:0};Object.
 function estTableTL(j,e,editable){
   const groups={r:[],y:[],s:[]};e.lines.forEach(l=>{const c=lineColor(j,l);(c?groups[c]:groups.s).push(l)});
   const sub=ls=>ls.reduce((a,l)=>a+l.total,0);
-  const row=l=>{const c=lineColor(j,l);return `<tr><td>${editable&&c?`<button class="tlbtn" data-tl="${esc(lineKey(l))}" aria-label="Change color">${tlDot(c)}</button>`:tlDot(c)} ${esc(l.label)}<div class="small muted">${esc(l.sec)}</div></td><td class="r">${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`};
+  const row=l=>{const c=lineColor(j,l);const held=bfMissing(j)&&bfMajorKey(l.key);return `<tr${held?' class="bfheld"':""}><td>${held?'<span class="bftag">Needs backflow first</span> ':""}${editable&&c?`<button class="tlbtn" data-tl="${esc(lineKey(l))}" aria-label="Change color">${tlDot(c)}</button>`:tlDot(c)} ${esc(l.label)}<div class="small muted">${esc(l.sec)}</div></td><td class="r">${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</td><td class="r">${money(l.price)}</td><td class="r">${money(l.total)}</td></tr>`};
   const block=(k,title,ls)=>ls.length?`<tr class="sec tlsec-${k}"><td colspan="3">${k!=="s"?tlDot(k)+" ":""}${title}</td><td class="r">${money(sub(ls))}</td></tr>${ls.map(row).join("")}`:"";
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
@@ -2432,6 +2452,46 @@ function outcomeCard(j){const biz=bizInfo().name||"us";
    The confirmation drives the work checklist, the job's approval and the invoice. */
 function cvTotals(j){const c=j.completion||{items:[]};const acc=c.items.filter(i=>i.cust==="accept");const work=acc.reduce((a,i)=>a+num(i.total),0);const fee=diagAmt(j);
   const credit=acc.length&&diagCredits(j)?fee:0;const rate=jobTax(j)/100;const sub=work+fee-credit;return {acc,work,fee,credit,tax:sub*rate,total:sub*(1+rate)}}
+function bfConfirmModal(){return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Confirm no backflow preventer"><div class="phcard">
+  <div class="eyebrow">Confirm before continuing</div><h2>No backflow preventer?</h2>
+  <p>Check the whole property first: at the meter, near the house, beside the controller, and in valve boxes. It can be a brass assembly above ground, or a double check in a box.</p>
+  <p class="small">If none is present, Texas requires one before any work that opens the mainline (${BF_RULE}). The inspection will be put <b>on hold</b> and you'll go to the <b>Status</b> tab to talk the customer through what's needed.</p>
+  <div class="row"><button class="btn" data-bfyes="1">Yes, none present</button><button class="btn ghost" data-bfno="1">Cancel, keep looking</button></div></div></div>`}
+function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0,j.mainline.findIndex(m=>m.bf.present==="no"));const m=j.mainline[mi];const b=bizInfo();
+  const needIso=!(m.iso&&m.iso.present==="yes");const e=buildEstimate(j);const pk=["bf_install","bf_test","bf_permit","iso_install"];const lines=e.lines.filter(l=>pk.includes(l.key));const tot=lines.reduce((a,l)=>a+l.total,0);
+  const typ=m.bf.newType||"";const step=(k,label,why)=>`<div class="act"><div class="al">${st[k]?"✓ ":""}${label}<div class="ap">${why}</div></div><button class="chip" data-bfstep="${k}|${st[k]?0:1}" aria-pressed="${!!st[k]}">${st[k]?"Done":"Mark done"}</button></div>`;
+  if(h.declined)return `<div class="card"><div class="cardhead"><h2>Backflow required</h2><span class="pill neutral">Customer declined</span></div>
+    <div class="note small">Recorded ${esc(fmtDT(h.declined.at))}: the customer was told a backflow preventer is required by ${BF_RULE} before mainline or valve repairs, and chose not to install one now. The report notes this. Only the diagnostic fee is billed.</div>
+    <div class="row"><button class="btn ghost sm" data-bfundecline="1">Undo: customer reconsidered</button><button class="btn sm" data-tab="invoice">Go to Invoice</button></div></div>`;
+  return `<div class="card bfhold"><div class="cardhead"><h2>⛔ On hold: backflow preventer required</h2><span class="pill bad">Audit paused</span></div>
+    <p class="small muted" style="margin:0">Confirmed ${esc(fmtDT(h.at))}${h.by?" by "+esc(h.by):""}. Use these points to talk it through with the customer.</p>
+    <div class="combo"><h4>1 · Why we can't continue today</h4><ul class="talk">
+      <li><b>It protects your drinking water.</b> Without a backflow preventer, water sitting in the sprinkler pipes (with fertilizer, pesticides, animal waste and soil bacteria) can be pulled back into the house and city water when pressure drops.</li>
+      <li><b>It's state law.</b> ${BF_RULE} says a sprinkler system connected to drinking water must have an approved backflow preventer <b>before</b> any repair that opens the main line, such as leaks, zone valves, master valve or pressure regulator work.</li>
+      <li><b>${esc(b.name||"We")} can't legally do that work</b> until one is installed, and the city or water utility can require it at any time.</li></ul></div>
+    <div class="combo"><h4>2 · What's needed to continue</h4>
+      <div class="q"><span class="ql">Type of backflow preventer</span><div class="chips">${[["DCVA","Double check (DCVA)"],["PVB","Pressure vacuum breaker (PVB)"],["RPZ","Reduced pressure (RPZ)"]].map(([v,l])=>`<button class="chip" data-bftype="${v}" data-bfm="${mi}" aria-pressed="${typ===v}">${l}</button>`).join("")}</div></div>
+      <ul class="talk small"><li><b>RPZ is required</b> if chemicals or fertilizer are injected into the system, if the property has a septic system (on-site sewage facility), or if there's another health hazard (30 TAC §344.51).</li><li><b>PVB</b> must sit at least 12 inches above the highest sprinkler head or pipe downstream, with no backpressure.</li><li><b>Double check (DCVA)</b> is allowed when there's no health hazard and the city doesn't prohibit it.</li></ul>
+      ${seg("Is there an isolation valve (shut-off for the sprinklers only)?",`mainline.${mi}.iso.present`,[["yes","Yes"],["no","No"]])}
+      ${m.iso&&m.iso.present==="no"?`<p class="small" style="margin:0">An isolation valve is required when work is done at the meter or upstream of the backflow (30 TAC §344.64(c)), so its install is included in the estimate below.</p>`:""}
+      <div class="q"><span class="ql">City permit & inspection</span><div class="chips"><button class="chip" data-bfpermit="required" data-bfm="${mi}" aria-pressed="${m.bf.permit!=="none"}">Required here</button><button class="chip" data-bfpermit="none" data-bfm="${mi}" aria-pressed="${m.bf.permit==="none"}">Not required in this city</button></div></div>
+      <p class="small muted" style="margin:0">Most Texas cities and water utilities require a permit and inspection for a new backflow preventer. Check with the city or water utility for this address.</p>
+      <p class="small" style="margin:0"><b>Testing:</b> a licensed backflow tester must test it when it's installed, and the results go to the water utility within 10 business days (30 TAC §344.52(c)).</p></div>
+    <div class="combo"><h4>3 · Backflow estimate</h4>
+      ${lines.map(l=>`<div class="row" style="flex-wrap:nowrap"><span class="spacer small">${esc(l.label)}</span><b class="num">${money(l.total)}</b></div>`).join("")}
+      <div class="row" style="flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:6px"><b class="spacer">Backflow work</b><b class="num">${money(tot)}</b></div>
+
+      <p class="small muted" style="margin:0">Plus the diagnostic fee for today's visit. Prices come from your price sheet (Admin settings). The permit fee varies by city.</p>
+      ${j.completion&&j.completion.confirm?`<div class="note ok small"><b>${esc(j.completion.confirm.name)} approved ${j.completion.confirm.acc} item${j.completion.confirm.acc===1?"":"s"}</b> on ${esc(fmtDT(j.completion.confirm.at))} (${money(j.completion.confirm.total)}). Schedule the install.</div>`:""}
+      <div class="row"><button class="btn" data-cvopen="1">Go over it with the customer (customer view)</button><button class="btn ghost" data-bfdecline="1">Customer declined</button></div></div>
+    <div class="combo"><h4>4 · After it's installed</h4>
+      ${step("installed","Backflow preventer installed",typ?esc(typ)+", at least 12 in. clearance for testing":"Install per manufacturer, with clearance for testing")}
+      ${step("tested","Tested by a licensed backflow tester","Tester name and license # go on the test report")}
+      ${step("sent","Test results sent to the water utility","Within 10 business days (30 TAC §344.52(c))")}
+      ${m.bf.permit==="none"?"":step("inspected","City permit closed / inspection passed","Keep the permit number on file")}
+      <div><button class="btn" data-bfresume="1">Resume the audit</button></div>
+      <p class="small muted" style="margin:0">Resuming unlocks Controllers, Zones and Map, and records the new backflow preventer on the Mainline tab.</p></div>
+    <div class="row small"><span class="spacer muted">Mistake?</span><button class="btn quiet sm" data-bffound="1">Found one after all</button><button class="btn quiet sm" data-bfelse="1">Protection is elsewhere</button></div></div>`}
 function walkCard(j){const c=j.completion;const cf=c&&c.confirm;const und=c?c.items.filter(i=>!i.cust).length:0;
   return `<div class="card ${cf?"":"need"}"><div class="cardhead"><h2>Walk-through with the customer</h2>${cf?'<span class="pill ok">Confirmed</span>':'<span class="pill warn">Not confirmed</span>'}</div>
     ${cf?`<div class="note ok small"><b>Confirmed by ${esc(cf.name)}</b> ${esc(cf.via)} on ${esc(fmtDT(cf.at))}: ${cf.acc} item${cf.acc===1?"":"s"} accepted, ${cf.dec} declined, total ${money(cf.total)}.${cf.sig?" Signed.":""}</div>`
@@ -2442,6 +2502,7 @@ function custViewHtml(j){const c=j.completion;if(!c)return "";const b=bizInfo();
   const grp=(k,title)=>{const its=c.items.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!its.length)return "";const tot=its.reduce((a,[i])=>a+num(i.total),0);
     const blurb=k==="r"?"Should be taken care of soon to prevent damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
     return `<div class="cvgrp cvg-${k}"><div class="cvgh"><div style="flex:1;min-width:0"><div class="cvgt">${k==="r"?"⚠ ":""}${title}</div><div class="cvgb">${blurb}</div></div><div class="cvgs"><div class="num">${money(tot)}</div><button class="cvallbtn" data-cvall="${k}|accept">Accept all</button></div></div>${its.map(([i,ix])=>`<div class="cvrow ${i.cust}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
+      ${bfMissing(j)&&bfMajorKey(keyOf(i.k))?`<div class="cvheld">⛔ Requires the backflow preventer to be installed first (state rule).</div>`:""}
       <div class="cvbtns"><button type="button" class="cvb acc" data-cvpick="${ix}|accept" aria-pressed="${i.cust==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-cvpick="${ix}|decline" aria-pressed="${i.cust==="decline"}">✕ Decline</button></div>${k==="r"&&i.cust==="decline"?`<div class="cvwarn">⚠ Declining this leaves a problem that can cause damage, water waste or a code issue.</div>`:""}</div>`).join("")}</div>`};
   const left=c.items.filter(i=>!i.cust).length;
   return `<div class="cvwrap" role="dialog" aria-modal="true" aria-label="Customer view"><div class="cvinner">
@@ -2453,7 +2514,7 @@ function custViewHtml(j){const c=j.completion;if(!c)return "";const b=bizInfo();
       ${t.fee&&!t.acc.length?`<p class="small" style="margin:4px 0 0">With nothing accepted, only the ${money(t.fee)} diagnostic fee is due.</p>`:""}</div>
     <div class="cvsign"><label class="f"><span>Your full name</span><input type="text" id="cv-name" autocomplete="name" value="${esc(S.cvName||j.info.customer||"")}"></label>
       <div class="f"><span>Sign here</span><canvas id="cv-sig" width="600" height="160" aria-label="Signature pad"></canvas><button type="button" class="linkbtn" data-cvclear="1">Clear signature</button></div>
-      <label class="small cvagree"><input type="checkbox" id="cv-agree"> I approve the accepted items at the prices shown. Declined items were recommended to me and I chose not to have them done now.</label>
+      <label class="small cvagree"><input type="checkbox" id="cv-agree" ${S.cvAgree?"checked":""}> I approve the accepted items at the prices shown. Declined items were recommended to me and I chose not to have them done now.</label>
       <button class="btn" data-cvconfirm="1">${left?`Decide ${left} more item${left===1?"":"s"} first`:"Confirm my choices"}</button></div>`}
   </div></div>`}
 /* Signature pad: drawn strokes are kept in S.cvSig so screen redraws never lose them */
@@ -2464,8 +2525,9 @@ function sigInit(){}
   document.addEventListener("pointerdown",e=>{if(!e.target||e.target.id!=="cv-sig")return;cv=e.target;down=true;last=pt(e);try{cv.setPointerCapture(e.pointerId)}catch(x){}e.preventDefault()});
   document.addEventListener("pointermove",e=>{if(!down||!cv)return;const g=cv.getContext("2d");g.lineWidth=3;g.lineCap="round";g.strokeStyle="#111";const p=pt(e);g.beginPath();g.moveTo(last[0],last[1]);g.lineTo(p[0],p[1]);g.stroke();last=p});
   const up=()=>{if(!down)return;down=false;if(cv)S.cvSig=cv.toDataURL("image/png")};document.addEventListener("pointerup",up);document.addEventListener("pointercancel",up);
-  document.addEventListener("input",e=>{if(e.target&&e.target.id==="cv-name")S.cvName=e.target.value},true)})();
-function completionTab(){const j=job();const s=syncCompletion(j);
+  document.addEventListener("input",e=>{if(e.target&&e.target.id==="cv-name")S.cvName=e.target.value},true);
+  document.addEventListener("change",e=>{if(e.target&&e.target.id==="cv-agree")S.cvAgree=e.target.checked},true)})();
+function completionTab(){const j=job();if(bfHold(j))return bfHoldPage(j);const s=syncCompletion(j);
   if(!s)return `<div class="card"><h2>Status</h2><p>Nothing to walk through yet. Issue the audit report, or add items on the Estimate tab.</p><div class="row"><button class="btn" data-tab="report">Go to Report</button><button class="btn ghost" data-tab="estimate">Go to Estimate</button></div></div>`;
   if(s.changed)scheduleSave(S.cur);
   if(j.outcome!=="approved")return walkCard(j)+outcomeCard(j);
@@ -2475,7 +2537,7 @@ function completionTab(){const j=job();const s=syncCompletion(j);
     <p class="small muted" style="margin:0">Mark each item once the work is finished. The invoice bills only items marked Done.${c.confirm?" Items the customer declined are already marked.":""}</p>
     <div class="row">${tlDot("r")} ${n.r} urgent · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
   ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div></div>
-      ${seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
+      ${bfBlocked(j,keyOf(i.k))&&i.status!=="declined"?`<div class="note bad small">⛔ On hold: ${BF_RULE} requires the backflow preventer to be installed before this work. Mark the backflow install Done first.</div>${seg("Status",`completion.items.${ix}.status`,COMP_ST.filter(x=>x[0]!=="done"),{declined:"bad"})}`:seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
       ${i.status?fld("Note (optional)",`completion.items.${ix}.note`):""}
       ${i.status==="done"?`<div class="q"><span class="ql">After photo (optional)</span>${photoStrip(`completion.items.${ix}.pic`).replace("Photo required","Add photo").replace('class="phadd req"','class="phadd"')}</div>`:""}</div>`).join("")
     :`<div class="card"><p class="muted">The audit had no red or yellow items to complete.</p></div>`}
@@ -2698,7 +2760,7 @@ function jobSteps(j){
     {k:"completion",label:"Outcome",done:j.outcome==="declined"||(j.outcome==="approved"&&!!(j.completion&&j.completion.issuedAt&&j.completion.fp===compPrint(j))),
      todo:!j.outcome||j.outcome==="waiting"?"Ask if the customer is hiring us for the work.":"Mark the completed work and issue the completion report."}];
 }
-function guideBar(j){const st=jobSteps(j);const nx=st.find(s=>!s.done);const done=st.filter(s=>s.done).length;
+function guideBar(j){if(bfHold(j))return `<div class="guide"><div class="row"><span class="spacer small"><b>Audit on hold:</b> no backflow preventer. Talk the customer through it on the Status tab.</span>${S.tab==="completion"?"":`<button class="btn sm" data-tab="completion">Status</button>`}</div></div>`;const st=jobSteps(j);const nx=st.find(s=>!s.done);const done=st.filter(s=>s.done).length;
   return `<div class="guide"><div class="gprog" role="progressbar" aria-valuemin="0" aria-valuemax="${st.length}" aria-valuenow="${done}"><span style="width:${Math.round(done/st.length*100)}%"></span></div>
   ${nx?`<div class="row"><span class="spacer small"><b>${done} of ${st.length} steps done.</b> Next: ${esc(nx.todo)}</span>${S.tab===nx.k&&nx.k!=="zones"?`<button class="btn sm" data-gohere="${nx.k}">Show me</button>`:`<button class="btn sm" data-gonext="${nx.k}">Go</button>`}</div>`
     :`<div class="row"><span class="spacer small"><b>All ${st.length} steps done.</b> ${j.outcome==="declined"?"Audit only. Invoice the service call.":"Job complete. Send the invoice."}</span>${S.tab==="invoice"?"":`<button class="btn sm" data-tab="invoice">Invoice</button>`}</div>`}</div>`}
@@ -3329,9 +3391,11 @@ app.addEventListener("click",ev=>{
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
   if(d.ltier!=null){if(!isAdmin())return;const i=d.ltier.lastIndexOf("|");const key=d.ltier.slice(0,i),t=d.ltier.slice(i+1);S.pricing._lineTiers=Object.assign({},S.pricing._lineTiers||{});S.pricing._lineTiers[key]=t||"none";savePricing();rr();return}
   if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});S.pricing._brandTiers[bn]=t||"none";savePricing();rr();return}
-  if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
+  if(d.locked){toast("On hold until a backflow preventer is installed. See the Status tab.");return}
+  if(d.tab){if(bfHold(j||{})&&HOLD_TABS.has(d.tab)){toast("On hold until a backflow preventer is installed. See the Status tab.");return}S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
 
+  if(d.set!=null&&/^mainline\.\d+\.bf\.present$/.test(d.set)&&d.v==="no"&&getP(j,d.set)!=="no"){S.bfConfirm=d.set;render();return}
   if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
     if(d.set==="inv.kind"&&d.v==="invoice"&&j.inv.no&&!j.inv.issued){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}
     scheduleSave(S.cur);rr();return}
@@ -3408,12 +3472,13 @@ app.addEventListener("click",ev=>{
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
     S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
   if(d.diag){j.est.trip=d.diag==="on";if(d.diag==="off"){j.est.waivedAt=Date.now();j.est.waivedBy=(S.me||{}).name||""}scheduleSave(S.cur);rr();return}
-  if(d.cvopen){syncCompletion(j);S.custView=true;S.cvScroll=0;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
+  if(d.cvopen){syncCompletion(j);S.custView=true;S.cvScroll=0;S.cvAgree=false;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
   if(d.cvexit){S.custView=false;S.cvDone=false;render();return}
   if(d.cvpick){const [ix,v]=d.cvpick.split("|");const it=j.completion.items[+ix];it.cust=it.cust===v?"":v;scheduleSave(S.cur);render.keep=true;render();return}
   if(d.cvall){const [k,v]=d.cvall.split("|");j.completion.items.forEach(i=>{if(i.c===k)i.cust=v});scheduleSave(S.cur);render.keep=true;render();return}
   if(d.cvclear){const cv=document.getElementById("cv-sig");if(cv)cv.getContext("2d").clearRect(0,0,cv.width,cv.height);S.cvSig=null;return}
   if(d.cvconfirm){const c=j.completion;const left=c.items.filter(i=>!i.cust).length;if(left){toast(`Please decide ${left} more item${left===1?"":"s"}`);return}
+    if(bfMissing(j)){const bfi=c.items.find(i=>keyOf(i.k)==="bf_install");const maj=c.items.filter(i=>i.cust==="accept"&&bfMajorKey(keyOf(i.k)));if(maj.length&&bfi&&bfi.cust!=="accept"){toast("Items marked ⛔ need the backflow preventer. Accept the backflow install, or decline those items.");return}}
     const name=(document.getElementById("cv-name").value||"").trim();if(name.length<3){toast("Please type your full name");return}
     if(!S.cvSig){toast("Please sign in the box");return}
     if(!document.getElementById("cv-agree").checked){toast("Please tick the approval statement");return}
@@ -3422,6 +3487,18 @@ app.addEventListener("click",ev=>{
     j.outcome=t.acc.length?"approved":"declined";c.log=c.log||[];c.log.push({at:Date.now(),t:`${name} confirmed in person: ${t.acc.length} accepted, ${c.confirm.dec} declined (${money(t.total)})`});
     if(j.estDoc)estLog(j,`${name} ${t.acc.length?"approved":"declined"} in person`);
     S.cvDone=true;scheduleSave(S.cur);render();return}
+  if(d.bfyes){const path=S.bfConfirm;S.bfConfirm=null;setP(j,path,"no");j.bfHold={at:Date.now(),by:(S.me||{}).name||j.info.tech||""};scheduleSave(S.cur);S.tab="completion";render();window.scrollTo(0,0);toast("Audit on hold. Talk the customer through the next steps.");return}
+  if(d.bfno){S.bfConfirm=null;render();return}
+  if(d.bffound){j.mainline.forEach(m=>{if(m.bf.present==="no")m.bf.present="yes"});j.bfHold.cleared=Date.now();j.bfHold.found=true;scheduleSave(S.cur);S.tab="mainline";render();window.scrollTo(0,0);toast("Backflow marked present. Fill in its details.");return}
+  if(d.bfelse){j.mainline.forEach(m=>{if(m.bf.present==="no")m.bf.noneAction="note"});j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="mainline";render();window.scrollTo(0,0);toast("Noted: protection is elsewhere. Audit resumed.");return}
+  if(d.bftype){const m=j.mainline[+d.bfm];m.bf.newType=d.bftype;scheduleSave(S.cur);rr();return}
+  if(d.bfpermit){const m=j.mainline[+d.bfm];m.bf.permit=d.bfpermit;scheduleSave(S.cur);rr();return}
+  if(d.bfstep){const [k,v]=d.bfstep.split("|");j.bfHold.steps=Object.assign({},j.bfHold.steps||{},{[k]:v==="1"?Date.now():null});scheduleSave(S.cur);rr();return}
+  if(d.bfresume){const st=j.bfHold.steps||{};if(!st.installed||!st.tested){toast("Mark the backflow installed and tested first");return}
+    j.mainline.forEach(m=>{if(m.bf.present==="no"){m.bf.present="yes";m.bf.type=m.bf.newType||m.bf.type||"";m.bf.testRec="tag";m.bf.lastTest=today();m.bf.condition="Good";m.bf.installedNew=today()}});
+    j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="controllers";render();window.scrollTo(0,0);toast("Backflow installed. Audit resumed.");return}
+  if(d.bfdecline){j.bfHold.declined={at:Date.now(),by:(S.me||{}).name||""};j.outcome="declined";scheduleSave(S.cur);rr();toast("Recorded: customer informed and declined. Only the diagnostic fee is billed.");return}
+  if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
   if(d.estmark){j.estDoc.sentAt=Date.now();estLog(j,"Marked as sent");scheduleSave(S.cur);rr();return}
   if(d.estanswer){j.outcome=d.estanswer;estLog(j,"Customer "+(d.estanswer==="approved"?"approved":"declined")+" the estimate");scheduleSave(S.cur);rr();toast(d.estanswer==="approved"?"Approved. The job moves to Work.":"Marked declined.");return}
