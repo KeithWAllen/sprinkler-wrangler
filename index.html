@@ -2510,14 +2510,8 @@ function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0
 
       <p class="small muted" style="margin:0">Plus the diagnostic fee for today's visit. Prices come from your price sheet (Admin settings). The permit fee varies by city.</p>
       ${j.completion&&j.completion.confirm?`<div class="note ok small"><b>${esc(j.completion.confirm.name)} approved ${j.completion.confirm.acc} item${j.completion.confirm.acc===1?"":"s"}</b> on ${esc(fmtDT(j.completion.confirm.at))} (${money(j.completion.confirm.total)}). Schedule the install.</div>`:""}
-      ${(()=>{const miss=[!typ&&"backflow type",!(m.iso&&m.iso.present)&&"isolation valve",!m.bf.permit&&"city permit"].filter(Boolean);return `${miss.length?`<p class="small" style="margin:0"><b>Answer first:</b> ${miss.join(", ")} (section 2).</p>`:""}<div class="row"><button class="btn" data-cvopen="1" ${miss.length?"disabled":""}>Go over it with the customer (customer view)</button><button class="btn ghost" data-bfdecline="1">Customer declined</button></div>`})()}</div>
-    <div class="combo"><h4>4 · After it's installed</h4>
-      ${step("installed","Backflow preventer installed",typ?esc(typ)+", at least 12 in. clearance for testing":"Install per manufacturer, with clearance for testing")}
-      ${step("tested","Tested by a licensed backflow tester","Tester name and license # go on the test report")}
-      ${step("sent","Test results sent to the water utility","Within 10 business days (30 TAC §344.52(c))")}
-      ${m.bf.permit==="required"?step("inspected","City permit closed / inspection passed","Keep the permit number on file"):""}
-      <div><button class="btn" data-bfresume="1">Resume the audit</button></div>
-      <p class="small muted" style="margin:0">Resuming unlocks Controllers, Zones and Map, and records the new backflow preventer on the Mainline tab.</p></div>
+      ${(()=>{const miss=[!typ&&"backflow type",!(m.iso&&m.iso.present)&&"isolation valve",!m.bf.permit&&"city permit"].filter(Boolean);return `${miss.length?`<p class="small" style="margin:0"><b>Answer first:</b> ${miss.join(", ")} (section 2).</p>`:""}<div class="row"><button class="btn ghost" data-cvopen="1" ${miss.length?"disabled":""}>Go over it with the customer</button><button class="btn ghost" data-bfdecline="1">Customer declined</button></div>`})()}</div>
+    <div class="row"><span class="spacer small muted">When the new backflow preventer is in:</span><button class="btn ghost" data-bfresume="1">Backflow installed: back to the job</button></div>
     <div class="row small"><span class="spacer muted">Mistake?</span><button class="btn quiet sm" data-bffound="1">Found one after all</button><button class="btn quiet sm" data-bfelse="1">Protection is elsewhere</button></div></div>`}
 function walkCard(j){const c=j.completion;const cf=c&&c.confirm;const und=c?c.items.filter(i=>!i.cust).length:0;
   return `<div class="card ${cf?"":"need"}"><div class="cardhead"><h2>Walk-through with the customer</h2>${cf?'<span class="pill ok">Confirmed</span>':'<span class="pill warn">Not confirmed</span>'}</div>
@@ -3527,9 +3521,8 @@ app.addEventListener("click",ev=>{
   if(d.bftype){const m=j.mainline[+d.bfm];m.bf.newType=d.bftype;scheduleSave(S.cur);rr();return}
   if(d.bfpermit){const m=j.mainline[+d.bfm];m.bf.permit=d.bfpermit;scheduleSave(S.cur);rr();return}
   if(d.bfstep){const [k,v]=d.bfstep.split("|");j.bfHold.steps=Object.assign({},j.bfHold.steps||{},{[k]:v==="1"?Date.now():null});scheduleSave(S.cur);rr();return}
-  if(d.bfresume){const st=j.bfHold.steps||{};if(!st.installed||!st.tested){toast("Mark the backflow installed and tested first");return}
-    j.mainline.forEach(m=>{if(m.bf.present==="no"){m.bf.present="yes";m.bf.type=m.bf.newType||m.bf.type||"";m.bf.testRec="tag";m.bf.lastTest=today();m.bf.condition="Good";m.bf.installedNew=today()}});
-    j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="controllers";render();window.scrollTo(0,0);toast("Backflow installed. Audit resumed.");return}
+  if(d.bfresume){j.mainline.forEach(m=>{if(m.bf.present==="no"){m.bf.present="yes";m.bf.type=m.bf.newType||m.bf.type||"";m.bf.installedNew=today()}});
+    j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="mainline";render();window.scrollTo(0,0);toast("Backflow recorded. Fill in its details and continue the job.");return}
   if(d.bfdecline){j.bfHold.declined={at:Date.now(),by:(S.me||{}).name||""};j.outcome="declined";scheduleSave(S.cur);rr();toast("Recorded: customer informed and declined. Only the diagnostic fee is billed.");return}
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
