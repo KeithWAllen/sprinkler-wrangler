@@ -759,8 +759,11 @@ function ctlFlags(c){
 }
 function buildEstimate(j){
   const L=[];
-  const add=(sec,key,qty,note)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);L.push({sec,key,label:d.l+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
-  const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;L.push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
+  /* identical lines (same zone/section, item and price) merge into one line with the combined quantity,
+     e.g. spray nozzles entered per head size, so every line on the estimate is unique */
+  const push=x=>{const o=L.find(y=>y.sec===x.sec&&y.key===x.key&&y.label===x.label&&y.price===x.price);if(o){o.qty+=x.qty;o.total=o.price*o.qty}else L.push(x)};
+  const add=(sec,key,qty,note)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);push({sec,key,label:d.l+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
+  const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
   if(j.est.trip!==false)add("Service","trip",1);
   (j.mainline||[]).forEach(m=>{
     const sec=m.name||"Mainline";
@@ -2379,8 +2382,9 @@ const COMP_ST=[["done","Done"],["declined","Declined by customer"],["notdone","N
 function auditSnapshot(j){const e=buildEstimate(j);return {at:Date.now(),lines:e.lines.filter(l=>lineColor(j,l)).map(l=>({k:lineKey(l),label:l.label,sec:l.sec,c:lineColor(j,l),total:l.total,qty:l.qty,unit:l.unit}))}}
 function latestAudit(j){return [...(j.revs||[])].reverse().find(r=>r.audit)||null}
 function syncCompletion(j){const rv=latestAudit(j);
-  const src=rv?rv.audit.lines:buildEstimate(j).lines.filter(l=>l.key!=="trip"&&l.total>0).map(l=>({k:lineKey(l),label:l.label,sec:l.sec,c:lineColor(j,l)||"y",total:l.total}));
+  const src=rv?rv.audit.lines.slice():buildEstimate(j).lines.filter(l=>l.key!=="trip"&&l.total>0).map(l=>({k:lineKey(l),label:l.label,sec:l.sec,c:lineColor(j,l)||"y",total:l.total}));
   if(!src.length&&!rv)return null;
+  {const m={};const out=[];src.forEach(l=>{if(m[l.k]){m[l.k].total+=num(l.total);m[l.k].qty=(m[l.k].qty||1)+(l.qty||1)}else{m[l.k]=Object.assign({},l);out.push(m[l.k])}});src.length=0;out.forEach(x=>src.push(x))}
   const old=j.completion||{};const prev={};(old.items||[]).forEach(i=>prev[i.k]=i);const rn=rv?rv.n:null;
   const items=src.map(l=>Object.assign({k:l.k,label:l.label,sec:l.sec,c:l.c,total:l.total,status:"",note:"",cust:""},prev[l.k]?{status:prev[l.k].status,note:prev[l.k].note||"",pic_ph:prev[l.k].pic_ph,cust:prev[l.k].cust||""}:{}));
   const changed=old.rev!==rn||JSON.stringify((old.items||[]).map(i=>[i.k,i.status,i.cust||"",i.total]))!==JSON.stringify(items.map(i=>[i.k,i.status,i.cust||"",i.total]));
