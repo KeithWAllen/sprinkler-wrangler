@@ -2677,7 +2677,7 @@ function custImportPlan(rows){
       createdAt:(x0.created instanceof Date?x0.created.getTime():Date.parse(x0.created))||Date.now()});
     rec.custNo="";add.push({rec,rows:g.items.map(x=>x.row),fixes,warns})});
   return {add,skip,rows:raw.length}}
-async function custImportFile(file){S.cimp={step:"reading",name:file.name};render();
+async function custImportFile(file){if(!/\.(xlsx|xls|csv)$/i.test(file.name||"")&&!/sheet|excel|csv|comma/i.test(file.type||"")){S.cimp={step:"pick",err:"Please choose an Excel (.xlsx) or CSV file."};render();return}S.cimp={step:"reading",name:file.name};render();
   try{const X=await loadXlsx();const wb=X.read(await file.arrayBuffer(),{type:"array",cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=X.utils.sheet_to_json(ws,{defval:"",raw:true});
     if(!rows.length)throw new Error("The file has no rows");const plan=custImportPlan(rows);window.__cimpPlan=plan;S.cimp={step:"preview",name:file.name,plan};render();window.scrollTo(0,0)}
   catch(e){S.cimp={step:"pick",err:String(e.message||e)};render()}}
@@ -2688,7 +2688,7 @@ function custImportView(){const m=S.cimp;const back=`<div><button class="btn qui
     <p class="small" style="margin:0">From Zoho: <b>Sales → Customers → ⋯ → Export Customers</b> (Excel or CSV). Other spreadsheets work too if they have columns like Name, Email, Phone, Address, City, State, ZIP.</p>
     <p class="small muted" style="margin:0">Nothing is saved until you review the preview and tap Import. Customers already in the app are skipped.</p>
     ${m.err?`<div class="note bad small">${esc(m.err)}</div>`:""}
-    <label class="btn" style="width:max-content">Choose file<input type="file" accept=".xlsx,.xls,.csv" data-cimpfile="1" hidden></label></div>`;
+    <label class="btn" style="width:max-content">Choose file<input type="file" data-cimpfile="1" hidden></label></div>`;
   const P=m.plan;const nProps=P.add.reduce((a,x)=>a+1+x.rec.props.length,0);const nW=P.add.filter(x=>x.warns.length).length;const f=m.filter||"all";
   const list=P.add.filter(x=>f==="warn"?x.warns.length:f==="fix"?x.fixes.length:true);
   return back+`<div class="card"><div class="cardhead"><h2>Preview: ${esc(m.name)}</h2><span class="pill neutral">${P.rows} rows</span></div>
