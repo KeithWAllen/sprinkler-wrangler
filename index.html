@@ -1424,7 +1424,7 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
   ${c.present==="no"&&(isIso||isMv)?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>`:""}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
-  ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Fix now.</div>`:""}
+  ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Upstream of the backflow (house side):</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
@@ -1446,12 +1446,12 @@ function mainlineTab(){const j=job();
     ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo ${m.bf.present==="no"?"bad":""}"><h4>Backflow preventer</h4>
     ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
-    ${m.bf.present==="no"?`<div class="note bad small"><b>No backflow preventer.</b> Texas (TCEQ) requires backflow prevention on any irrigation system connected to drinking water. This is marked Fix now on the report.</div>
+    ${m.bf.present==="no"?`<div class="note bad small"><b>No backflow preventer.</b> Texas (TCEQ) requires backflow prevention on any irrigation system connected to drinking water. This is marked Urgent on the report.</div>
     ${seg("Recommend",b+".bf.noneAction",[["install","Install one"],["note","Note only (protection is elsewhere)"]])}`:m.bf.present!=="yes"?`<p class="small muted" style="margin:0">Answer first. The backflow details appear once you pick Yes.</p>`:`
     <div class="grid3">${sizeSel("Size",b+".bf.size")}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${realLine(m.bf.line)?"":fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     ${seg("Backflow test record",b+".bf.testRec",[["tag","Tag or record found"],["unknown","Unknown / no tag"]])}
     ${m.bf.testRec==="tag"?`<div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date",'data-rr="1"')}</div>`:""}
-    ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Fix now.</div>`:""}
+    ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Urgent.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}`}</div>
@@ -1861,7 +1861,7 @@ function reportHtmlReal(j,rev){
       ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
   ${techSection(j)}
-  ${(()=>{const e=buildEstimate(j);return e.lines.length?`<section class="repest"><h2>Estimate</h2><p class="small muted" style="margin-top:0">Prices for the work above. Fix now items are needed to stop damage or water loss; Recommended items can be scheduled later.</p>${estTableTL(j,e,false)}${j.est.terms?`<p class="small">${esc(j.est.terms)}</p>`:""}</section>`:""})()}
+  ${(()=>{const e=buildEstimate(j);return e.lines.length?`<section class="repest"><h2>Estimate</h2><p class="small muted" style="margin-top:0">Prices for the work above. Urgent items are needed to stop damage or water loss; Recommended items can be scheduled later.</p>${estTableTL(j,e,false)}${j.est.terms?`<p class="small">${esc(j.est.terms)}</p>`:""}</section>`:""})()}
   ${equipmentSection(j)}
   ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   ${ups.length?`<section><h2>Optional upgrades</h2><p class="small muted">Not required to fix today's issues. Ask us about any of these.</p>
@@ -2070,7 +2070,7 @@ function jobPrint(j){
   return hashStr(JSON.stringify({c:[i.customer||"",i.address||"",i.city||"",i.propType||""],
     f:findings(j,false).map(([h,it])=>[h,(it||[]).map(strip)]),
     l:buildEstimate(j).lines.map(l=>[l.sec,l.key==="trip"?"Service call / trip charge":l.label,l.qty,l.price]),m:j.mapSold||"",v:3,...(j.est.showTech?{t:techSection(j).replace(/<[^>]+>/g," ").replace(/\s+/g," ")}:{})}))}
-/* Option totals (with tax) for the portal: Fix now (incl. service), Recommended, All work */
+/* Option totals (with tax) for the portal: Urgent (incl. service), Recommended, All work */
 /* Diagnostic fee (Bradley): charged on every estimate visit, credited toward the work if the customer approves,
    billed on its own if they decline. "Free estimate" waives it, and waived fees are counted so they aren't lost. */
 function diagAmt(j){return j.est&&j.est.trip!==false?price("trip",j):0}
@@ -2303,9 +2303,9 @@ function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveC
   return nj}
 
 /* ---------------- Traffic-light audit (Red / Yellow / Green) ----------------
-   Red = fix now (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
+   Red = urgent (broken, leaking, not working). Yellow = recommended soon (worn, adjustment, below standard).
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
-const TL={r:["Fix now","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
+const TL={r:["Urgent","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
 const RED_KEYS=new Set(["mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
@@ -2324,7 +2324,7 @@ function sectionColors(j){const e=buildEstimate(j);const C={};const bump=(sec,c)
   return C}
 /* ---------- System health score (0-100). Draft weights; Bradley to confirm. ----------
    Starts at 100, loses points for what the audit found. afterFix=true projects the score
-   once every Fix now item is done. */
+   once every Urgent item is done. */
 const HS_W={zones:35,water:20,protect:15,equip:15,sched:10,ctl:5};
 function healthScore(j,afterFix){const P=[];const part=(k,area,lost,why)=>P.push({k,area,max:HS_W[k],lost:Math.min(HS_W[k],Math.max(0,lost)),why});
   const zs=j.zones||[];const ans=zs.filter(z=>z.works==="yes"||z.works==="no");const bad=zs.filter(z=>z.works==="no"||(z.laterals||[]).length);
@@ -2351,13 +2351,13 @@ function scoreTab(){const j=job();const h=healthScore(j,false),a=healthScore(j,t
   const top=h.parts.filter(x=>x.lost>0).sort((x,y)=>y.lost-x.lost);
   return `<div class="card hscard"><div class="hsrow">${hsBadge(h.score,150)}<div><div class="eyebrow">System health score</div><h2 style="margin:2px 0">${h.score} <span class="small muted">out of 100</span></h2><div class="pill ${c==="g"?"ok":c==="y"?"warn":"bad"}">${l}</div>
     ${h.unread?`<p class="small muted" style="margin:6px 0 0">${h.unread} zone${h.unread===1?"":"s"} not checked yet; the score may change.</p>`:""}</div></div>
-    ${a.score>h.score?`<div class="hsafter">${hsBadge(a.score,64)}<div><b>${a.score} after the Fix now repairs</b><div class="small muted">Up ${a.score-h.score} points if the customer approves the Fix now items on the estimate.</div></div></div>`:""}</div>
+    ${a.score>h.score?`<div class="hsafter">${hsBadge(a.score,64)}<div><b>${a.score} after the Urgent repairs</b><div class="small muted">Up ${a.score-h.score} points if the customer approves the Urgent items on the estimate.</div></div></div>`:""}</div>
   <div class="card"><h3>What the score is made of</h3><div class="hsparts">${h.parts.map(x=>{const pct=Math.round(100*(x.max-x.lost)/x.max);const pc=pct>=80?"g":pct>=50?"y":"r";return `<div class="hspart"><div class="row" style="flex-wrap:nowrap"><b style="flex:1">${esc(x.area)}</b><span class="mono small">${Math.round(x.max-x.lost)} / ${x.max}</span></div><div class="hsbar"><span class="tlbg-${pc}" style="width:${pct}%"></span></div>${x.why.length?`<div class="small muted">${x.why.map(esc).join(" · ")}</div>`:""}</div>`}).join("")}</div>
 </div>`}
 function scorecard(j){const C=sectionColors(j);const n={r:0,y:0,g:0,n:0};Object.values(C).forEach(c=>n[c||"n"]=(n[c||"n"]||0)+1);
   return `<div class="score">${["r","y","g"].map(c=>`<div class="sc sc-${c}"><div class="scn">${n[c]}</div><div><b>${TL[c][0]}</b><div class="small">${esc(TL[c][1])}</div></div></div>`).join("")}</div>
   ${n.n?`<p class="small muted" style="margin:4px 0 0">${n.n} area${n.n===1?"":"s"} not checked on this visit.</p>`:""}`}
-/* estimate table split into Fix now / Recommended (audit) */
+/* estimate table split into Urgent / Recommended (audit) */
 function estTableTL(j,e,editable){
   const groups={r:[],y:[],s:[]};e.lines.forEach(l=>{const c=lineColor(j,l);(c?groups[c]:groups.s).push(l)});
   const sub=ls=>ls.reduce((a,l)=>a+l.total,0);
@@ -2365,12 +2365,12 @@ function estTableTL(j,e,editable){
   const block=(k,title,ls)=>ls.length?`<tr class="sec tlsec-${k}"><td colspan="3">${k!=="s"?tlDot(k)+" ":""}${title}</td><td class="r">${money(sub(ls))}</td></tr>${ls.map(row).join("")}`:"";
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
-    ${block("s","Service & add-ons",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
+    ${block("s","Service & add-ons",groups.s)}${block("r","Urgent",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
   ${(()=>{const rate=jobTax(j)/100;const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;const fx=sub(groups.s)+sub(groups.r)-cr,rc=sub(groups.y);
     const blk=(cls,title,note,st,disc)=>{const base=st-(disc||0);const tx=base*rate;return `<div class="totblk ${cls}"><div class="tbh"><span>${title}</span>${note?`<span class="small muted">${note}</span>`:""}</div>${cr&&cls!=="tb-y"?`<div class="small"><span>Diagnostic fee credited</span><span>−${money(cr)}</span></div>`:""}<div><span>Subtotal</span><span>${money(st)}</span></div>${disc?`<div><span>Discount</span><span>−${money(disc)}</span></div>`:""}${rate?`<div><span>Tax (${jobTax(j)}%)</span><span>${money(tx)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(base+tx)}</span></div></div>`};
     const two=groups.y.length>0;
-    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,cr?"Stops damage and water loss. Diagnostic fee credited.":"Stops damage and water loss. Includes the diagnostic fee.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub-cr,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub-cr,e.disc):""}</div>${cr?`<p class="small diagnote">The ${money(cr)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the ${money(cr)} diagnostic fee is due.</p>`:diagAmt(j)?"":(j.revs||[]).length||j.estDoc?`<p class="small diagnote">Free estimate: no diagnostic fee.</p>`:""}`})()}
-  ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
+    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Urgent only`,cr?"Stops damage and water loss. Diagnostic fee credited.":"Stops damage and water loss. Includes the diagnostic fee.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Urgent + Recommended.",e.sub-cr,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub-cr,e.disc):""}</div>${cr?`<p class="small diagnote">The ${money(cr)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the ${money(cr)} diagnostic fee is due.</p>`:diagAmt(j)?"":(j.revs||[]).length||j.estDoc?`<p class="small diagnote">Free estimate: no diagnostic fee.</p>`:""}`})()}
+  ${editable?`<p class="small muted">Tap a colored dot to switch an item between Urgent and Recommended.</p>`:""}`}
 
 /* ---------------- Completion: what was (audit) vs what is (after the work) ----------------
    Each issued audit revision keeps a snapshot of its Red/Yellow items. After the work, the tech marks each
@@ -2399,9 +2399,9 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
     ["Completed",esc(d(c.issuedAt||Date.now()))],
     ["Technician",esc(c.by||j.info.tech||"—")]])}
   <section><h2>Before and after</h2><div class="ba">
-    <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> fix now ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
+    <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> urgent ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
     <div class="baarrow" aria-hidden="true">→</div>
-    <div class="bacol"><div class="eyebrow">What is now</div><div class="row">${tlDot("g")} <b>${n.fixed}</b> fixed ${tlDot("r")} <b>${n.rLeft}</b> fix now ${tlDot("y")} <b>${n.yLeft}</b> recommended</div></div></div></section>
+    <div class="bacol"><div class="eyebrow">What is now</div><div class="row">${tlDot("g")} <b>${n.fixed}</b> fixed ${tlDot("r")} <b>${n.rLeft}</b> urgent ${tlDot("y")} <b>${n.yLeft}</b> recommended</div></div></div></section>
   <section><h2>Item by item</h2><div class="tbl"><table><thead><tr><th>Item</th><th>Was</th><th>Now</th></tr></thead><tbody>
     ${items.map(i=>`<tr><td>${esc(i.label)}<div class="small muted">${esc(i.sec)}${i.note?" · "+esc(i.note):""}</div></td><td>${tlDot(i.c)} ${TL[i.c][0]}</td><td>${nowCell(i)}</td></tr>`).join("")}</tbody></table></div></section>
   ${n.declined?`<section><p class="small"><b>Declined items:</b> the customer chose not to have ${n.declined===1?"this item":"these items"} done at this time. ${n.declined===1?"It was":"They were"} explained on the audit report (Rev ${revNo(c.rev)}, ${esc(d(rv.at))}).</p></section>`:""}
@@ -2424,15 +2424,15 @@ function walkCard(j){const c=j.completion;const cf=c&&c.confirm;const und=c?c.it
     ${cf&&cf.sig?`<details class="small"><summary>Signature</summary><img src="${cf.sig}" alt="Customer signature" style="max-width:280px;background:#fff;border:1px solid var(--line);border-radius:8px"></details>`:""}</div>`}
 function custViewHtml(j){const c=j.completion;if(!c)return "";const b=bizInfo();const t=cvTotals(j);const done=S.cvDone;
   const grp=(k,title)=>{const its=c.items.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!its.length)return "";const tot=its.reduce((a,[i])=>a+num(i.total),0);
-    const blurb=k==="r"?"Needed now to stop damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
+    const blurb=k==="r"?"Should be taken care of soon to prevent damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
     return `<div class="cvgrp cvg-${k}"><div class="cvgh"><div style="flex:1;min-width:0"><div class="cvgt">${k==="r"?"⚠ ":""}${title}</div><div class="cvgb">${blurb}</div></div><div class="cvgs"><div class="num">${money(tot)}</div><button class="cvallbtn" data-cvall="${k}|accept">Accept all</button></div></div>${its.map(([i,ix])=>`<div class="cvrow ${i.cust}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
       <div class="cvbtns"><button type="button" class="cvb acc" data-cvpick="${ix}|accept" aria-pressed="${i.cust==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-cvpick="${ix}|decline" aria-pressed="${i.cust==="decline"}">✕ Decline</button></div>${k==="r"&&i.cust==="decline"?`<div class="cvwarn">⚠ Declining this leaves a problem that can cause damage, water waste or a code issue.</div>`:""}</div>`).join("")}</div>`};
   const left=c.items.filter(i=>!i.cust).length;
   return `<div class="cvwrap" role="dialog" aria-modal="true" aria-label="Customer view"><div class="cvinner">
     <div class="row cvtop"><div style="flex:1"><div class="eyebrow">${esc(b.name||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(j.info.customer||"")} · ${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div><button class="btn quiet sm" data-cvexit="1">Technician: exit</button></div>
     ${done?`<div class="card" style="text-align:center"><h2>Thank you, ${esc((c.confirm||{}).name||"")}!</h2><p>Your choices are saved: ${t.acc.length} item${t.acc.length===1?"":"s"} approved, total ${money(t.total)}.</p><p class="small muted">Please hand the phone back to your technician.</p><button class="btn" data-cvexit="1">Hand back to technician</button></div>`:`
-    <p class="small" style="margin:6px 0 10px">Tap <b>Accept</b> or <b>Decline</b> for each item. Red items stop damage or water loss; yellow items are recommended.</p>
-    ${grp("r","FIX NOW")}${c.items.some(i=>i.c==="y")&&c.items.some(i=>i.c==="r")?`<div class="cvdiv"><span>Optional</span></div>`:""}${grp("y","Recommended")}
+    <p class="small" style="margin:6px 0 10px">Tap <b>Accept</b> or <b>Decline</b> for each item. Red items are urgent; yellow items are recommended.</p>
+    ${grp("r","URGENT")}${c.items.some(i=>i.c==="y")&&c.items.some(i=>i.c==="r")?`<div class="cvdiv"><span>Optional</span></div>`:""}${grp("y","Recommended")}
     <div class="cvsum"><div><span>Accepted work</span><span class="num">${money(t.work)}</span></div>${t.fee?`<div><span>Diagnostic fee</span><span class="num">${money(t.fee)}</span></div>`:""}${t.credit?`<div><span>Diagnostic fee credited</span><span class="num">−${money(t.credit)}</span></div>`:""}${t.tax?`<div><span>Tax</span><span class="num">${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span class="num">${money(t.total)}</span></div>
       ${t.fee&&!t.acc.length?`<p class="small" style="margin:4px 0 0">With nothing accepted, only the ${money(t.fee)} diagnostic fee is due.</p>`:""}</div>
     <div class="cvsign"><label class="f"><span>Your full name</span><input type="text" id="cv-name" autocomplete="name" value="${esc(S.cvName||j.info.customer||"")}"></label>
@@ -2457,7 +2457,7 @@ function completionTab(){const j=job();const s=syncCompletion(j);
   const ord={r:0,y:1};const rows=c.items.map((i,ix)=>[i,ix]).sort((a,b)=>ord[a[0].c]-ord[b[0].c]);
   return walkCard(j)+outcomeCard(j)+`<div class="card"><div class="cardhead"><h2>Completed work</h2><span class="muted small">${c.rev!=null?"Audit Rev "+revNo(c.rev):(j.estDoc?"Estimate "+esc(j.estDoc.no):"From the estimate")}</span></div>
     <p class="small muted" style="margin:0">Mark each item once the work is finished. The invoice bills only items marked Done.${c.confirm?" Items the customer declined are already marked.":""}</p>
-    <div class="row">${tlDot("r")} ${n.r} fix now · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
+    <div class="row">${tlDot("r")} ${n.r} urgent · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
   ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div></div>
       ${seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
       ${i.status?fld("Note (optional)",`completion.items.${ix}.note`):""}
@@ -2469,7 +2469,7 @@ function completionTab(){const j=job();const s=syncCompletion(j);
     ${answered===c.items.length?"":`<p class="small muted" style="margin:0">Mark every item to issue the completion report.</p>`}</div>
   ${c.items.length?`<article class="sheet">${completionHtml(j)}</article>`:""}`}
 function completionText(j){const c=j.completion;const n=compCounts(c.items);const L=["COMPLETION REPORT",bizInfo().name||"",j.info.customer||"",[j.info.address,j.info.city].filter(Boolean).join(", "),"Audit Rev "+revNo(c.rev),"",
-  `Before: ${n.r} fix now, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} fix now, ${n.yLeft} recommended`,""];
+  `Before: ${n.r} urgent, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} urgent, ${n.yLeft} recommended`,""];
   c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
 /* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
 function invoiceEstimate(j){const r=invoiceEstimate0(j);
@@ -3146,12 +3146,12 @@ async function loadPortal(){
   if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
   render();
 }
-const CHOICE_L={fix:"Option 1: Fix now only",all:"Option 2: All work",decline:"Not right now"};
+const CHOICE_L={fix:"Option 1: Urgent only",all:"Option 2: All work",decline:"Not right now"};
 function portalOptions(g,r){const o=r.options;const resp=(S.portal.resp||[]).find(x=>x.job_id===g.job);const fmt=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
   if(!o)return `<p class="small muted" style="margin:6px 0 0">Open the report to see the estimate. Your technician will issue an updated report with options you can approve here.</p>`;
   if(resp&&!S.portal.changing)return `<div class="presp ${resp.choice==="decline"?"":"ok"}"><b>${resp.choice==="decline"?"You chose: Not right now":"You approved "+esc(CHOICE_L[resp.choice])}</b> on ${esc(fmt(resp.created_at))}.<div class="small">${resp.choice==="decline"?"No problem. The report stays here if you change your mind.":"Thank you! We'll contact you to schedule the work."}</div><button class="linkbtn" data-pchange="1">Change my answer</button></div>`;
   const tile=(cls,title,sub,t,choice,btn)=>`<div class="totblk ${cls}"><div class="tbh"><span>${title}</span><span class="small muted">${sub}</span></div><div><span>Subtotal</span><span>${money(t.sub)}</span></div>${t.disc?`<div><span>Discount</span><span>−${money(t.disc)}</span></div>`:""}${o.rate?`<div><span>Tax (${o.rate}%)</span><span>${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(t.total)}</span></div>${choice?`<button class="btn sm" style="margin-top:6px" data-presp="${choice}|${esc(r.id)}|${esc(g.job)}|${r.rev}">${btn}</button>`:""}</div>`;
-  return `<div class="pchoose"><div class="eyebrow" style="margin-top:8px">Your options</div><div class="totals3">${tile("tb-r",`${tlDot("r")} ${o.rec?"Option 1: ":""}Fix now only`,"Stops damage and water loss. Includes the service call.",o.fix,"fix",o.rec?"Approve Option 1":"Approve")}${o.rec?tile("tb-y",`${tlDot("y")} Recommended items`,"Included in Option 2.",o.rec,null)+tile("tb-all","Option 2: All work","Fix now + Recommended.",o.all,"all","Approve Option 2"):""}</div>
+  return `<div class="pchoose"><div class="eyebrow" style="margin-top:8px">Your options</div><div class="totals3">${tile("tb-r",`${tlDot("r")} ${o.rec?"Option 1: ":""}Urgent only`,"Stops damage and water loss. Includes the service call.",o.fix,"fix",o.rec?"Approve Option 1":"Approve")}${o.rec?tile("tb-y",`${tlDot("y")} Recommended items`,"Included in Option 2.",o.rec,null)+tile("tb-all","Option 2: All work","Urgent + Recommended.",o.all,"all","Approve Option 2"):""}</div>
     ${o.credit?`<p class="small diagnote">The ${money(o.credit)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the diagnostic fee is due.</p>`:""}
     <div class="row" style="margin-top:6px"><button class="btn quiet sm" data-presp="decline|${esc(r.id)}|${esc(g.job)}|${r.rev}">Not right now</button><span class="small muted">Approving tells us to schedule the work. We'll confirm with you first.</span></div></div>`}
 function portalCustCard(){const c=S.portal.cust||{};const g=(S.portal.list||[])[0]||{};const name=c.customer||g.name||(S.me.name||"");if(!name&&!c.address&&!g.address)return "";
