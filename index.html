@@ -355,6 +355,7 @@ table.dgridt{table-layout:fixed;width:100%}
 .diagnote{margin:6px 0 0;padding:6px 8px;border-left:3px solid var(--accent);background:var(--accent-soft)}
 .cvwrap{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding:max(12px,env(safe-area-inset-top)) 12px 24px}
 .cvinner{max-width:760px;margin:0 auto;display:grid;gap:10px}.cvtop{align-items:flex-start}
+.shwrap{max-width:720px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 14px 32px;display:grid;gap:12px}.shbrand{font-size:15px;padding:4px 2px}.shbrand a{color:inherit}.shfoot{text-align:center;margin:8px 0 0}.shdoc summary{cursor:pointer}.shdoc .sheet{margin-top:8px}.sendbox .row{gap:6px}
 .cvgrp{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
 .cvgh{display:flex;align-items:center;gap:10px;padding:12px 14px}.cvgt{font-weight:900;font-size:1.15rem;letter-spacing:.02em}.cvgb{font-size:.85rem;opacity:.95}.cvgs{text-align:right;display:grid;gap:4px;justify-items:end}.cvgs .num{font-weight:900;font-size:1.1rem}
 .cvallbtn{border:2px solid currentColor;background:transparent;color:inherit;border-radius:999px;padding:4px 12px;font-weight:800;cursor:pointer}
@@ -536,6 +537,8 @@ const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
 /* ---------------- state ---------------- */
 const S={jobs:{},custs:{},pricing:{},cur:null,tab:"mainline",home:"jobs",mode:"loading",ro:false,
   mapTool:"select",mapHide:{},mapSel:null,drawLine:null,bg:{},docketDate:today(),showTech:false,armed:null,filter:"open"};
+/* A customer link (#s=<token>) opens the public estimate/invoice page with no sign-in. */
+const SHARE=(()=>{try{const h=new URLSearchParams(location.hash.slice(1));const t=h.get("s");return t&&/^[A-Za-z0-9_-]{24,}$/.test(t)?{token:t,paid:h.get("paid")==="1"}:null}catch(e){return null}})();
 /* Refresh keeps you on the same screen: the current job + tab (or home list) live in the page address (#job=…&tab=…). */
 (function(){try{const h=new URLSearchParams(location.hash.slice(1));if(h.get("job")){S.cur=h.get("job");S.tab=h.get("tab")||"mainline";if(h.get("zone"))S.zoneOpen=h.get("zone")}else if(h.get("home"))S.home=S.restoredHome=h.get("home")}catch(e){}})();
 function saveView(){if(S.mode!=="db"&&S.mode!=="local")return;try{const h=S.cur?`#job=${encodeURIComponent(S.cur)}&tab=${encodeURIComponent(S.tab||"mainline")}${S.zoneOpen&&S.tab==="zones"?"&zone="+encodeURIComponent(S.zoneOpen):""}`:`#home=${encodeURIComponent(S.home||"jobs")}`;if(location.hash!==h)history.replaceState(null,"",location.pathname+location.search+h)}catch(e){}}
@@ -861,10 +864,10 @@ function delBtn(id,label){const armed=S.armed===id;return `<button type="button"
 function render(){
   const app=document.getElementById("app");{const w=document.querySelector(".cvwrap");if(w)S.cvScroll=w.scrollTop}
   const sy=window.scrollY;const keepScroll=render.keep;render.keep=false;
-  app.innerHTML=S.mode==="auth"?authView():S.mode==="portal"?portalView():S.mode==="error"?`<div class="authwrap"><div class="authcard"><h2>Can't connect</h2><p>${esc(S.err)}</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`:S.cur&&job()?jobView():homeView();
+  app.innerHTML=S.mode==="share"?shareView():S.mode==="auth"?authView():S.mode==="portal"?portalView():S.mode==="error"?`<div class="authwrap"><div class="authcard"><h2>Can't connect</h2><p>${esc(S.err)}</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`:S.cur&&job()?jobView():homeView();
   if(S.compose&&S.mode==="db")app.insertAdjacentHTML("beforeend",composeModal());
   if(keepScroll)window.scrollTo(0,sy);
-  if(S.custView)cvAfterRender();
+  if(S.custView||S.mode==="share")cvAfterRender();
   saveView();
   hydratePhotos(app);
 }
@@ -2015,8 +2018,9 @@ function invManage(j){const inv=j.inv;const st=invState(j);const tot=invTotal(j)
   return `<div class="invsum"><div><div class="eyebrow">Total</div><b class="num">${money(tot)}</b></div><div><div class="eyebrow">Paid</div><b class="num">${money(paid)}</b></div><div><div class="eyebrow">Balance due</div><b class="num">${money(bal)}</b></div><div><div class="eyebrow">Due</div><b>${(inv.terms||defTerms())==="completion"?"On completion":esc(fmtD(invDue(j)))}</b></div></div>
     ${inv.sentAt&&Math.abs(live-tot)>0.004&&!closed&&st!=="paid"?`<div class="note warn small">The job changed after this invoice was sent: it now totals <b>${money(live)}</b>. <button class="btn sm" data-invupd="1">Update invoice to ${money(live)}</button></div>`:""}
     ${closed?"":`<div class="grid2">${sel("Payment terms","inv.terms",INV_TERMS.map(x=>[x[0],x[1]]))}${fld("Invoice date","inv.issued","date",'data-rr="1"')}</div>`}
+    ${closed||st==="paid"?"":sendBox(j,"invoice")}
     ${closed?`<div class="row"><span class="spacer small muted">This invoice is ${st==="void"?"void":st==="closed"?"closed without payment":"written off as bad debt"}.</span><button class="btn ghost sm" data-invreopen="1">Reopen</button></div>`:`<div class="row">
-      ${st==="draft"?`<button class="btn" data-invsend="1">Email invoice</button><button class="btn ghost" data-invmarksent="1">Mark as sent</button>`:st!=="paid"?`<button class="btn ghost" data-invremind="1">Send payment reminder</button>`:""}</div>`}
+      ${st==="draft"?`<button class="btn quiet" data-invmarksent="1">Mark as sent (handed over in person)</button>`:st!=="paid"?`<button class="btn ghost" data-invremind="1">Send payment reminder</button>`:""}</div>`}
     <div class="combo"><h4>Payments</h4>
       ${invPays(j).length?invPays(j).map((x,i)=>`<div class="act"><div class="al">${money(num(x.amount))} · ${esc(x.method||"")}${x.ref?" #"+esc(x.ref):""}${x.deposit?' <span class="pill neutral">Deposit</span>':""}<div class="ap">${esc(fmtD(x.date))}${x.source==="stripe"?" · paid online":""}${x.note?" · "+esc(x.note):""}</div></div>${x.source==="stripe"?"":delBtn("pay:"+i,"✕")}</div>`).join(""):`<p class="small muted" style="margin:0">No payments yet.</p>`}
       ${closed||st==="paid"?"":`<div class="payform"><label class="f"><span>Amount</span><input type="text" inputmode="decimal" id="pay-amt" value="${esc(pf.amount!=null?pf.amount:bal.toFixed(2))}"></label>
@@ -2043,11 +2047,138 @@ function estDocCard(j){const d=j.estDoc;const e=buildEstimate(j);const bm=bizMis
   const st=estState(j);const x=EST_ST[st];
   return `<div class="card"><div class="cardhead"><h2>Estimate ${esc(d.no)}</h2><span class="pill ${x[1]}">${x[0]}</span></div>
     <div class="invsum" style="grid-template-columns:repeat(2,1fr)"><div><div class="eyebrow">Estimate total</div><b class="num">${money(e.total)}</b></div><div><div class="eyebrow">Date</div><b>${esc(new Date(d.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))}</b></div></div>
-    <div class="row">${st==="draft"?`<button class="btn" data-estsend="1">Email estimate</button><button class="btn ghost" data-estmark="1">Mark as sent</button>`:""}${CAN_PRINT?`<button class="btn ${st==="draft"?"quiet":"ghost"}" data-print="estimate">Print</button>`:""}<button class="btn quiet" data-estcopy="1">Copy as text</button></div>
+    ${(cf=>cf&&/online/.test(cf.via||"")?`<div class="note ok small"><b>${esc(cf.name)} ${cf.acc?"approved":"declined"} online</b> and signed on ${esc(fmtDT(cf.at))}: ${cf.acc} accepted, ${cf.dec} declined, ${money(cf.total)}. Details are on the <button class="linkbtn" data-tab="completion">Status tab</button>.</div>`:"")((j.completion||{}).confirm)}
+    ${st==="approved"||st==="declined"?"":sendBox(j,"estimate")}
+    <div class="row">${st==="draft"?`<button class="btn quiet" data-estmark="1">Mark as sent (handed over in person)</button>`:""}${st==="approved"||st==="declined"?(CAN_PRINT?`<button class="btn ghost" data-print="estimate">Print / Save PDF</button>`:""):""}<button class="btn quiet" data-estcopy="1">Copy as text</button></div>
     ${st==="sent"?`<div class="row"><span class="spacer small">Customer's answer:</span><button class="btn sm" data-estanswer="approved">Approved</button><button class="btn ghost sm" data-estanswer="declined">Declined</button></div>`:""}
     ${st==="approved"?`<p class="small" style="margin:0">Approved. Do the work, then invoice it on the <button class="linkbtn" data-tab="invoice">Invoice tab</button>.</p>`:""}
     <details><summary class="small">Preview the estimate</summary><article class="sheet">${estDocHtml(j)}</article></details>
     ${(d.log||[]).length?`<details class="small"><summary>Activity (${d.log.length})</summary><ul class="changelog">${d.log.slice().reverse().map(l=>`<li>${esc(fmtDT(l.at))}${l.by?" · "+esc(l.by):""}: ${esc(l.t)}</li>`).join("")}</ul></details>`:""}</div>`}
+/* ---------------- Customer links (no login) ----------------
+   Each estimate or invoice gets one long random link: https://…/#s=<token>. Opening it needs no account (like Jobber or Zoho links).
+   Estimates: the customer accepts or declines each item, types their name, signs with a finger and ticks the approval statement.
+   Intent, consent to sign electronically, attribution (name, signature, time, device) and a kept record meet the
+   ESIGN Act and Texas UETA (Bus. & Com. Code ch. 322). Invoices: view, print, and Pay now through Stripe. */
+const EST_LINK_DAYS=30,INV_LINK_DAYS=365;
+function shareUrl(t){return location.href.split("#")[0].split("?")[0]+"#s="+t}
+function newToken(){const a=new Uint8Array(24);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function shareItems(j){const c=Object.assign({},j);syncCompletion(c);const bf=bfMissing(j);
+  return ((c.completion||{}).items||[]).map(i=>({k:i.k,label:i.label,sec:i.sec,c:i.c,total:r2(num(i.total)),held:!!(bf&&bfMajorKey(keyOf(i.k))),bf:keyOf(i.k)==="bf_install"}))}
+function estFp(j){return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j)]))}
+function shareMeta(j){const b=bizInfo();return {biz:b.name||"",phone:b.phone||"",email:b.email||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),fee:r2(diagAmt(j)),rate:jobTax(j)/100}}
+function docLink(j,kind){return kind==="estimate"?(j.estDoc||{}).link:(j.inv||{}).link}
+/* Why a link can't be reused: "" = still good */
+function linkProblem(j,kind){const l=docLink(j,kind);if(!l)return "none";const inf=(S.shareInfo||{})[l.token];
+  if(inf&&(inf.status==="replaced"||inf.status==="void"))return "replaced";if(inf&&inf.expires_at&&Date.parse(inf.expires_at)<Date.now())return "expired";
+  if(kind==="estimate"&&l.fp!==estFp(j))return "changed";return ""}
+async function makeLink(j,kind,id){if(!sb||S.training||S.mode!=="db"){toast(S.training?"Customer links are off in training mode":"Customer links need the online app");return null}
+  const est=kind==="estimate";const token=newToken();
+  const row={token,status:"open",job_id:id,kind,doc_no:est?j.estDoc.no:j.inv.no,html:est?estDocHtml(j):invoiceHtml(j),items:est?shareItems(j):[],meta:shareMeta(j),fp:est?estFp(j):null,expires_at:new Date(Date.now()+(est?EST_LINK_DAYS:INV_LINK_DAYS)*864e5).toISOString()};
+  try{await sb.from("share_links").update({status:"replaced"}).eq("job_id",id).eq("kind",kind).eq("status","open");
+    const {error}=await sb.from("share_links").insert(row);if(error)throw error}
+  catch(e){const msg=String((e&&e.message)||e);toast(/share_links|relation|schema cache/i.test(msg)?"Run database update 13-share-links.sql in Supabase first":"Couldn't create the link: "+msg);return null}
+  const L={token,at:Date.now(),fp:row.fp};if(est){j.estDoc.link=L;estLog(j,"Customer link created")}else{j.inv.link=L;invLog(j,"Customer link created")}
+  S.shareInfo=Object.assign({},S.shareInfo,{[token]:{token,status:"open",view_count:0,expires_at:row.expires_at}});scheduleSave(id);return shareUrl(token)}
+async function ensureLink(j,kind,id){return linkProblem(j,kind)?await makeLink(j,kind,id):shareUrl(docLink(j,kind).token)}
+function loadShareInfo(token){if(!sb||S.mode!=="db")return;S.shareFetch=S.shareFetch||{};const now=Date.now();if(S.shareFetch[token]&&now-S.shareFetch[token]<60000)return;S.shareFetch[token]=now;
+  Promise.resolve(sb.from("share_links").select("token,status,view_count,viewed_at,answered_at,expires_at").eq("token",token).maybeSingle()).then(r=>{const data=r&&r.data;if(!data)return;
+    const old=JSON.stringify((S.shareInfo||{})[token]||null);S.shareInfo=Object.assign({},S.shareInfo,{[token]:data});
+    if(JSON.stringify(data)!==old&&!S.compose&&!S.custView){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))rr()}}).catch(()=>{})}
+function linkMsg(j,kind,url){const b=bizInfo();const first=(j.info.customer||"").split(" ")[0]||"there";const sig=`\n\nThank you,\n${b.name||""}\n${b.phone||""}`;
+  if(kind==="estimate")return {subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,
+    body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} is ready:\n\n${url}\n\nOpen the link to see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
+    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler estimate ${j.estDoc.no} is ready to review and approve: ${url}`};
+  const bal=invBalance(j);const pay=(S.pricing||{})._payOnline;const due=(j.inv.terms||defTerms())==="completion"?"due upon completion":"due by "+fmtD(invDue(j));
+  return {subj:`${b.name||"Invoice"}: invoice ${j.inv.no}`,body:`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, ${due}.\n\nView${pay?" and pay":""} it here:\n${url}${sig}`,
+    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your invoice ${j.inv.no} (${money(bal)}) is ready${pay?" to view and pay":""}: ${url}`}}
+function markSent(j,kind,t,id){if(kind==="estimate"){if(!j.estDoc.sentAt)j.estDoc.sentAt=Date.now();estLog(j,t)}else{if(!j.inv.sentAt){j.inv.sentAt=Date.now();j.inv.amount=invLive(j)}invLog(j,t)}scheduleSave(id)}
+function copyText(txt,msg){try{navigator.clipboard.writeText(txt).then(()=>toast(msg||"Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}}
+function sendBox(j,kind){const l=docLink(j,kind);const prob=linkProblem(j,kind);const inf=l?(S.shareInfo||{})[l.token]:null;if(l)loadShareInfo(l.token);
+  const ph=(j.info.phone||"").replace(/[^\d+]/g,"");const est=kind==="estimate";const pay=(S.pricing||{})._payOnline;
+  const seen=inf&&inf.status==="answered"?`Answered ${esc(fmtDT(inf.answered_at))}`:inf&&inf.view_count?`Opened ${inf.view_count} time${inf.view_count===1?"":"s"} (first ${esc(fmtDT(inf.viewed_at))})`:"Not opened yet";
+  return `<div class="combo sendbox"><h4>Send to the customer</h4>
+    <p class="small muted" style="margin:0">${est?"They get a secure link (no account or password) where they accept or decline each item and sign with a finger.":`They get a secure link (no account or password) to view${pay?" and pay":""} the invoice.`}</p>
+    ${l&&!prob?`<p class="small" style="margin:0">🔗 Link made ${esc(fmtDT(l.at))} · <b>${seen}</b></p>`:""}
+    ${l&&prob==="changed"?`<div class="note warn small" style="margin:0">The estimate changed after the last link was made. Sending again makes a new link; the old one now tells the customer to ask for the new one.</div>`:""}
+    ${l&&prob==="expired"?`<div class="note warn small" style="margin:0">The last link expired. Sending again makes a new one.</div>`:""}
+    ${l&&prob==="replaced"?`<div class="note warn small" style="margin:0">The last link was replaced. Sending again makes a new one.</div>`:""}
+    <div class="row"><button class="btn" data-shsend="email|${kind}">Email</button><button class="btn ghost" data-shsend="text|${kind}" ${ph?"":"disabled title=\"Add a phone number first\""}>Text</button><button class="btn ghost" data-shsend="copy|${kind}">Copy link</button>${CAN_PRINT?`<button class="btn quiet" data-print="${kind}">Print / Save PDF</button>`:""}${l&&!prob?`<a class="btn quiet" href="${esc(shareUrl(l.token))}" target="_blank" rel="noopener">See what they see</a>`:""}</div></div>`}
+async function importShareResponses(){if(!sb||!S.me||S.me.role!=="tech"||!S.loaded||S.training)return;
+  try{const {data,error}=await sb.from("share_responses").select("*").eq("imported",false);if(error||!data||!data.length)return;
+    for(const x of data){const j=S.jobs[x.job_id];if(!j)continue;syncCompletion(j);const c=j.completion;if(!c)continue;const pick={};(x.items||[]).forEach(p=>{if(Array.isArray(p))pick[p[0]]=p[1]});
+      c.items.forEach(i=>{if(pick[i.k]==="accept"||pick[i.k]==="decline"){i.cust=pick[i.k];if(i.cust==="decline")i.status="declined";else if(i.status==="declined")i.status=""}});
+      const acc=c.items.filter(i=>i.cust==="accept").length;const at=Date.parse(x.created_at)||Date.now();
+      c.confirm={name:x.name,at,via:"online (secure link)",acc,dec:c.items.length-acc,total:r2(+x.total||0),sig:x.signature,items:c.items.map(i=>[i.k,i.cust]),ua:x.user_agent||"",ip:x.ip||"",token:x.token};
+      j.outcome=acc?"approved":"declined";c.log=c.log||[];c.log.push({at,t:`${x.name} answered online: ${acc} accepted, ${c.confirm.dec} declined (${money(c.confirm.total)})`});
+      if(j.estDoc){if(!j.estDoc.sentAt)j.estDoc.sentAt=at;estLog(j,`${x.name} ${acc?"approved":"declined"} online and signed`)}
+      if(S.shareInfo&&S.shareInfo[x.token])S.shareInfo[x.token].status="answered";
+      scheduleSave(x.job_id);toast(`${x.name} ${acc?"approved":"declined"} estimate ${(j.estDoc||{}).no||""} online`);
+      await sb.from("share_responses").update({imported:true}).eq("id",x.id)}
+    render()}catch(e){console.warn("share",e)}}
+/* ---- The public page the customer opens (no sign-in) ---- */
+async function shareBoot(){S.mode="share";S.sh={loading:true,picks:{}};render();await shareLoad()}
+async function shareLoad(){let d=null,err="";try{const r=await sb.rpc("get_share",{p_token:SHARE.token});if(r.error)err=r.error.message;else d=r.data}catch(e){err=String(e)}
+  S.sh=Object.assign({},S.sh,{loading:false,d,err});if(d&&d.meta&&S.cvName==null)S.cvName=d.meta.customer||"";render()}
+function shTotals(d){const its=d.items||[];const p=S.sh.picks||{};const acc=its.filter((i,ix)=>p[ix]==="accept");const work=acc.reduce((a,i)=>a+num(i.total),0);const m=d.meta||{};const fee=num(m.fee);const rate=num(m.rate);
+  const sub=work+fee;return {acc,work,fee,tax:sub*rate,total:Math.round(sub*(1+rate)*100)/100}}
+function shareView(){const sh=S.sh||{};const d=sh.d;const m=(d&&d.meta)||{};
+  const contact=m.phone?` Call or text <a href="tel:${esc(m.phone.replace(/[^\d+]/g,""))}">${esc(m.phone)}</a>.`:"";
+  const wrap=x=>`<div class="shwrap">${m.biz?`<div class="shbrand"><b>${esc(m.biz)}</b>${m.phone?` · <a href="tel:${esc(m.phone.replace(/[^\d+]/g,""))}">${esc(m.phone)}</a>`:""}</div>`:""}${x}<p class="small muted shfoot">🔒 Private link${m.biz?" from "+esc(m.biz):""}. No account needed. Please don't forward it.</p></div>`;
+  const msg=(h,p)=>wrap(`<div class="card"><h2>${h}</h2><p>${p}</p></div>`);
+  if(sh.loading)return wrap(`<div class="card"><p>Loading…</p></div>`);
+  if(!d)return msg("Link not found",`This link isn't valid. Check that the whole link was copied, or contact the company that sent it.${sh.err?` <span class="small muted">(${esc(sh.err)})</span>`:""}`);
+  const what=d.kind==="invoice"?"invoice":"estimate";
+  if(d.status==="void")return msg("Link no longer active",`This ${what} link has been turned off.${contact}`);
+  if(d.status==="replaced")return msg(`This ${what} was updated`,`${esc(m.biz||"We")} made changes after this link was sent. Please use the newest link, or ask for a new one.${contact}`);
+  return wrap(d.kind==="invoice"?shareInvoice(d):shareEstimate(d,contact))}
+function shareEstimate(d,contact){const m=d.meta||{};const its=d.items||[];const p=S.sh.picks||{};const t=shTotals(d);
+  const docx=`<details class="card shdoc"><summary><b>Full estimate ${esc(d.doc_no||"")}</b> (printable)</summary><div class="row" style="margin:8px 0"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div><article class="sheet">${d.html||""}</article></details>`;
+  const head=`<div class="eyebrow">Estimate ${esc(d.doc_no||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(m.customer||"")}${m.address?" · "+esc(m.address):""}</div>`;
+  if(d.answer){const a=d.answer;const pk={};(a.items||[]).forEach(x=>{if(Array.isArray(x))pk[x[0]]=x[1]});const n=its.filter(i=>pk[i.k]==="accept").length;
+    return `<div class="card">${head}</div><div class="card" style="text-align:center"><h2>${S.sh.just?"Thank you":"Answered"}, ${esc(a.name)}!</h2><p>Your choices were saved on ${esc(fmtDT(a.at))}: ${n} item${n===1?"":"s"} approved, total ${money(+a.total||0)}.</p><p class="small muted">${esc(m.biz||"We")} will contact you to schedule the work.${contact} To change anything, please contact us.</p></div>
+      <div class="card"><h3 style="margin-top:0">Your choices</h3>${its.map(i=>`<div class="row" style="flex-wrap:nowrap"><span class="spacer small">${pk[i.k]==="accept"?"✓":"✕"} ${esc(i.label)}</span><span class="num small">${pk[i.k]==="accept"?money(i.total):"Declined"}</span></div>`).join("")}</div>${docx}`}
+  if(d.status==="expired")return `<div class="card">${head}<div class="note warn small">This estimate expired on ${esc(fmtD(String(d.expires_at).slice(0,10)))}. Prices may have changed. Please ask for an updated estimate.${contact}</div></div>${docx}`;
+  const grp=(k,title)=>{const rows=its.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!rows.length)return "";const tot=rows.reduce((a,[i])=>a+num(i.total),0);
+    const blurb=k==="r"?"Should be taken care of soon to prevent damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
+    return `<div class="cvgrp cvg-${k}"><div class="cvgh"><div style="flex:1;min-width:0"><div class="cvgt">${k==="r"?"⚠ ":""}${title}</div><div class="cvgb">${blurb}</div></div><div class="cvgs"><div class="num">${money(tot)}</div><button class="cvallbtn" data-shall="${k}">Accept all</button></div></div>${rows.map(([i,ix])=>`<div class="cvrow ${p[ix]||""}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
+      ${i.held?`<div class="cvheld">⛔ Requires the backflow preventer to be installed first (state rule).</div>`:""}
+      <div class="cvbtns"><button type="button" class="cvb acc" data-shpick="${ix}|accept" aria-pressed="${p[ix]==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-shpick="${ix}|decline" aria-pressed="${p[ix]==="decline"}">✕ Decline</button></div>${k==="r"&&p[ix]==="decline"?`<div class="cvwarn">⚠ Declining this leaves a problem that can cause damage, water waste or a code issue.</div>`:""}</div>`).join("")}</div>`};
+  const left=its.filter((i,ix)=>!p[ix]).length;
+  return `<div class="card">${head}<p class="small" style="margin:8px 0 0">Tap <b>Accept</b> or <b>Decline</b> for each item, then sign at the bottom. Red items are urgent; yellow items are recommended.${d.expires_at?` Prices are good until ${esc(fmtD(String(d.expires_at).slice(0,10)))}.`:""}</p></div>
+    ${grp("r","URGENT")}${its.some(i=>i.c==="y")&&its.some(i=>i.c==="r")?`<div class="cvdiv"><span>Optional</span></div>`:""}${grp("y","Recommended")}
+    <div class="cvsum"><div><span>Accepted work</span><span class="num">${money(t.work)}</span></div>${t.fee?`<div><span>Diagnostic fee</span><span class="num">${money(t.fee)}</span></div>`:""}${t.tax?`<div><span>Tax</span><span class="num">${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span class="num">${money(t.total)}</span></div>
+      ${t.fee&&!t.acc.length?`<p class="small" style="margin:4px 0 0">With nothing accepted, only the ${money(t.fee)} diagnostic fee is due.</p>`:""}</div>
+    <div class="cvsign"><label class="f"><span>Your full name</span><input type="text" id="cv-name" autocomplete="name" value="${esc(S.cvName||"")}"></label>
+      <div class="f"><span>Sign here with your finger or mouse</span><canvas id="cv-sig" width="600" height="160" aria-label="Signature pad"></canvas><button type="button" class="linkbtn" data-cvclear="1">Clear signature</button></div>
+      <label class="small cvagree"><input type="checkbox" id="cv-agree" ${S.cvAgree?"checked":""}> I approve the accepted items at the prices shown. Declined items were recommended to me and I chose not to have them done now. I agree to sign electronically, and my typed name and signature are as binding as a handwritten signature.</label>
+      <button class="btn" data-shconfirm="1" ${S.sh.busy?"disabled":""}>${S.sh.busy?"Saving…":left?`Decide ${left} more item${left===1?"":"s"} first`:"Approve and sign"}</button>
+      <p class="small muted" style="margin:0">We record your name, signature, the date and time, and your device with your answer. You can print or save a copy below.</p></div>
+    ${docx}`}
+function shareInvoice(d){const inv=d.invoice||{};const html=inv.html||d.html||"";const st=inv.status||"sent";const bal=num(inv.balance);const paid=st==="paid"||(inv.balance!=null&&bal<0.005);const off=["void","closed","baddebt"].includes(st);
+  const can=inv.pay_online&&["sent","partial","pastdue"].includes(st)&&bal>=0.5&&d.status==="open";
+  return `${SHARE.paid&&!paid?`<div class="note ok">Thank you! Your payment is processing. This page shows <b>Paid</b> once it clears (bank transfers take a few business days).</div>`:""}
+    <div class="card"><div class="cardhead"><h2>Invoice ${esc(d.doc_no||"")}</h2><span class="pill ${paid?"ok":off?"neutral":"warn"}">${paid?"Paid":off?"Closed":"Balance due "+money(bal)}</span></div>
+    ${can?`<div><button class="btn" data-shpay="1" ${S.sh.busy?"disabled":""}>${S.sh.busy?"Opening secure checkout…":"Pay "+money(bal)+" now"}</button></div><p class="small muted" style="margin:0">Card or bank transfer through Stripe's secure checkout.</p>`:!paid&&!off?`<p class="small" style="margin:0">To pay, use the contact details on this invoice.</p>`:paid?`<p class="small" style="margin:0">Thank you for your payment!</p>`:""}
+    <div class="row"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div></div>
+    <article class="sheet card">${html}</article>`}
+async function shareClick(d){const sh=S.sh;const x=sh.d;if(!x)return;
+  if(d.shprint){printDoc(x.kind==="invoice"?((x.invoice||{}).html||x.html||""):(x.html||""));return}
+  if(d.cvclear){const cv=document.getElementById("cv-sig");if(cv)cv.getContext("2d").clearRect(0,0,cv.width,cv.height);S.cvSig=null;return}
+  if(d.shpick){const [ix,v]=d.shpick.split("|");sh.picks[ix]=sh.picks[ix]===v?"":v;rr();return}
+  if(d.shall){(x.items||[]).forEach((i,ix)=>{if(i.c===d.shall)sh.picks[ix]="accept"});rr();return}
+  if(d.shpay){if(sh.busy)return;sh.busy=true;rr();let msg="";
+    try{const r=await sb.functions.invoke("create-checkout",{body:{token:SHARE.token}});if(r.data&&r.data.url){location.href=r.data.url;return}msg=(r.data&&r.data.error)||""}catch(e){}
+    sh.busy=false;rr();toast(msg||"Couldn't open checkout. Please try again, or contact us to pay.");return}
+  if(d.shconfirm){if(sh.busy)return;const its=x.items||[];const left=its.filter((i,ix)=>!sh.picks[ix]).length;if(left){toast(`Please choose Accept or Decline for ${left} more item${left===1?"":"s"}`);return}
+    const bfi=its.findIndex(i=>i.bf);if(its.some((i,ix)=>i.held&&sh.picks[ix]==="accept")&&bfi>=0&&sh.picks[bfi]!=="accept"){toast("Items marked ⛔ need the backflow preventer. Accept the backflow install, or decline those items.");return}
+    const name=(document.getElementById("cv-name").value||"").trim();if(name.length<3){toast("Please type your full name");return}
+    if(!S.cvSig){toast("Please sign in the box");return}
+    if(!document.getElementById("cv-agree").checked){toast("Please tick the approval statement");return}
+    const t=shTotals(x);sh.busy=true;rr();
+    let r;try{r=await sb.rpc("submit_share",{p_token:SHARE.token,p_items:its.map((i,ix)=>[i.k,sh.picks[ix]]),p_name:name,p_sig:S.cvSig,p_agree:true,p_total:t.total,p_ua:navigator.userAgent||""})}catch(e){r={error:{message:String(e)}}}
+    sh.busy=false;if(r.error){rr();toast(String(r.error.message||"Couldn't save. Please try again.").replace(/^P0001:\s*/,""));return}
+    x.answer={name,at:(r.data&&r.data.at)||new Date().toISOString(),items:its.map((i,ix)=>[i.k,sh.picks[ix]]),total:t.total};x.status="answered";sh.just=true;render();window.scrollTo(0,0);toast("Thank you! Your answer is saved.");return}}
+document.addEventListener("click",ev=>{if(S.mode!=="share")return;const t=ev.target.closest("[data-shpick],[data-shall],[data-shconfirm],[data-shpay],[data-shprint],[data-cvclear]");if(!t)return;ev.preventDefault();ev.stopPropagation();shareClick(t.dataset)},true);
 function invPreviewJob(j){return Object.assign({},j,{inv:Object.assign({},j.inv||{},{kind:"invoice"})})}
 function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Tap Details at the top of the job to add them.</p><div><button class="btn" data-showdetails="1">Go to Customer</button></div></div>`;
@@ -2879,8 +3010,11 @@ function makeSupaDb(){
   async function down(path){const {data,error}=await sb.storage.from(BUCKET).download(path);if(error||!data)return null;return await blobToDataUrl(data)}
   const custOf=j=>({customer_email:String((j.info||{}).email||"").trim().toLowerCase()||null,customer_name:(j.info||{}).customer||null,address:[(j.info||{}).address,(j.info||{}).city].filter(Boolean).join(", ")||null});
   const lastEmail={};
+  const shareDone={};
   async function afterJobSave(id,j){
     const c=custOf(j);
+    try{const el=j.estDoc&&j.estDoc.link;if(el&&!shareDone["r"+el.token]&&el.fp!==estFp(j)){shareDone["r"+el.token]=1;await sb.from("share_links").update({status:"replaced"}).eq("token",el.token).eq("status","open");if(S.shareInfo&&S.shareInfo[el.token])S.shareInfo[el.token].status="replaced"}
+      const il=j.inv&&j.inv.link;if(il){const h=invoiceHtml(j);const hh=hashStr(h);if(shareDone["h"+il.token]!==hh){shareDone["h"+il.token]=hh;await sb.from("share_links").update({html:h,meta:shareMeta(j)}).eq("token",il.token)}}}catch(e){}
     if(lastEmail[id]!==undefined&&lastEmail[id]!==c.customer_email){await sb.from("reports").update({customer_email:c.customer_email,customer_name:c.customer_name,address:c.address}).eq("job_id",id)}
     lastEmail[id]=c.customer_email;
     if(!(j.inv&&j.inv.no)&&j.estDoc&&j.estDoc.no){const e=buildEstimate(j);const {error}=await sb.from("invoices").upsert(Object.assign({job_id:id,no:j.estDoc.no,kind:"estimate",status:j.estDoc.sentAt?"estimate":"draft",total:e.total,html:estDocHtml(j),updated_at:new Date().toISOString()},c));if(error)throw sbErr(error)}
@@ -2965,7 +3099,7 @@ function startDb(d){
       S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
-    if(!S.loaded){S.loaded=true;ensureCustNos();migrateLegacyCusts();setTimeout(importStripePayments,1500)}
+    if(!S.loaded){S.loaded=true;ensureCustNos();migrateLegacyCusts();setTimeout(()=>{importStripePayments();importShareResponses()},1500)}
     const ae=document.activeElement;
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     if(ME.open)return;
@@ -2987,6 +3121,7 @@ async function cloudBoot(){
   const cfg=window.SW_CONFIG;
   if(!window.supabase||!window.supabase.createClient){S.mode="error";S.err="Couldn't load the sign-in system. Check your internet connection and reload.";render();return}
   sb=window.supabase.createClient(cfg.url,cfg.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  if(SHARE){shareBoot();return}
   sb.auth.onAuthStateChange((ev,session)=>{if(ev==="SIGNED_OUT"){resetToSignIn()}else if(ev==="PASSWORD_RECOVERY"){S.mode="auth";S.auth.step="newpass";render()}});
   const {data}=await sb.auth.getSession();
   if(data&&data.session)await afterSignIn(data.session);else{S.mode="auth";render()}
@@ -3122,7 +3257,8 @@ async function importStripePayments(){if(!sb||!S.me||S.me.role!=="tech"||!S.load
       if(!j.inv.payments.some(p=>p.ref===x.ref)){j.inv.payments.push({id:uid("pay"),amount:r2(x.amount),method:x.method||"Card",date:String(x.paid_at||new Date().toISOString()).slice(0,10),ref:x.ref,source:"stripe"});invLog(j,`Paid online: ${money(+x.amount)} by ${x.method||"card"}`);scheduleSave(x.job_id);toast(`Online payment received: ${money(+x.amount)} from ${j.info.customer||"a customer"}`)}
       await sb.from("payments").update({imported:true}).eq("id",x.id)}
     render()}catch(e){console.warn("payments",e)}}
-setInterval(()=>{if(document.visibilityState==="visible")importStripePayments()},90000);
+setInterval(()=>{if(document.visibilityState==="visible"){importStripePayments();importShareResponses()}},90000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.mode==="db")importShareResponses()});
 async function loadResponses(){if(!sb)return;try{const {data,error}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});if(!error){S.responses=data||[];if(!ME.open){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))render()}}}catch(e){}}
 function latestResp(j){return (S.responses||[]).find(r=>r.job_id===j.id)||null}
 function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return L;
@@ -3496,7 +3632,7 @@ app.addEventListener("click",ev=>{
   if(d.mkinv){j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=invNo();j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
   if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
   if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
-    const online=(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
+    const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
     const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
     S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
@@ -3527,6 +3663,11 @@ app.addEventListener("click",ev=>{
     j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="mainline";render();window.scrollTo(0,0);toast("Backflow recorded. Fill in its details and continue the job.");return}
   if(d.bfdecline){j.bfHold.declined={at:Date.now(),by:(S.me||{}).name||""};j.outcome="declined";scheduleSave(S.cur);rr();toast("Recorded: customer informed and declined. Only the diagnostic fee is billed.");return}
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
+  if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
+    (async()=>{const url=await ensureLink(jj,kind,id);if(!url)return;const m=linkMsg(jj,kind,url);
+      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:jj.info.email||"",subj:m.subj,body:m.body,onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
+      if(how==="text"){const ph=(jj.info.phone||"").replace(/[^\d+]/g,"");markSent(jj,kind,`Link texted to ${jj.info.phone||"customer"}`,id);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(m.sms)}`;return}
+      copyText(url,"Link copied. Paste it into a text or email.");markSent(jj,kind,"Link copied to send",id);rr()})();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
   if(d.estmark){j.estDoc.sentAt=Date.now();estLog(j,"Marked as sent");scheduleSave(S.cur);rr();return}
   if(d.estanswer){j.outcome=d.estanswer;estLog(j,"Customer "+(d.estanswer==="approved"?"approved":"declined")+" the estimate");scheduleSave(S.cur);rr();toast(d.estanswer==="approved"?"Approved. The job moves to Work.":"Marked declined.");return}

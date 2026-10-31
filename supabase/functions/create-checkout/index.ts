@@ -1,7 +1,8 @@
 // Sprinkler Wrangler: start a Stripe Checkout payment for one invoice.
-// Called by the customer portal's "Pay now" button. The amount always comes from the database,
-// never from the browser. The invoice is read AS THE SIGNED-IN CUSTOMER, so the database's own
-// rules decide whether they may pay it.
+// Called by the "Pay now" button in the customer portal (signed in) or on an invoice link (no login).
+// The amount always comes from the database, never from the browser.
+// - Portal: the invoice is read AS THE SIGNED-IN CUSTOMER, so the database's own rules decide.
+// - Link:   the invoice is found only through the link's long random token (share_invoice()).
 // Secrets (Supabase → Edge Functions → Secrets): STRIPE_SECRET_KEY, SITE_URL (optional)
 
 const SITE = Deno.env.get("SITE_URL") ?? "https://sprinkler-wrangler.vercel.app";
@@ -17,15 +18,25 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const auth = req.headers.get("Authorization") ?? "";
-    const { job_id } = await req.json().catch(() => ({}));
-    if (!job_id || !auth) return json({ error: "Missing invoice." }, 400);
-
+    const { job_id, token } = await req.json().catch(() => ({}));
     const url = Deno.env.get("SUPABASE_URL")!;
     const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const r = await fetch(
-      `${url}/rest/v1/invoices?job_id=eq.${encodeURIComponent(job_id)}&select=job_id,no,kind,status,total,balance,customer_email,pay_online`,
-      { headers: { apikey: anon, Authorization: auth } },
-    );
+    let r: Response;
+    if (token) {
+      // Server-side key (built into every Supabase function); only used to call share_invoice().
+      const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? anon;
+      r = await fetch(`${url}/rest/v1/rpc/share_invoice`, {
+        method: "POST",
+        headers: { apikey: svc, Authorization: `Bearer ${svc}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: String(token) }),
+      });
+    } else {
+      if (!job_id || !auth) return json({ error: "Missing invoice." }, 400);
+      r = await fetch(
+        `${url}/rest/v1/invoices?job_id=eq.${encodeURIComponent(job_id)}&select=job_id,no,kind,status,total,balance,customer_email,pay_online`,
+        { headers: { apikey: anon, Authorization: auth } },
+      );
+    }
     const rows = await r.json();
     const inv = Array.isArray(rows) ? rows[0] : null;
     if (!inv) return json({ error: "Invoice not found." }, 404);
@@ -48,8 +59,13 @@ Deno.serve(async (req) => {
     f.set("metadata[invoice_no]", inv.no ?? "");
     f.set("payment_intent_data[metadata][job_id]", inv.job_id);
     f.set("payment_intent_data[description]", `Invoice ${inv.no}`);
-    f.set("success_url", `${SITE}/?paid=${encodeURIComponent(inv.job_id)}`);
-    f.set("cancel_url", `${SITE}/`);
+    if (token) {
+      f.set("success_url", `${SITE}/#s=${encodeURIComponent(token)}&paid=1`);
+      f.set("cancel_url", `${SITE}/#s=${encodeURIComponent(token)}`);
+    } else {
+      f.set("success_url", `${SITE}/?paid=${encodeURIComponent(inv.job_id)}`);
+      f.set("cancel_url", `${SITE}/`);
+    }
 
     const s = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
