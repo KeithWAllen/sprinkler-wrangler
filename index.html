@@ -363,6 +363,8 @@ table.dgridt{table-layout:fixed;width:100%}
 .cvwarn{grid-column:1/-1;color:#B3261E;font-weight:700;font-size:.85rem}
 .bftag{display:inline-block;background:#B3261E;color:#fff;border-radius:6px;padding:1px 6px;font-size:.7rem;font-weight:800;margin-right:4px}.cvheld{grid-column:1/-1;color:#B3261E;font-weight:700;font-size:.85rem}
 .tab.tab-locked{opacity:.45;cursor:not-allowed}.bfhold{border:2px solid #B3261E}.talk{margin:4px 0 0;padding-left:18px;display:grid;gap:4px}
+.listtools{display:grid;gap:8px;margin:0 0 10px}.qwrap{position:relative}.qbox{width:100%;box-sizing:border-box;padding:12px 40px 12px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:1rem;background:var(--surface);color:inherit}.qbox:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+.qclear{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:var(--line);border-radius:50%;width:26px;height:26px;cursor:pointer;color:inherit}
 .cvdiv{display:flex;align-items:center;gap:10px;color:var(--muted);font-weight:800;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin:6px 0}.cvdiv:before,.cvdiv:after{content:"";flex:1;border-top:2px solid var(--line)}
 .cvrow{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 12px;border-bottom:1px dashed var(--line)}.cvrow:last-child{border-bottom:0}
 .cvrow.accept{background:color-mix(in srgb,#2E9E5B 10%,transparent)}.cvrow.decline{background:color-mix(in srgb,var(--muted) 10%,transparent)}.cvrow.decline .cvl b{text-decoration:line-through;color:var(--muted)}
@@ -954,11 +956,12 @@ function invoicesView(){const jobs=Object.values(S.jobs).filter(Boolean);const i
   const waived=jobs.filter(j=>j.est&&j.est.trip===false&&((j.revs||[]).length||j.estDoc)&&String(j.info.date||"").slice(0,4)===String(new Date().getFullYear()));
   const F=[["open","Unpaid"],["draft","Draft"],["pastdue","Past due"],["paid","Paid"],["closed","Closed"],["all","All"]];const f=S.invFilter||"open";
   const keep=j=>f==="all"||(f==="open"?openSt.includes(st(j)):f==="closed"?["void","baddebt","closed"].includes(st(j)):st(j)===f);
-  const list=inv.filter(keep).sort((a,b)=>(invDue(a)||"9").localeCompare(invDue(b)||"9")||String(b.inv.no).localeCompare(String(a.inv.no)));
+  const iq=(S.q||{}).inv||"";const list=inv.filter(keep).filter(j=>qMatch(jobHay(j),iq)).sort((a,b)=>(invDue(a)||"9").localeCompare(invDue(b)||"9")||String(b.inv.no).localeCompare(String(a.inv.no)));
   return `<div class="invmetrics"><div class="card"><div class="eyebrow">Owed to you</div><b class="num">${money(outstanding)}</b></div><div class="card ${pd.length?"need":""}"><div class="eyebrow">Past due</div><b class="num">${money(pdAmt)}</b><div class="small muted">${pd.length} invoice${pd.length===1?"":"s"}</div></div><div class="card"><div class="eyebrow">Collected, last 30 days</div><b class="num">${money(coll)}</b></div><div class="card"><div class="eyebrow">Average days to get paid</div><b class="num">${avgDays==null?"–":avgDays}</b></div><div class="card"><div class="eyebrow">Free estimates this year</div><b class="num">${waived.length}</b><div class="small muted">${money(waived.reduce((a,j)=>a+price("trip",j),0))} in diagnostic fees waived</div></div></div>
   ${ready.length?`<div class="card need"><div class="cardhead"><h2>Ready to invoice</h2><span class="pill warn">${ready.length}</span></div><p class="small muted" style="margin:0">Completed jobs, and declined estimates (for the diagnostic fee), with no invoice yet.</p>
     ${ready.map(j=>`<div class="act"><div class="al">${esc(j.info.customer||"Customer")} <span class="small muted mono">${esc(jobTitle(j)||"")}</span><div class="ap">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))} · ${esc(jobStatus(j)==="Completed"?"Work completed":"Declined: diagnostic fee")} · ${money(invLive(invPreviewJob(j)))}</div></div><button class="btn sm" data-invready="${esc(j.id||"")}">Create invoice</button></div>`).join("")}</div>`:""}
   <div class="card"><div class="cardhead"><h2>Invoices</h2><span class="muted small">${list.length}</span></div>
+    ${searchBox("inv","Search invoices: invoice #, customer or address")}
     <div class="chips">${F.map(([k,l])=>`<button class="chip" data-invfilter="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
     ${list.length?list.map(j=>{const s0=st(j);return `<button type="button" class="invrow" data-invopen="${esc(j.id||"")}"><div class="al"><b>${esc(j.inv.no)}</b> · ${esc(j.info.customer||"")}<div class="small muted">${esc(j.info.address||"")} · ${s0==="paid"?"Paid":(j.inv.terms||defTerms())==="completion"?"Due on completion":"Due "+esc(fmtD(invDue(j)))}</div></div><div class="invamt"><b class="num">${money(s0==="paid"||s0==="void"?invTotal(j):invBalance(j))}</b>${invPill(j)}</div></button>`}).join(""):`<p class="muted small" style="margin:0">No invoices here.</p>`}</div>${isAdmin()?acctCard():""}`}
 function homeView(){
@@ -975,19 +978,33 @@ function homeView(){
   ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
 }
+/* ---------------- Search & filters (customers, jobs, invoices) ----------------
+   Every word typed must appear somewhere in the record: name, address, city, phone (digits), email, customer #, job # or invoice #. */
+function qNorm(t){return String(t||"").toLowerCase()}
+function qMatch(hay,q){q=qNorm(q).trim();if(!q)return true;const h=qNorm(hay);const hd=h.replace(/\D/g,"");return q.split(/\s+/).every(w=>h.includes(w)||(w.replace(/\D/g,"").length>=3&&hd.includes(w.replace(/\D/g,""))))}
+function jobHay(j){const i=j.info||{};return [i.customer,i.address,i.city,i.phone,i.email,jobTitle(j),(j.inv||{}).no,(j.estDoc||{}).no,i.tech,(j.assign||{}).name,(S.custs[j.custId]||{}).custNo].join(" ")}
+function searchBox(key,ph){const v=(S.q||{})[key]||"";return `<div class="qwrap"><input type="search" class="qbox" id="q-${key}" data-q="${key}" value="${esc(v)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}" autocomplete="off">${v?`<button class="qclear" data-qclear="${key}" aria-label="Clear search">✕</button>`:""}</div>`}
+function moreBtn(key,shown,total){return total>shown?`<div style="text-align:center;margin:8px 0"><button class="btn ghost sm" data-more="${key}">Show ${Math.min(50,total-shown)} more (${shown} of ${total})</button></div>`:""}
 function jobsList(){
   const all=Object.values(S.jobs).filter(myJob).sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||b.updatedAt-a.updatedAt);
   const open=all.filter(j=>j.info.status!=="Completed"&&j.info.status!=="Declined");
-  const list=S.filter==="open"?open:all;
+  const F={open:["Open",j=>open.includes(j)],hold:["On hold",j=>bfHold(j)],waiting:["Waiting",j=>j.outcome==="waiting"||(jobStatus(j)==="Audited"&&!j.outcome)],approved:["Approved",j=>j.outcome==="approved"&&!(j.completion&&j.completion.issuedAt)],completed:["Completed",j=>jobStatus(j)==="Completed"],toinv:["To invoice",j=>{const s0=invState(j);return (jobStatus(j)==="Completed"||(j.outcome==="declined"&&diagAmt(j)>0))&&(!s0||s0==="draft")}],unpaid:["Unpaid",j=>["sent","partial","pastdue"].includes(invState(j))],all:["All",j=>true]};
+  if(!F[S.filter])S.filter="open";const q=(S.q||{}).jobs||"";const tech=S.techF||"";
+  const techs=[...new Set(all.map(j=>(j.assign&&j.assign.name)||j.info.tech).filter(Boolean))].sort();
+  const filtered=all.filter(F[S.filter][1]).filter(j=>!tech||((j.assign&&j.assign.name)||j.info.tech)===tech).filter(j=>qMatch(jobHay(j),q));
+  const lim=(S.lim||{}).jobs||50;const list=filtered.slice(0,lim);
   if(!all.length)return `<div class="card empty">
     <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 6c0 0-14 16-14 26a14 14 0 0 0 28 0C42 22 28 6 28 6z" fill="none" stroke="currentColor" stroke-width="3"/><path d="M21 33a7 7 0 0 0 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
     <h2>No jobs yet</h2><p class="muted" style="max-width:36ch">Start a job when a call comes in. Walk the mainline, controllers and zones, and the estimate builds itself from the company's prices.</p>
     <button class="btn" data-new="1">Start a new job</button></div>`;
-  return `<div class="row"><div class="chips">${[["open",`Open (${open.length})`],["all",`All (${all.length})`]].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}</button>`).join("")}</div></div>
+  return `<div class="listtools">${searchBox("jobs","Search jobs: name, address, phone, job # or invoice #")}
+    <div class="chips">${Object.entries(F).map(([k,[l,fn]])=>{const n=all.filter(fn).length;return k==="hold"&&!n?"":`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l} (${n})</button>`}).join("")}</div>
+    ${isOffice()&&techs.length>1?`<label class="f" style="max-width:240px"><span>Technician</span><select data-techf="1"><option value="">Everyone</option>${techs.map(t=>`<option ${tech===t?"selected":""}>${esc(t)}</option>`).join("")}</select></label>`:""}
+    ${q||tech?`<p class="small muted" style="margin:0">${filtered.length} match${filtered.length===1?"":"es"}</p>`:""}</div>
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
     return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
     <div class="who"><strong>${jobNoTag(j)} ${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
-    <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${phasePill(j)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
+    <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${phasePill(j)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">${q?"No jobs match your search.":"No jobs here. Try All."}</p>`}</div>${moreBtn("jobs",list.length,filtered.length)}`;
 }
 function docketView(){
   const day=Object.values(S.jobs).filter(myJob).filter(j=>j.info.date===S.docketDate).sort((a,b)=>(a.info.window||"").localeCompare(b.info.window||""));
@@ -2301,13 +2318,23 @@ function customersView(){if(S.custEdit)return custForm();const cs=customers();
     <div class="acts">${nocust.map(j=>`<div class="act"><div class="al">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")} · ${j.zones.length} zone${j.zones.length===1?"":"s"}<div class="ap">${esc(j.info.status)}</div></div><button class="btn ghost sm" data-opencust="${j.id}">Add details</button></div>`).join("")}</div></div>`:"";
   if(S.custPick)return `<div class="card"><div class="eyebrow">New job · Step 1 of 2</div><h2>Who is the job for?</h2><p class="small muted" style="margin:0">Pick the customer, or add a new one. Every job starts from a customer profile.</p>
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button><span class="spacer"></span><button class="btn quiet sm" data-custpickcancel="1">Cancel</button></div></div>
-  ${cs.length?`<div class="jobs">${cs.map(c=>`<button class="job" data-startjob="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}</span></div><div class="amt"><span class="small">Choose ›</span></div></button>`).join("")}</div>`:""}`;
+  ${cs.length?`<div class="listtools">${searchBox("pick","Find the customer: name, address or phone")}</div><div class="jobs">${cs.filter(c=>qMatch([c.name,c.address,(c.rec||{}).phone,(c.rec||{}).email,(c.rec||{}).custNo].join(" "),(S.q||{}).pick||"")).slice(0,60).map(c=>`<button class="job" data-startjob="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}</span></div><div class="amt"><span class="small">Choose ›</span></div></button>`).join("")}</div>`:""}`;
+  const q=(S.q||{}).cust||"";const cf=S.custF||"all";const sort=S.custSort||"name";
+  const custHay=c=>{const r=c.rec||{};return [c.name,c.address,r.city,r.phone,r.email,r.custNo,...c.jobs.map(j=>[jobTitle(j),(j.inv||{}).no,j.info.phone,j.info.email].join(" "))].join(" ")};
+  const CF={all:["All",c=>true],open:["Open items",c=>c.lastAudit&&openItems(c.lastAudit).length>0],due:["Service due",c=>{const nx=custSchedule(c)[0];return nx&&nx.due&&nx.due<=new Date(Date.now()+30*864e5).toISOString().slice(0,10)}],nojobs:["No jobs yet",c=>!c.jobs.length],res:["Residential",c=>((c.rec||{}).propType||(c.jobs[0]&&c.jobs[0].info.propType)||"residential")!=="commercial"],com:["Commercial",c=>((c.rec||{}).propType||(c.jobs[0]&&c.jobs[0].info.propType))==="commercial"]};
+  const lastAt=c=>Math.max(0,...c.jobs.map(j=>j.updatedAt||0),(c.rec||{}).updatedAt||0);
+  const fl=cs.filter(CF[cf]?CF[cf][1]:()=>true).filter(c=>qMatch(custHay(c),q)).sort(sort==="recent"?(a,b)=>lastAt(b)-lastAt(a):sort==="num"?(a,b)=>String((a.rec||{}).custNo||"zz").localeCompare(String((b.rec||{}).custNo||"zz"),undefined,{numeric:true}):(a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  const lim=(S.lim||{}).cust||50;const shown=fl.slice(0,lim);
   return `${accountRequests()}<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button></div></div>
-  ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
+  ${cs.length?`<div class="listtools">${searchBox("cust","Search customers: name, address, phone, email or customer #")}
+    <div class="chips">${Object.entries(CF).map(([k,[l,fn]])=>`<button class="chip" data-custf="${k}" aria-pressed="${cf===k}">${l} (${cs.filter(fn).length})</button>`).join("")}</div>
+    <label class="f" style="max-width:220px"><span>Sort</span><select data-custsort="1">${[["name","Name A–Z"],["recent","Recent activity"],["num","Customer #"]].map(([v,l])=>`<option value="${v}" ${sort===v?"selected":""}>${l}</option>`).join("")}</select></label>
+    ${q?`<p class="small muted" style="margin:0">${fl.length} match${fl.length===1?"":"es"}</p>`:""}</div>`:""}
+  ${cs.length?`<div class="jobs">${shown.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
     return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
       ${c.jobs.length?`<div class="custjobs">${c.jobs.slice(0,4).map(j=>`<span>${jobNoTag(j)} ${esc(jobPhase(j).label)}</span>`).join("")}${c.jobs.length>4?`<span class="muted">+${c.jobs.length-4} more</span>`:""}</div>`:""}
-      <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")}</div>`
+      <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")||`<p class="muted">No customers match.</p>`}</div>${moreBtn("cust",shown.length,fl.length)}`
     :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Tap New customer to add the first one.</p></div>`}${nocustCard}`}
 function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{controllers:[],mainline:[],zones:[]};const eq=l?equipmentRows(sysJob):[];const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
   return `<div><button class="btn quiet sm" data-cust="">‹ All customers</button></div>
@@ -3278,6 +3305,9 @@ app.addEventListener("input",ev=>{
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
   if(t.dataset.acctyear){S.acctYear=t.value;rr();return}
+  if(t.dataset.q){const k=t.dataset.q;S.q=Object.assign({},S.q,{[k]:t.value});S.lim=Object.assign({},S.lim,{[k==="cust"?"cust":k]:50});clearTimeout(S.qT);S.qT=setTimeout(()=>{const pos=t.selectionStart;rr();const e=document.getElementById("q-"+k);if(e){e.focus();try{e.setSelectionRange(pos,pos)}catch(x){}}},150);return}
+  if(t.dataset.custsort){S.custSort=t.value;rr();return}
+  if(t.dataset.techf){S.techF=t.value;rr();return}
   if(t.dataset.diagcredit){const j=job();if(j){j.est.diagCredit=t.checked;scheduleSave(S.cur);rr()}return}
   if(t.dataset.cmp&&S.compose){S.compose[t.dataset.cmp]=t.value;const box=t.closest(".compbox");if(box){const m=S.compose,enc=encodeURIComponent;const g=box.querySelector('[data-cmpsent="gmail"]'),ml=box.querySelector('[data-cmpsent="mail"]');if(g)g.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;if(ml)ml.href=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`}return}
   if(t.dataset.cf&&S.custEdit){S.custEdit[t.dataset.cf]=t.value;custLive();return}
@@ -3348,6 +3378,9 @@ app.addEventListener("click",ev=>{
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
   if(d.backup){dataBackup();return}
+  if(d.qclear){S.q=Object.assign({},S.q,{[d.qclear]:""});rr();setTimeout(()=>{const e=document.getElementById("q-"+d.qclear);if(e)e.focus()},10);return}
+  if(d.more){S.lim=Object.assign({},S.lim,{[d.more]:((S.lim||{})[d.more]||50)+50});rr();return}
+  if(d.custf){S.custF=d.custf;S.lim=Object.assign({},S.lim,{cust:50});rr();return}
   if(d.invfilter){S.invFilter=d.invfilter;rr();return}
   if(d.acctx){acctExport(d.acctx);return}
   if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
@@ -3378,7 +3411,7 @@ app.addEventListener("click",ev=>{
   if(d.intakeskip&&job()){const j=job();delete j.intake;scheduleSave(S.cur);render();window.scrollTo(0,0);return}
   if(d.back){S.cur=null;if(!(S.home==="customers"&&S.custOpen))S.home="jobs";render();window.scrollTo(0,0);return}
   if(d.home){S.home=d.home;S.custEdit=null;S.custPick=false;if(d.home==="customers")S.custOpen=null;render();return}
-  if(d.filter){S.filter=d.filter;rr();return}
+  if(d.filter){S.filter=d.filter;S.lim=Object.assign({},S.lim,{jobs:50});rr();return}
   if(d.opencust){S.cur=d.opencust;S.tab="mainline";S.showDetails=true;render();window.scrollTo(0,0);return}
   if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
   if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;S.custPick=false;if(sb&&isOffice()&&!S.team)loadTeam();const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
