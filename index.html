@@ -273,6 +273,7 @@ body.training .bar{color:#fff}
 .zcheck{border:2px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;background:var(--bg)}
 .zcheck.need{border-color:var(--water)}
 .hints{display:grid;gap:6px}.hint{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem;border-left:3px solid var(--warn);padding-left:8px}.hint span{flex:1;min-width:160px}
+.chip.zo-short,.chip.zo-float,.chip.zo-open{background:#D23B32;border-color:#D23B32;color:#fff}.chip.zo-high{background:#E8860C;border-color:#E8860C;color:#fff}
 .chip.zc-yes{border-color:var(--good)}.chip.zc-no{border-color:var(--bad)}
 .guide{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
 .gprog{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}.gprog span{display:block;height:100%;background:var(--accent);border-radius:999px}
@@ -299,6 +300,7 @@ tr.tlsec-r td{border-left:4px solid var(--tl-r)}tr.tlsec-y td{border-left:4px so
 .addon{border:2px dashed var(--accent);border-radius:8px;padding:10px 12px;display:grid;gap:4px;background:var(--accent-soft)}
 .terms{white-space:pre-wrap;font-size:.85rem;max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;background:var(--surface)}
 .combo.bad{border-color:var(--bad)}
+.gradeacts .act{flex-wrap:wrap;align-items:flex-start}.gradeacts .act>.al{flex:1 1 100%}.gradeacts .act>.chips{flex:1 1 100%}
 details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left:10px}details.lines summary{cursor:pointer;color:var(--muted)}
 .hsrow{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.hsbadge{flex:none}.hsafter{display:flex;gap:12px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.hsparts{display:grid;gap:12px}.hsbar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:4px 0}.hsbar span{display:block;height:100%}.tlbg-g{background:var(--tl-g)}.tlbg-y{background:var(--tl-y)}.tlbg-r{background:var(--tl-r)}
 @keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(31,94,64,.6)}100%{box-shadow:0 0 0 14px rgba(31,94,64,0)}}.pulse{animation:pulseRing .8s ease-out 2}
@@ -443,7 +445,7 @@ const PRICE_DEFAULTS=(()=>{
   add("wire_splice","Controller","Locate & splice zone wire","zone",95);
   add("wire_run","Controller","Run new zone wire","zone",175,1);
   add("zone_splitter","Controller","Install zone splitter module","each",145,1);
-  add("wire_nut","Controller","Repair common / wire-nut connections","zone",75);
+  add("wire_nut","Controller","Re-wire solenoid / repair common connection","zone",75);
   add("decoder","Controller","Replace 2-wire decoder","each",120,1);
   add("module","Controller","Replace controller module","each",95,1);
   return P;
@@ -678,7 +680,10 @@ const OHM_LONG={short:"short circuit",high:"high resistance, valve needs a rebui
 function ohmState(v){if(v===""||v==null)return "";const t=String(v).trim();if(/^(ol|o\.l\.?|open|inf|∞)/i.test(t))return "open";const n=parseFloat(t);if(isNaN(n))return "";const c=ohmCuts();
   if(n<c.short)return "short";if(n>c.float)return "float";if(n>c.high)return "high";return "ok"}
 /* Each zone's wire reading is picked as a range; an exact reading is optional */
-const OHM_FIX={short:[["wire_trouble","Wire repair"],["valve_sol","Replace solenoid"]],high:[["valve_rebuild","Rebuild valve"],["valve_sol","Replace solenoid"]],float:[["wire_nut","Repair common / wire-nut"],["wire_splice","Locate & splice"]],open:[["wire_splice","Locate & splice"],["wire_run","Run new wire"],["zone_splitter","Zone splitter module"]]};
+/* Bradley: controller readings only prompt WIRE fixes. Valve work (solenoid, rebuild) and finding/locating the valve
+   are handled on the Zones page, so they are not offered here. High resistance colors the zone orange and points to the zone. */
+const OHM_FIX={short:[["wire_trouble","Wire repair"]],float:[["wire_nut","Re-wire solenoid / common"]],open:[["wire_nut","Re-wire solenoid"],["wire_run","Run new wire"],["zone_splitter","Zone splitter module"]]};
+const OHM_ZONE_NOTE={short:"Short circuit at the controller",high:"High resistance at the controller: corroding solenoid or a low-quality valve. Pick the valve fix below.",float:"Floating common at the controller",open:"Open circuit at the controller"};
 function zoneBand(c,z){const b=(c.ohmBand||{})[z];return b||ohmState((c.ohms||{})[z])}
 function zoneFix(c,z){const st=zoneBand(c,z);const f=OHM_FIX[st];if(!f)return null;const pick=(c.ohmFix||{})[z];return f.some(x=>x[0]===pick)?pick:f[0][0]}
 function ctlFlags(c){
@@ -1496,7 +1501,7 @@ function teUp(ev){TE.ptrs.delete(ev.pointerId);const g=TE.g;if(g&&g.type==="pinc
 function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def,qty,detail)=>R.push({k,label,why,pk,def:!!def,qty:qty||1,detail:detail||""});
   const tier=gradeFor("controller",ctlBrand(c),c.line);
   const replaceWhy=[];if(tier&&tier[0]==="eco")replaceWhy.push(c.line&&lineInfo("controller",ctlBrand(c),c.line)?"economy-grade model with a shorter service life":"economy-grade brand with a shorter service life");if(f.failedMods>=2)replaceWhy.push(`${f.failedMods} failed modules`);if(c.power==="no"&&c.powerIssue==="controller")replaceWhy.push("controller won't power on");
-  {const rp=c.repl||{};const newOne=[rp.brand,realLine(rp.line)].filter(Boolean).join(" ");
+  {const rp=c.repl||{};const rl=realLine(rp.line);const newOne=[rl&&rp.brand&&rl.toLowerCase().startsWith(rp.brand.toLowerCase())?"":rp.brand,rl,rp.stations?rp.stations+"-station":""].filter(Boolean).join(" ");
    if(replaceWhy.length)add("replace","Replace controller","Because of: "+replaceWhy.join(", ")+".","ctl_replace",c.power==="no"&&c.powerIssue==="controller",1,newOne?"new "+newOne:[ctlBrand(c),realLine(c.line)||c.model].filter(Boolean).join(" "))}
   if(c.wiring==="2wire"&&(c.overcurrent==="yes"||f.breaks.length)){const loc=f.breaks.filter(x=>!f.legOc.some(o=>o.li===x.li&&o.r.done)).map(x=>x.where).concat(f.legOc.map(o=>o.where));
     add("trouble2w","Troubleshoot the 2-wire path",(c.overcurrent==="yes"?"Overcurrent on the path. ":"")+(loc.length?"Likely fault: "+loc.join("; ")+".":"Find the fault (wire, splice or decoder) before replacing parts."),"wire_trouble",true,1,loc.join("; "))}
@@ -1518,7 +1523,7 @@ function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def
 function recOn(c,r){const v=(c.act||{})[r.k];return v===undefined?r.def:!!v}
 function recsBlock(c,ci){const recs=ctlRecs(c);const cus=c.custom||[];
   return `<div class="combo recs"><h4>Recommendations</h4><p class="small muted" style="margin:0">Built from what you entered on this page. Tap Add to put one on the estimate. Prices are set on the Estimate tab.</p>
-  <div class="acts">${recs.map(r=>{const on=recOn(c,r);const rp=c.repl||{};return `<div class="act ${on?"on":""}"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}${r.pk?"":" (advice on the report, no charge)"}</div></div><button type="button" class="chip recbtn" data-rec="${ci}|${r.k}" aria-pressed="${on}">${on?"✓ Added":"+ Add"}</button></div>${r.k==="replace"&&on?`<div class="grid2 replpick"><label class="f"><span>New controller brand</span><select data-f="controllers.${ci}.repl.brand" data-rr="1"><option value="">Choose…</option>${CTL_BRANDS.filter(x=>x!=="Other").map(x=>`<option ${rp.brand===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>${rp.brand&&((PRODUCT_LINES.controller||{})[rp.brand]||[]).length?`<label class="f"><span>New controller product line</span><select data-f="controllers.${ci}.repl.line" data-rr="1"><option value="">Choose…</option>${PRODUCT_LINES.controller[rp.brand].map(x=>`<option ${rp.line===x[0]?"selected":""}>${esc(x[0])}</option>`).join("")}</select></label>`:""}</div>`:""}`}).join("")||'<p class="small muted" style="margin:0">Nothing flagged from what you entered so far.</p>'}
+  <div class="acts">${recs.map(r=>{const on=recOn(c,r);const rp=c.repl||{};return `<div class="act ${on?"on":""}"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}${r.pk?"":" (advice on the report, no charge)"}</div></div><button type="button" class="chip recbtn" data-rec="${ci}|${r.k}" aria-pressed="${on}">${on?"✓ Added":"+ Add"}</button></div>${r.k==="replace"&&on?`<div class="grid2 replpick"><label class="f"><span>New controller brand</span><select data-f="controllers.${ci}.repl.brand" data-rr="1"><option value="">Choose…</option>${CTL_BRANDS.filter(x=>x!=="Other").map(x=>`<option ${rp.brand===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>${rp.brand&&((PRODUCT_LINES.controller||{})[rp.brand]||[]).length?`<label class="f"><span>New controller product line</span><select data-f="controllers.${ci}.repl.line" data-rr="1"><option value="">Choose…</option>${PRODUCT_LINES.controller[rp.brand].map(x=>`<option ${rp.line===x[0]?"selected":""}>${esc(x[0])}</option>`).join("")}</select></label>`:""}${rp.brand?`<label class="f"><span>Stations</span><select data-f="controllers.${ci}.repl.stations" data-rr="1"><option value="">Choose…</option>${[4,6,8,9,12,16,24,32,48].map(n=>`<option value="${n}" ${String(rp.stations)===String(n)?"selected":""}>${n}-station${n>=num(c.zones)&&![4,6,8,9,12,16,24,32,48].some(m=>m>=num(c.zones)&&m<n)?" (fits "+num(c.zones)+" zones)":""}</option>`).join("")}</select></label>`:""}</div>`:""}`}).join("")||'<p class="small muted" style="margin:0">Nothing flagged from what you entered so far.</p>'}
   ${cus.map((x,xi)=>`<div class="act on"><div class="al">${esc(x.desc)}<div class="ap">Your recommendation${num(x.price)?"":" · price it on the Estimate tab"}</div></div>${delBtn("ccus:"+ci+":"+xi,"✕")}</div>`).join("")}</div>
   <div class="row" style="flex-wrap:nowrap;gap:8px"><input type="text" id="ctlrec-${ci}" placeholder="Add your own recommendation" style="flex:1;min-width:0" data-ctlrecin="${ci}"><button type="button" class="btn sm" data-ctlrecadd="${ci}">Add</button></div></div>`}
 function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
@@ -1526,6 +1531,7 @@ function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
   return `<div class="combo"><h4>Zone wire readings</h4><p class="small muted" style="margin:0">Pick each zone's range on your meter. ${f.unread?`<b>${f.unread} zone${f.unread===1?"":"s"} still to read.</b>`:"All zones read."}</p>
   <div class="ohmrows">${Array.from({length:zn},(_,i)=>{const z=i+1;const st=zoneBand(c,z);const fx=OHM_FIX[st];
     return `<div class="ohmrow ${st||"none"}"><div class="row"><b class="ozn">Zone ${z}</b><div class="chips">${bands.map(([v,l,r])=>`<button type="button" class="chip ohmchip ${v}" data-ohmband="${c.id}|${z}|${v}" aria-pressed="${st===v}">${l}<span class="small"> ${r}</span></button>`).join("")}</div></div>
+      ${st==="high"?`<div class="row ohmfix"><span class="small">High resistance. The valve fix is picked on the Zones page.</span></div>`:""}
       ${fx?`<div class="row ohmfix"><span class="small">${esc(OHM_LONG[st].replace(/^./,m=>m.toUpperCase()))}. Fix:</span><div class="chips">${fx.map(([k,l])=>`<button type="button" class="chip" data-ohmfix="${c.id}|${z}|${k}" aria-pressed="${zoneFix(c,z)===k}">${l}</button>`).join("")}</div></div>`:""}
       ${st?`<div class="row"><label class="f" style="max-width:170px"><span>Exact reading (optional)</span><input type="text" inputmode="decimal" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" value="${esc((c.ohms||{})[z])}" placeholder="Ω"></label></div>`:""}</div>`}).join("")}</div></div>`;
 }
@@ -1536,12 +1542,13 @@ function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==fa
   return `<div class="act ${on?"on":""}"><div class="al">${esc(label)}</div><button type="button" class="chip" data-chk="${path}" data-def="${defOn?1:0}" aria-pressed="${on}">${on?"On estimate":"Add"}</button></div>`}
 
 /* ---- zones ---- */
+function zoneOhm(j,z){const c=j.controllers.find(x=>x.id===z.ctl)||(j.controllers.length===1?j.controllers[0]:null);if(!c||c.wiring==="2wire")return "";const st=zoneBand(c,+z.num);return st&&st!=="ok"?st:""}
 function zonesTab(){const j=job();
   if(!j.controllers.length)return `<div class="card empty"><h2>Add a controller first</h2><p class="muted">Each zone belongs to a controller.</p><button class="btn" data-tab="controllers">Go to controllers</button></div>`;
   const zs=j.zones.map((z,i)=>[z,i]).sort((a,b)=>ctlName(j,a[0].ctl).localeCompare(ctlName(j,b[0].ctl))||num(a[0].num)-num(b[0].num));
   if(S.zoneOpen&&!j.zones.find(z=>z.id===S.zoneOpen))S.zoneOpen=null;
   const list=`<div class="card"><div class="cardhead"><h2>Zones</h2><button class="btn sm" data-addzone="1">+ Add zone</button></div>
-   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);return `<button class="chip zc-${z.works||"none"}" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${z.works==="yes"?"✓ ":z.works==="no"?"✕ ":""}${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
+   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);const ob=zoneOhm(j,z);return `<button class="chip zc-${z.works||"none"} ${ob?"zo-"+ob:""}" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${z.works==="yes"?"✓ ":z.works==="no"?"✕ ":""}${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
   const zo=j.zones.findIndex(z=>z.id===S.zoneOpen);
   if(zo<0)return list;
   const z=j.zones[zo],b=`zones.${zo}`;
@@ -2304,7 +2311,7 @@ function equipmentSection(j){const rows=equipmentRows(j);if(!rows.length)return 
   <p class="small muted">Recorded ${esc(new Date().toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}))}</p></section>`}
 function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};const sug=allBrands().filter(b=>tiers[b]===undefined&&BRAND_TIER_DEFAULTS[b]).length;
   return `<div class="card"><h2>Brands & quality ratings</h2><p class="small muted" style="margin:0">Your company's rating of each brand and product line. Product-line grades win over the brand grade when the tech picks a product line. It prints on the customer report next to the equipment found on their property. Leave a brand "Not rated" to show no rating.${sug?` <b>${sug} brand${sug===1?" has a":"s have"} a suggested grade</b> from public information (sales channel, product line, warranty). Tap a grade to confirm or change it.`:""}</p>
-  <div class="acts">${allBrands().map(b=>{const k=brandTierKey(b);const lines=[];Object.entries(PRODUCT_LINES).forEach(([cat,m])=>(m[b]||[]).forEach(x=>lines.push([cat,x])));const lt=S.pricing._lineTiers||{};
+  <div class="acts gradeacts">${allBrands().map(b=>{const k=brandTierKey(b);const lines=[];Object.entries(PRODUCT_LINES).forEach(([cat,m])=>(m[b]||[]).forEach(x=>lines.push([cat,x])));const lt=S.pricing._lineTiers||{};
     const linesHtml=lines.length?`<details class="lines"><summary class="small">${lines.length} product lines</summary>${lines.map(([cat,x])=>{const key=cat+"|"+b+"|"+x[0];const own=lt[key];const g=own!==undefined?(own==="none"?"":own):x[1];return `<div class="act"><div class="al small">${esc(x[0])} <span class="muted">· ${esc({controller:"controller",valve:"valve",heads:"heads",backflow:"backflow"}[cat])}</span>${own===undefined?`<div class="ap">Suggested: ${esc(x[2])}</div>`:""}</div><div class="chips">${TIERS.map(t=>`<button class="chip" data-ltier="${esc(key)}|${t[0]}" aria-pressed="${g===t[0]}" ${adm?"":"disabled"}>${t[1].replace(" grade","")}</button>`).join("")}</div></div>`}).join("")}</details>`:"";const isSug=tiers[b]===undefined&&BRAND_TIER_DEFAULTS[b];return `<div class="act"><div class="al">${esc(b)}${isSug?`<div class="ap">Suggested: ${esc(BRAND_TIER_DEFAULTS[b][1])}</div>`:""}</div><div class="chips">${TIERS.map(t=>`<button class="chip" data-tier="${esc(b)}|${t[0]}" aria-pressed="${k===t[0]}" ${adm?"":"disabled"}>${t[1].replace(" grade","")}</button>`).join("")}<button class="chip" data-tier="${esc(b)}|none" aria-pressed="${!k}" ${adm?"":"disabled"}>Not rated</button></div></div>${linesHtml}`}).join("")}</div>
   <label class="f"><span>Note printed above the equipment list</span><textarea id="p-_brandNote" data-price="_brandNote" ${adm?"":"disabled"}>${esc(S.pricing._brandNote||BRAND_NOTE_DEFAULT)}</textarea></label></div>`}
 
@@ -2384,7 +2391,8 @@ function linkMapZones(j){
   return touched;
 }
 function zoneCheck(j,z,zo){const b=`zones.${zo}`;const syms=z.symptoms||[];
-  return `<div class="zcheck ${z.works?"":"need"}"><div class="eyebrow">Zone check</div>
+  const ob=zoneOhm(j,z);
+  return `${ob?`<div class="note ${ob==="high"?"warn":"bad"} small"><b>${esc(OHM_ZONE_NOTE[ob].split(":")[0])}.</b>${ob==="high"?" Corroding solenoid or a low-quality valve.":""} Find the valve and pick its fix below (Locate valve if it's buried).</div>`:""}<div class="zcheck ${z.works?"":"need"}"><div class="eyebrow">Zone check</div>
     ${seg(`Is Zone ${esc(z.num)} fully working?`,b+".works",[["yes","Yes, working"],["no","No"]],{no:"bad"})}
     ${z.works==="no"?`${multi("What's wrong? (pick all that apply)",b+".symptoms",SYMPTOMS)}
       ${syms.length?`<div class="hints">${syms.map(k=>{const h=SYMPTOM_HINT[k];if(!h)return "";return `<div class="hint"><span>${esc(h[0])}</span>${h[1]?`<button class="btn ghost sm" data-zfix="${zo}|${h[1][0]}">${esc(h[1][1])}</button>`:""}</div>`}).join("")}</div>`:""}`
