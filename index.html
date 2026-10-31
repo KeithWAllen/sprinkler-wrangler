@@ -976,14 +976,55 @@ function homeView(){
   const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["invoices","Invoices"]]:[]),...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[])];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
-  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="invoices")body=invoicesView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="invoices")body=invoicesView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else if(S.home==="clients"&&sb)body=clientsView();else body=pricesView();
   if(S.home==="prices"&&!canSettings())S.home="jobs";
-  const side=S.home==="team"||S.home==="import"||S.home==="prices";
-  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Admin settings":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?(S.custPick?"New job":"Customers"):S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
+  const side=S.home==="team"||S.home==="import"||S.home==="prices"||S.home==="clients";
+  return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Admin settings":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?(S.custPick?"New job":"Customers"):S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":S.home==="clients"?"Clients":"Jobs"}</h1></div>
     ${side||S.custEdit||S.custPick?"":S.home==="customers"&&isOffice()?`<button class="iconbtn" data-newcust="1">+ New customer</button>`:`<button class="iconbtn" data-new="1">+ New job</button>`}${acctChip()}</div></header>
   ${side?"":`<nav class="tabs"><div class="inner">${tabs.map(([k,l])=>`<button class="tab" data-home="${k}" aria-current="${S.home===k}">${l}</button>`).join("")}</div></nav>`}</div>
   <div class="wrap"><main>${banner()}${body}</main></div>`;
 }
+/* ---------------- Clients (platform owner only) ----------------
+   Every company using Sprinkler Wrangler. Summaries only; each company's own records stay inside that company. */
+const CO_STATUS=[["active","Active","ok"],["trial","Trial","warn"],["past_due","Past due","bad"],["canceled","Canceled","neutral"]];
+async function loadClients(){S.clients={loading:true,list:(S.clients||{}).list||null};rr();
+  const {data,error}=await sb.rpc("platform_companies");S.clients={list:error?null:(data||[]),err:error?String(error.message||error):""};rr()}
+function docBiz(html){if(!html)return null;try{const d=new DOMParser().parseFromString(html,"text/html");const lh=d.querySelector(".lh");if(!lh)return null;
+  const sm=[...lh.querySelectorAll(":scope > div:first-child .small")].map(x=>x.textContent.trim());const b={_biz_name:(lh.querySelector("h1")||{}).textContent||""};
+  sm.forEach(t=>{const li=/Licensed Irrigator:\s*(.*?)\s*·\s*LI\s*(.*)$/i.exec(t);if(li){if(li[1]!=="—")b._biz_irrigator=li[1];if(li[2]!=="—")b._biz_lic=li[2];return}
+    if(/@|\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}/.test(t)&&!b._biz_phone){t.split("·").map(x=>x.trim()).forEach(x=>{if(/@/.test(x))b._biz_email=x;else if(x)b._biz_phone=x});return}
+    if(!b._biz_addr&&t)b._biz_addr=t});
+  Object.keys(b).forEach(k=>{if(!String(b[k]||"").trim()||b[k]==="Your business name")delete b[k]});return Object.keys(b).length?b:null}catch(e){return null}}
+function clientBiz(co){const has=o=>o&&BIZ_FIELDS.some(([k])=>o[k]);if(has(co.business))return {b:co.business,src:"saved"};
+  if(has(co.legacy_business))return {b:co.legacy_business,src:"legacy"};const d=co.latest_doc&&docBiz(co.latest_doc.html);if(d)return {b:d,src:"doc",doc:co.latest_doc};return {b:{},src:"none"}}
+function clientsView(){if(!S.me||!S.me.platform)return `<div class="card"><p>Only the platform owner can see clients.</p></div>`;
+  const C=S.clients;if(!C||(!C.list&&!C.loading&&!C.err)){loadClients();return `<div class="card"><p class="muted">Loading clients…</p></div>`}
+  if(C.err)return `<div class="card"><h2>Couldn't load clients</h2><p class="small">${esc(/platform_companies|function/i.test(C.err)?"Run database update 15-platform-clients.sql in Supabase first.":C.err)}</p><button class="btn sm" data-clients="reload">Try again</button></div>`;
+  if(!C.list)return `<div class="card"><p class="muted">Loading clients…</p></div>`;
+  const L=C.list;const sum=k=>L.reduce((a,c)=>a+num(c[k]),0);
+  return `<div class="card"><div class="cardhead"><h2>Clients</h2><span class="pill neutral">${L.length}</span></div>
+    <p class="small muted" style="margin:0">Every business using Sprinkler Wrangler. You see summaries; each company's customers, jobs and money stay inside that company.</p>
+    <div class="invsum" style="grid-template-columns:repeat(3,1fr)"><div><div class="eyebrow">Active</div><b class="num">${L.filter(c=>c.status==="active").length}</b></div><div><div class="eyebrow">Customers</div><b class="num">${sum("customers")}</b></div><div><div class="eyebrow">Invoiced</div><b class="num">${money(sum("invoiced"))}</b></div></div>
+    <div class="row"><button class="btn quiet sm" data-clients="reload">Refresh</button></div></div>
+  ${L.map((co,ix)=>clientCard(co,ix)).join("")}`}
+function clientCard(co,ix){const st=CO_STATUS.find(x=>x[0]===co.status)||CO_STATUS[0];const {b,src,doc}=clientBiz(co);const ed=S.coEdit&&S.coEdit.id===co.id?S.coEdit:null;
+  const row=(l,v)=>`<div class="row" style="flex-wrap:nowrap"><span class="spacer small muted">${l}</span><span class="small" style="text-align:right">${v?esc(v):"<span class='muted'>—</span>"}</span></div>`;
+  return `<div class="card"><div class="cardhead"><div><div class="eyebrow">Client #${ix+1} · since ${esc(fmtD(String(co.created_at).slice(0,10)))}</div><h2 style="margin:0">${esc(co.name)}</h2></div><span class="pill ${st[2]}">${st[1]}</span></div>
+    ${ed?`<div class="grid2"><label class="f"><span>Company name</span><input type="text" id="co-name" value="${esc(ed.name)}"></label>
+      <label class="f"><span>Status</span><select id="co-status">${CO_STATUS.map(([v,l])=>`<option value="${v}" ${co.status===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label class="f"><span>Plan</span><input type="text" id="co-plan" value="${esc(co.plan||"")}"></label></div>
+      <label class="f"><span>Notes (only you see these)</span><textarea id="co-notes" rows="2">${esc(co.notes||"")}</textarea></label>
+      <div class="row"><button class="btn sm" data-cosave="${esc(co.id)}">Save</button><button class="btn quiet sm" data-coedit="">Cancel</button></div>`
+     :`${co.notes?`<p class="small" style="margin:0">${esc(co.notes)}</p>`:""}<div class="small muted">Plan: ${esc(co.plan||"—")}${co.last_job_at?" · last job activity "+esc(fmtDT(co.last_job_at)):""}</div>`}
+    <div class="invsum" style="grid-template-columns:repeat(3,1fr)"><div><div class="eyebrow">Customers</div><b class="num">${num(co.customers)}</b></div><div><div class="eyebrow">Jobs</div><b class="num">${num(co.jobs)}</b></div><div><div class="eyebrow">Team</div><b class="num">${(co.team||[]).length}</b></div>
+      <div><div class="eyebrow">Invoiced</div><b class="num">${money(num(co.invoiced))}</b></div><div><div class="eyebrow">Open balance</div><b class="num">${money(num(co.open_balance))}</b></div><div><div class="eyebrow">Paid online</div><b class="num">${money(num(co.collected_online))}</b></div></div>
+    <div class="combo"><h4>Business & license</h4>
+      ${src==="doc"?`<div class="note info small" style="margin:0">Not saved in their settings yet. Pulled from their ${esc(doc.kind==="invoice"?"invoice":"estimate")} ${esc(doc.no||"")}.</div>`:src==="legacy"?`<div class="note info small" style="margin:0">Found in their price sheet (older setup).</div>`:src==="none"?`<p class="small muted" style="margin:0">No business details yet, and no estimates or invoices to pull them from.</p>`:""}
+      ${src!=="none"?row("Business name",b._biz_name)+row("Licensed irrigator",b._biz_irrigator)+row("License # (LI)",b._biz_lic)+row("Address",b._biz_addr)+row("Phone",b._biz_phone)+row("Email",b._biz_email):""}
+      ${src==="doc"||src==="legacy"?`<div class="row"><button class="btn sm" data-cobiz="${esc(co.id)}|${ix}">Save as their company details</button></div>`:""}</div>
+    <div class="combo"><h4>Team (${(co.team||[]).length})</h4>${(co.team||[]).map(p=>`<div class="small">${esc(p.name||p.email)} <span class="muted">${esc(p.email)}</span> ${p.chief?'<span class="pill ok">Chief admin</span>':p.admin?'<span class="pill neutral">Admin</span>':""}</div>`).join("")||`<p class="small muted" style="margin:0">No team members yet.</p>`}
+      ${num(co.portal_accounts)?`<div class="small muted">${num(co.portal_accounts)} customer portal account${num(co.portal_accounts)===1?"":"s"}</div>`:""}</div>
+    ${ed?"":`<div class="row"><button class="btn ghost sm" data-coedit="${esc(co.id)}">Edit</button></div>`}</div>`}
 /* ---------------- Search & filters (customers, jobs, invoices) ----------------
    Every word typed must appear somewhere in the record: name, address, city, phone (digits), email, customer #, job # or invoice #. */
 function qNorm(t){return String(t||"").toLowerCase()}
@@ -3321,6 +3362,7 @@ async function afterSignIn(session){
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
   S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||"",approved:!!p.approved,custId:p.cust_id||""};
+  try{const r=await sb.rpc("is_platform");S.me.platform=!r.error&&r.data===true}catch(e){S.me.platform=false}
   if(p.role==="tech"){S.home=S.restoredHome||(S.me.admin?"customers":"jobs");S.restoredHome=null;startDb(makeSupaDb());checkLocalImport()}
   else if(p.approved||SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
@@ -3468,7 +3510,7 @@ function bellChip(){if(!sb||!S.me||S.mode!=="db")return "";const L=notifList();
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `${bellChip()}<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
   ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.admin?"Admin":"Technician"}</span></div>
-    ${S.mode==="db"&&!S.training?`<button class="btn quiet sm" data-accnotifs="1">Notifications${(n=>n?` (${n})`:"")(notifList().length)}</button>`:""}<button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
+    ${S.mode==="db"&&!S.training?`<button class="btn quiet sm" data-accnotifs="1">Notifications${(n=>n?` (${n})`:"")(notifList().length)}</button>`:""}<button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.me.platform&&!S.training?`<button class="btn quiet sm" data-accclients="1">Clients (all companies)</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- Training mode: practice jobs on this phone only ---------- */
 function trainingSample(){const j=withDefaults(newJob());j.training=true;delete j.intake;
@@ -3668,10 +3710,11 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-accclients],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
     if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
+    if(d.accclients){S.acctOpen=false;S.cur=null;S.home="clients";S.clients=null;render();window.scrollTo(0,0);return}
     if(d.notgo){S.bellOpen=false;S.cur=null;S.home=d.notgo;S.custEdit=null;S.custPick=false;S.filter=d.notgo==="jobs"?"open":S.filter;render();window.scrollTo(0,0);
       setTimeout(()=>{const tgt=d.notgo==="reminders"?document.querySelector("main [data-remcompose],main [data-remdone]"):d.notgo==="customers"?document.querySelector("main .card.need, main [data-opencust]"):document.querySelector("main .jobs .job");
         const el=tgt&&(tgt.closest(".card")||tgt);if(el){el.scrollIntoView({behavior:"smooth",block:"center"});el.classList.add("pulse");setTimeout(()=>el.classList.remove("pulse"),1800)}},60);return}
@@ -3723,6 +3766,10 @@ app.addEventListener("click",ev=>{
   if(d.propadd){const c=S.custs[d.propadd];if(!c)return;S.propEdit={custId:c.id,isNew:true,p:{id:uid("p"),label:"",address:"",city:c.city||"",gate:"",propType:c.propType||"",notes:"",billTo:null}};render();window.scrollTo(0,0);return}
   if(d.propedit){const [cid,pid]=d.propedit.split("|");const c=S.custs[cid];const p=c&&(c.props||[]).find(x=>x.id===pid);if(!p)return;S.propEdit={custId:cid,isNew:false,p:JSON.parse(JSON.stringify(p))};render();window.scrollTo(0,0);return}
   if(d.propcancel){S.propEdit=null;render();return}
+  if(d.clients==="reload"){loadClients();return}
+  if(d.coedit!=null){const co=((S.clients||{}).list||[]).find(x=>x.id===d.coedit);S.coEdit=co?{id:co.id,name:co.name}:null;rr();return}
+  if(d.cosave){const v=id=>(document.getElementById(id)||{}).value||"";sb.rpc("platform_update_company",{p_id:d.cosave,p_name:v("co-name"),p_status:v("co-status"),p_plan:v("co-plan"),p_notes:v("co-notes")}).then(({error})=>{if(error){toast(String(error.message).replace(/^.*?:\s*/,""));return}S.coEdit=null;toast("Client saved");loadClients()});return}
+  if(d.cobiz){const [id,ix]=d.cobiz.split("|");const co=S.clients.list[+ix];const {b}=clientBiz(co);sb.rpc("platform_set_business",{p_id:id,p_biz:b}).then(({error})=>{if(error){toast(String(error.message).replace(/^.*?:\s*/,""));return}toast("Company details saved");if(S.me&&co.id===((S.clients.list.find(x=>(x.team||[]).some(t=>t.email===S.me.email))||{}).id))S.biz=Object.assign({},b);loadClients()});return}
   if(d.cimp){if(d.cimp==="open"||d.cimp==="again"){S.cimp={step:"pick"};render();window.scrollTo(0,0);return}if(d.cimp==="close"){S.cimp=null;render();window.scrollTo(0,0);return}if(d.cimp==="go"&&S.cimp&&S.cimp.plan){custImportRun();return}return}
   if(d.cimpf){S.cimp.filter=d.cimpf;rr();return}
   if(d.propsave&&S.propEdit){const e=S.propEdit;const c=S.custs[e.custId];if(!c)return;const p=e.p;["label","address","city","gate","notes"].forEach(k=>p[k]=String(p[k]||"").trim());
