@@ -1756,9 +1756,9 @@ function estTable(e,editable){
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}${e.tax?`<div><span>Tax</span><span>${money(e.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(e.total)}</span></div></div>`;
 }
 function diagRow(j){const on=j.est.trip!==false;const a=price("trip",j);
-  return `<div class="act" style="flex-wrap:wrap"><div class="al">Diagnostic fee <span class="num">${money(a)}</span><div class="ap">${on?(j.est.diagCredit!==false?"Charged on every estimate visit. Credited toward the work if the customer approves; billed on its own if they decline.":"Charged on every estimate visit, even if the customer approves."):"Waived: free estimate. Counted on the Invoices page so it isn't lost."}</div></div>
+  return `<div class="act" style="flex-wrap:wrap"><div class="al">Diagnostic fee <span class="num">${money(a)}</span><div class="ap">${on?"Charged on every estimate visit, whether or not the customer approves the work.":"Waived: free estimate. Counted on the Invoices page so it isn't lost."}</div></div>
     <div class="chips"><button class="chip" data-diag="on" aria-pressed="${on}">Charge</button><button class="chip" data-diag="off" aria-pressed="${!on}">Waive (free estimate)</button></div>
-    ${on?`<label class="small" style="flex-basis:100%"><input type="checkbox" data-diagcredit="1" ${j.est.diagCredit!==false?"checked":""}> Credit it toward the work if approved</label>`:""}</div>`}
+    </div>`}
 function estimateTab(){const j=job();const e=buildEstimate(j);
   return `${estDocCard(j)}<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTableTL(j,e,true)}</div>
   <div class="card"><h2>Adjustments</h2><div class="acts">${diagRow(j)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
@@ -2068,7 +2068,9 @@ function jobPrint(j){
 /* Diagnostic fee (Bradley): charged on every estimate visit, credited toward the work if the customer approves,
    billed on its own if they decline. "Free estimate" waives it, and waived fees are counted so they aren't lost. */
 function diagAmt(j){return j.est&&j.est.trip!==false?price("trip",j):0}
-function diagCredits(j){return diagAmt(j)>0&&j.est.diagCredit!==false}
+/* Keith (Oct 31): the diagnostic fee is NOT credited; it stays a normal line item on everything. Credit logic kept off. */
+const DIAG_CREDIT=false;
+function diagCredits(j){return DIAG_CREDIT&&diagAmt(j)>0&&j.est.diagCredit!==false}
 function estOptions(j){const e=buildEstimate(j);const rate=jobTax(j)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;
   const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
   return {rate:jobTax(j),fix:t(g.s+g.r-cr),rec:g.y?t(g.y):null,all:t(e.sub-cr,e.disc),diag:diagAmt(j),credit:cr}}
@@ -2361,7 +2363,7 @@ function estTableTL(j,e,editable){
   ${(()=>{const rate=jobTax(j)/100;const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;const fx=sub(groups.s)+sub(groups.r)-cr,rc=sub(groups.y);
     const blk=(cls,title,note,st,disc)=>{const base=st-(disc||0);const tx=base*rate;return `<div class="totblk ${cls}"><div class="tbh"><span>${title}</span>${note?`<span class="small muted">${note}</span>`:""}</div>${cr&&cls!=="tb-y"?`<div class="small"><span>Diagnostic fee credited</span><span>−${money(cr)}</span></div>`:""}<div><span>Subtotal</span><span>${money(st)}</span></div>${disc?`<div><span>Discount</span><span>−${money(disc)}</span></div>`:""}${rate?`<div><span>Tax (${jobTax(j)}%)</span><span>${money(tx)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(base+tx)}</span></div></div>`};
     const two=groups.y.length>0;
-    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,cr?"Stops damage and water loss. Diagnostic fee credited.":"Stops damage and water loss. Includes the service call.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub-cr,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub-cr,e.disc):""}</div>${cr?`<p class="small diagnote">The ${money(cr)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the ${money(cr)} diagnostic fee is due.</p>`:diagAmt(j)?"":(j.revs||[]).length||j.estDoc?`<p class="small diagnote">Free estimate: no diagnostic fee.</p>`:""}`})()}
+    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,cr?"Stops damage and water loss. Diagnostic fee credited.":"Stops damage and water loss. Includes the diagnostic fee.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub-cr,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub-cr,e.disc):""}</div>${cr?`<p class="small diagnote">The ${money(cr)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the ${money(cr)} diagnostic fee is due.</p>`:diagAmt(j)?"":(j.revs||[]).length||j.estDoc?`<p class="small diagnote">Free estimate: no diagnostic fee.</p>`:""}`})()}
   ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
 
 /* ---------------- Completion: what was (audit) vs what is (after the work) ----------------
