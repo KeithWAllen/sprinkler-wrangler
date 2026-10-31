@@ -641,7 +641,7 @@ function newCust(){return {id:uid("c"),custNo:localNumbering()?nextCustNo():"",c
 function custMissing(c){const m=[];if(!String(c.customer||"").trim())m.push("Customer name");if(!String(c.address||"").trim())m.push("Street address");if(!String(c.city||"").trim())m.push("City");if(!String(c.phone||"").trim()&&!String(c.email||"").trim())m.push("Phone or email");if(!c.propType)m.push("Residential or commercial");return m}
 let custTimers={};
 function saveCust(c,linkedToo){c.updatedAt=Date.now();S.custs[c.id]=c;
-  if(linkedToo)Object.values(S.jobs).filter(j=>j.custId===c.id).forEach(j=>{let ch=false;CUST_FIELDS.forEach(k=>{if((j.info[k]||"")!==(c[k]||"")){j.info[k]=c[k]||"";ch=true}});if(!!j.info.remindersOff!==!!c.remindersOff){j.info.remindersOff=!!c.remindersOff;ch=true}if(ch)scheduleSave(j.id)});
+  if(linkedToo)Object.values(S.jobs).filter(j=>j.custId===c.id).forEach(j=>{if(applyProp(j,c,propOf(c,j.propId)))scheduleSave(j.id)});
   clearTimeout(custTimers[c.id]);custTimers[c.id]=setTimeout(async()=>{
     if(S.mode==="local")LS.set(KP()+"custs",S.custs);
     else if(S.mode==="db"&&!S.ro){try{await db.doc("customers/"+c.id).set(JSON.parse(JSON.stringify(c)));
@@ -654,7 +654,7 @@ function hashStr(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCode
 function normAddr(a,c){return (String(a||"")+"|"+String(c||"")).toLowerCase().replace(/[.,#]/g," ").replace(/\b(road|rd)\b/g,"rd").replace(/\b(street|st)\b/g,"st").replace(/\b(drive|dr)\b/g,"dr").replace(/\b(court|ct)\b/g,"ct").replace(/\b(lane|ln)\b/g,"ln").replace(/\b(avenue|ave)\b/g,"ave").replace(/\s+/g," ").trim()}
 function custMatch(info,exceptId){const e=String(info.email||"").trim().toLowerCase();const a=String(info.address||"").trim()?normAddr(info.address,info.city):"";
   const live=Object.values(S.custs).filter(c=>c&&!c.mergedInto&&c.id!==exceptId);
-  return (a&&live.find(c=>String(c.address||"").trim()&&normAddr(c.address,c.city)===a))||(e&&live.find(c=>String(c.email||"").trim().toLowerCase()===e))||null}
+  return (a&&live.find(c=>custProps(c).some(p=>String(p.address||"").trim()&&normAddr(p.address,p.city)===a)))||(e&&live.find(c=>String(c.email||"").trim().toLowerCase()===e))||null}
 /* Merge automatic duplicates into the customer's real profile (team can't delete, so the duplicate is marked merged and hidden). */
 function dedupeCusts(){if(S.training&&false)return;const recs=Object.values(S.custs).filter(c=>c&&!c.mergedInto).sort((a,b)=>(String(a.id).startsWith("cl")?1:0)-(String(b.id).startsWith("cl")?1:0)||(jnParse(a.custNo)||1e9)-(jnParse(b.custNo)||1e9));
   const keep=[];let changed=false;
@@ -1078,7 +1078,8 @@ function assignSel(j){if(!S.team){loadTeam();return `<label class="f"><span>Assi
 function custBar(j){const i=j.info;const miss=missingCustomer(j);const tel=String(i.phone||"").replace(/[^\d+]/g,"");const open=!!S.showDetails;
   return `<div class="card custbar ${miss.length?"need":""}"><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div style="flex:1;min-width:0">
     <b>${esc(i.customer||"No customer yet")}</b>
-    <div class="small">${esc([i.address,i.city].filter(Boolean).join(", "))}${i.gate?` · <b>Gate ${esc(i.gate)}</b>`:""}${tel?` · <a href="tel:${esc(tel)}">${esc(i.phone)}</a>`:""}${i.window?" · "+esc(i.window):""}</div>
+    <div class="small">${i.propLabel?esc(i.propLabel)+": ":""}${esc([i.address,i.city].filter(Boolean).join(", "))}${i.gate?` · <b>Gate ${esc(i.gate)}</b>`:""}${tel?` · <a href="tel:${esc(tel)}">${esc(i.phone)}</a>`:""}${i.window?" · "+esc(i.window):""}</div>
+    ${billOn(i.billTo)?`<div class="small">Bill to: <b>${esc(billLine(i.billTo))}</b></div>`:""}
     ${i.notes?`<div class="small"><b>Problem reported:</b> ${esc(i.notes)}</div>`:""}
     ${j.assign?`<div class="small muted">${sb&&S.me&&j.assign.id===S.me.id?"Assigned to you":"Assigned to "+esc(j.assign.name)}</div>`:""}
     ${!(j.revs||[]).length&&i.date&&i.date>today()?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Scheduled for ${esc(new Date(i.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}))}</b>, today is ${esc(new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}))}. Today's work is recorded as today's inspection.</div>`:""}
@@ -2007,8 +2008,10 @@ function invoiceHtmlReal(j){
     <div style="text-align:right"><div class="eyebrow">${kind} #</div><div><b>${esc(inv.no||"—")}</b></div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.kind==="invoice"&&inv.issued?fmtD(inv.issued):inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
     ${inv.kind==="invoice"&&inv.issued?`<div class="eyebrow" style="margin-top:6px">Due</div><div>${esc((INV_TERMS.find(x=>x[0]===(inv.terms||defTerms()))||INV_TERMS[0])[0]==="completion"?"Upon completion":fmtD(invDue(j)))}</div>`:""}
     ${jobTitle(j)?`<div class="eyebrow" style="margin-top:6px">Job</div><div>${esc(jobTitle(j))}</div>`:""}${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div>Rev ${revNo(cur.n)}</div>`:""}</div></div>
-  <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
-    <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
+  ${(bt=>bt?`<section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(bt.company||bt.name)}</b></div>${bt.company&&bt.name?`<div class="small">Attn: ${esc(bt.name)}${bt.role?" ("+esc(bt.role)+")":""}</div>`:bt.role?`<div class="small">${esc(bt.role)}</div>`:""}<div class="small">${esc([bt.address,bt.city].filter(Boolean).join(", "))}</div><div class="small">${esc([bt.phone,bt.email].filter(Boolean).join(" · "))}</div></div>
+    <div><div class="eyebrow">Service address</div><div><b>${esc(j.info.customer)}</b>${j.info.propLabel?" · "+esc(j.info.propLabel):""}</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>`
+  :`<section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
+    <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>`)(billOn(j.info.billTo)?j.info.billTo:null)}
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
   ${inv.kind==="invoice"?invPaySection(j):""}
   ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Ask us to add it.</div></div></section>`:""}
@@ -2022,7 +2025,7 @@ function invPaySection(j){const inv=j.inv||{};const st=invState(j);const pays=in
     ${st==="paid"?`<div class="paid">PAID${pays.length?" · "+esc(fmtD(pays[pays.length-1].date)):""}</div>`:`<p class="baldue"><b>Balance due: ${money(bal)}</b></p>${inv.payOnline!==false&&(S.pricing||{})._payOnline?`<p class="small">Pay online: sign in at ${esc(payLink())} and tap Pay now.</p>`:""}`}</section>`}
 function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
   L.push(kind+" "+(inv.no||""));L.push(b.name);L.push(b.addr);L.push([b.phone,b.email].filter(Boolean).join(" · "));L.push("Licensed Irrigator: "+b.irr+" · LI "+b.lic);L.push("");
-  L.push("Bill to: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
+  L.push("Bill to: "+(billOn(j.info.billTo)?billLine(j.info.billTo):j.info.customer));if(billOn(j.info.billTo))L.push("Service for: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
   let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${showU(l.unit)?" "+l.unit:""}  ${money(l.total)}`)});
   L.push("");L.push("Subtotal: "+money(e.sub));if(e.disc)L.push("Discount: -"+money(e.disc));if(e.tax)L.push("Tax: "+money(e.tax));L.push("TOTAL: "+money(e.total));
   if(inv.kind==="invoice"){invPays(j).forEach(x=>L.push(`${x.deposit?"Deposit":"Payment"} ${fmtD(x.date)} (${x.method||""}): -${money(num(x.amount))}`));const st=invState(j);L.push(st==="void"?"VOID":st==="paid"?"PAID":"Balance due: "+money(invBalance(j)));if(st!=="paid"&&st!=="void"&&(S.pricing||{})._payOnline)L.push("Pay online: sign in at "+payLink()+" and tap Pay now.")}
@@ -2098,7 +2101,7 @@ function loadShareInfo(token){if(!sb||S.mode!=="db")return;S.shareFetch=S.shareF
   Promise.resolve(sb.from("share_links").select("token,status,view_count,viewed_at,answered_at,expires_at").eq("token",token).maybeSingle()).then(r=>{const data=r&&r.data;if(!data)return;
     const old=JSON.stringify((S.shareInfo||{})[token]||null);S.shareInfo=Object.assign({},S.shareInfo,{[token]:data});
     if(JSON.stringify(data)!==old&&!S.compose&&!S.custView){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))rr()}}).catch(()=>{})}
-function linkMsg(j,kind,url){const b=bizInfo();const first=(j.info.customer||"").split(" ")[0]||"there";const sig=`\n\nThank you,\n${b.name||""}\n${b.phone||""}`;
+function linkMsg(j,kind,url){const b=bizInfo();const bt=billOn(j.info.billTo)?j.info.billTo:null;const first=((bt&&bt.name)||j.info.customer||"").split(" ")[0]||"there";const sig=`\n\nThank you,\n${b.name||""}\n${b.phone||""}`;
   if(kind==="estimate")return {subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,
     body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} is ready:\n\n${url}\n\nOpen the link to see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
     sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler estimate ${j.estDoc.no} is ready to review and approve: ${url}`};
@@ -2384,7 +2387,7 @@ function custKey(j){if(j.custId&&S.custs[j.custId]){const r=S.custs[j.custId];re
 function customers(){const map={};Object.values(S.custs).forEach(r=>{if(r&&r.id&&!r.mergedInto)map["c:"+r.id]={key:"c:"+r.id,rec:r,jobs:[]}});
   Object.values(S.jobs).forEach(j=>{if(!j.info)return;const linked=j.custId&&S.custs[j.custId];if(!linked&&!j.info.customer&&!j.info.address)return;if(!linked&&!myJob(j))return;const k=custKey(j);(map[k]=map[k]||{key:k,jobs:[]}).jobs.push(j)});
   return Object.values(map).map(c=>{c.jobs.sort((a,b)=>(b.info.date||"").localeCompare(a.info.date||"")||(b.updatedAt||0)-(a.updatedAt||0));const i=c.rec||c.jobs[0].info;
-    c.name=i.customer||"(no name)";c.email=i.email||"";c.phone=i.phone||"";c.gate=i.gate||"";c.address=[i.address,i.city].filter(Boolean).join(", ");
+    c.name=i.customer||"(no name)";c.email=i.email||"";c.phone=i.phone||"";c.gate=i.gate||"";c.address=[i.address,i.city].filter(Boolean).join(", ");c.nProps=c.rec?custProps(c.rec).length:1;
     c.audited=c.jobs.filter(j=>latestAudit(j));c.lastAudit=c.audited[0]||null;c.remOff=!!i.remindersOff;c.terms=c.jobs.find(j=>j.info.termsAgreed);return c})
     .sort((a,b)=>a.name.localeCompare(b.name))}
 function openItems(j){const rv=latestAudit(j);if(!rv)return [];const st={};((j.completion||{}).items||[]).forEach(i=>st[i.k]=i.status);
@@ -2421,15 +2424,19 @@ function remindersView(){const cs=customers();const now=new Date();const horizon
     <div class="row">${c.email&&!c.remOff?`<button class="btn sm" data-remcompose="${esc(c.key)}|${esc(r.id)}">Email customer</button>`:`<span class="small muted">${c.remOff?"No email: opted out":"No email on file"}${c.phone?" · call "+esc(c.phone):""}</span>`}
       <button class="btn ghost sm" data-startjob="${esc(c.key)}">Start job</button><button class="btn quiet sm" data-remdone="${esc(c.key)}|${esc(r.id)}">Mark handled</button></div></div>`).join("")
     :`<div class="card empty"><h2>Nothing due</h2><p class="muted">Reminders appear here as customers come due for seasonal service, annual audits, backflow tests and follow-ups.</p></div>`}`}
-function cfld(label,k,type,extra){const v=(S.custEdit||{})[k];return `<label class="f"><span>${label}</span>${type==="textarea"?`<textarea data-cf="${k}" id="cf-${k}" rows="3">${esc(v||"")}</textarea>`:`<input type="${type||"text"}" data-cf="${k}" id="cf-${k}" value="${esc(v||"")}" ${extra||""}>`}</label>`}
+function cfld(label,k,type,extra){const v=getNested(S.custEdit||{},k);return `<label class="f"><span>${label}</span>${type==="textarea"?`<textarea data-cf="${k}" id="cf-${k}" rows="3">${esc(v||"")}</textarea>`:`<input type="${type||"text"}" data-cf="${k}" id="cf-${k}" value="${esc(v||"")}" ${extra||""}>`}</label>`}
 function custForm(){const c=S.custEdit;const isNew=!S.custs[c.id];const miss=custMissing(c);
   const pt=(v,l)=>`<button class="btn ${c.propType===v?"":"ghost"}" data-cfset="propType" data-v="${v}" aria-pressed="${c.propType===v}">${l}</button>`;
   return `<div><button class="btn quiet sm" data-custcancel="1">‹ ${isNew?"Cancel":"Back"}</button></div>
   <div class="card"><div class="eyebrow">${S.custPick?"Step 1 of 2":"Customer profile"}</div><h2>${isNew?"New customer":"Edit customer"}</h2>
     <div class="grid2">${cfld("Customer name *","customer","text",'autocomplete="name"')}${cfld("Phone","phone","tel")}${cfld("Email","email","email")}${cfld("Gate / access code","gate")}</div>
+    <h3 style="margin:6px 0 0">${(c.props||[]).filter(p=>!p.removed).length?"Main property":"Property"}</h3>
+    ${(c.props||[]).length||c.propLabel?cfld("Property name (e.g. Main home)","propLabel"):""}
     <div class="grid2">${cfld("Street address *","address")}${cfld("City *","city")}</div>
     <div class="f"><span>Property type *</span><div class="grid2">${pt("residential","Residential")}${pt("commercial","Commercial")}</div></div>
-    ${cfld("Property notes (dogs, parking, where the controller is…)","notes","textarea")}
+    ${cfld("Notes (team only: dogs, parking, where the controller is…)","notes","textarea")}
+    ${billFields(c,"data-cf")}
+    ${isNew?`<p class="small muted" style="margin:0">More properties for this customer (a lake house, rentals…) can be added after saving.</p>`:""}
     <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;margin:8px 0"><input type="checkbox" data-cfcheck="remindersOff" ${c.remindersOff?"checked":""} style="width:20px;height:20px;flex:none"><span>Customer opted out of maintenance reminders</span></label>
     <div id="cust-dup">${custDupNote(c)}</div>
     <p class="small" id="cust-miss" style="margin:0" ${miss.length?"":"hidden"}><b>Still needed:</b> <span>${esc(miss.join(", "))}</span></p>
@@ -2455,7 +2462,8 @@ function portalStatus(c){if(!sb||!c.rec)return "";if(!S.team){loadTeam();return 
     :`<div class="small">Portal: <span class="pill warn">Waiting for approval</span> <button class="btn sm" data-approve="${esc(o.email)}|${esc(c.rec.id)}">Approve</button></div>`}
 async function setAccess(email,on,custId){const {error}=await sb.rpc("set_customer_access",{p_email:email,p_approve:on,p_cust:custId||null});
   if(error){toast(error.message.replace(/^.*?:\s*/,""));return false}await loadTeam();render();return true}
-function customersView(){if(S.custEdit)return custForm();const cs=customers();
+function customersView(){if(S.cimp&&isAdmin())return custImportView();if(S.custEdit)return custForm();if(S.propEdit&&S.custs[S.propEdit.custId])return propForm();const cs=customers();
+  if(S.propPick){const pc=cs.find(x=>x.key===S.propPick);if(pc&&pc.rec)return propPickCard(pc);S.propPick=null}
   if(S.custOpen&&!S.custPick){const c=cs.find(x=>x.key===S.custOpen);if(c)return customerDetail(c);S.custOpen=null}
   const nocust=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   const nocustCard=nocust.length?`<div class="card"><div class="cardhead"><h3>Jobs without customer details</h3><span class="pill warn">${nocust.length}</span></div>
@@ -2465,19 +2473,19 @@ function customersView(){if(S.custEdit)return custForm();const cs=customers();
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button><span class="spacer"></span><button class="btn quiet sm" data-custpickcancel="1">Cancel</button></div></div>
   ${cs.length?`<div class="listtools">${searchBox("pick","Find the customer: name, address or phone")}</div><div class="jobs">${cs.filter(c=>qMatch([c.name,c.address,(c.rec||{}).phone,(c.rec||{}).email,(c.rec||{}).custNo].join(" "),(S.q||{}).pick||"")).slice(0,60).map(c=>`<button class="job" data-startjob="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length} job${c.jobs.length===1?"":"s"}</span></div><div class="amt"><span class="small">Choose ›</span></div></button>`).join("")}</div>`:""}`;
   const q=(S.q||{}).cust||"";const cf=S.custF||"all";const sort=S.custSort||"name";
-  const custHay=c=>{const r=c.rec||{};return [c.name,c.address,r.city,r.phone,r.email,r.custNo,...c.jobs.map(j=>[jobTitle(j),(j.inv||{}).no,j.info.phone,j.info.email].join(" "))].join(" ")};
+  const custHay=c=>{const r=c.rec||{};return [c.name,c.address,r.city,r.phone,r.email,r.custNo,...custProps(r).map(p=>[p.label,p.address,p.city,billLine(p.billTo)].join(" ")),...c.jobs.map(j=>[jobTitle(j),(j.inv||{}).no,j.info.phone,j.info.email].join(" "))].join(" ")};
   const CF={all:["All",c=>true],open:["Open items",c=>c.lastAudit&&openItems(c.lastAudit).length>0],due:["Service due",c=>{const nx=custSchedule(c)[0];return nx&&nx.due&&nx.due<=new Date(Date.now()+30*864e5).toISOString().slice(0,10)}],nojobs:["No jobs yet",c=>!c.jobs.length],res:["Residential",c=>((c.rec||{}).propType||(c.jobs[0]&&c.jobs[0].info.propType)||"residential")!=="commercial"],com:["Commercial",c=>((c.rec||{}).propType||(c.jobs[0]&&c.jobs[0].info.propType))==="commercial"]};
   const lastAt=c=>Math.max(0,...c.jobs.map(j=>j.updatedAt||0),(c.rec||{}).updatedAt||0);
   const fl=cs.filter(CF[cf]?CF[cf][1]:()=>true).filter(c=>qMatch(custHay(c),q)).sort(sort==="recent"?(a,b)=>lastAt(b)-lastAt(a):sort==="num"?(a,b)=>String((a.rec||{}).custNo||"zz").localeCompare(String((b.rec||{}).custNo||"zz"),undefined,{numeric:true}):(a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
   const lim=(S.lim||{}).cust||50;const shown=fl.slice(0,lim);
-  return `${accountRequests()}<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
-    <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button></div></div>
+  return `${accountRequests()}${typeCheckCard()}<div class="card"><div class="cardhead"><h2>Customers</h2><span class="pill neutral">${cs.length}</span></div><p class="small muted" style="margin:0">Start here. Add the customer's profile first, then create their job.</p>
+    <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button>${isAdmin()&&S.mode==="db"||isAdmin()&&!sb?`<button class="btn ghost" data-cimp="open">Import customers</button>`:""}</div></div>
   ${cs.length?`<div class="listtools">${searchBox("cust","Search customers: name, address, phone, email or customer #")}
     <div class="chips">${Object.entries(CF).map(([k,[l,fn]])=>`<button class="chip" data-custf="${k}" aria-pressed="${cf===k}">${l} (${cs.filter(fn).length})</button>`).join("")}</div>
     <label class="f" style="max-width:220px"><span>Sort</span><select data-custsort="1">${[["name","Name A–Z"],["recent","Recent activity"],["num","Customer #"]].map(([v,l])=>`<option value="${v}" ${sort===v?"selected":""}>${l}</option>`).join("")}</select></label>
     ${q?`<p class="small muted" style="margin:0">${fl.length} match${fl.length===1?"":"es"}</p>`:""}</div>`:""}
   ${cs.length?`<div class="jobs">${shown.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
-    return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
+    return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}${c.nProps>1?` · +${c.nProps-1} more propert${c.nProps===2?"y":"ies"}`:""}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
       ${c.jobs.length?`<div class="custjobs">${c.jobs.slice(0,4).map(j=>`<span>${jobNoTag(j)} ${esc(jobPhase(j).label)}</span>`).join("")}${c.jobs.length>4?`<span class="muted">+${c.jobs.length-4} more</span>`:""}</div>`:""}
       <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")||`<p class="muted">No customers match.</p>`}</div>${moreBtn("cust",shown.length,fl.length)}`
     :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Tap New customer to add the first one.</p></div>`}${nocustCard}`}
@@ -2488,16 +2496,179 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
     <div class="small muted">${c.remOff?"Opted out of maintenance reminders":"Gets maintenance reminders"}</div>${portalStatus(c)}
     ${c.gate?`<div class="small">Gate ${esc(c.gate)}</div>`:""}${c.rec&&c.rec.notes?`<div class="small"><b>Notes:</b> ${esc(c.rec.notes)}</div>`:""}
     <div class="row"><button class="btn sm" data-startjob="${esc(c.key)}">Create a job</button>${isOffice()?`<button class="btn ghost sm" data-editcust="${esc(c.key)}">Edit details</button>`:""}</div></div>
+  ${propsCard(c)}
   <div class="card"><h3>Their system</h3><div class="small">${(sysJob.controllers||[]).map(x=>`${esc(ctlBrand(x)||"Controller")} ${esc(x.model||"")} · ${num(x.zones)} zones · ${x.wiring==="2wire"?"2-wire":"conventional"} · rain sensor: ${x.rain==="yes"?(x.rainStatus||"yes"):x.rain==="no"?"none":"not checked"}`).join("<br>")||"No controller recorded"}</div>
     ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
   <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
   ${isChief()?`<div class="card sunk"><div class="row"><div class="spacer small muted">${c.jobs.length?`Deletes this customer and their ${c.jobs.length} job${c.jobs.length===1?"":"s"} (reports and invoices included) for everyone. It can't be undone.`:"Deletes this customer for everyone. It can't be undone."}</div>${delBtn("cust:"+c.key.replace(/:/g,"~"),c.jobs.length?`Delete customer + ${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"Delete customer")}</div></div>`:""}
   <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<button type="button" class="act custjob" data-open="${j.id}"><div class="al">${jobNoTag(j)}<div class="small">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</div><div class="ap">${(j.revs||[]).length?"Report Rev "+revNo(j.revs[j.revs.length-1].n):"No report yet"}${j.completion&&j.completion.issuedAt?" · completion report issued":""}</div></div>${phasePill(j)}</button>`).join("")}</div></div>`}
+/* ---- Properties: one customer can own several (main home, lake house, rentals…) ----
+   The customer record's own address fields are the MAIN property; extra ones live in c.props.
+   Each property can bill someone else (property or project manager). Jobs remember their property (j.propId). */
+const BILL_ROLES=["Property manager","Project manager","Owner","Tenant","Other"];
+function custProps(c){if(!c)return [];return [{id:"main",label:c.propLabel||"",address:c.address||"",city:c.city||"",gate:c.gate||"",propType:c.propType||"",notes:c.propNotes||"",billTo:c.billTo||null,typeCheck:!!c.typeCheck}].concat((c.props||[]).filter(p=>p&&!p.removed))}
+function propOf(c,pid){const ps=custProps(c);return ps.find(p=>p.id===(pid||"main"))||ps[0]}
+function propName(p,i){return p.label||(i===0||p.id==="main"?"Main property":"Property "+((i||0)+1))}
+function billOn(b){return !!(b&&b.on&&String(b.name||b.company||"").trim())}
+function billLine(b){return billOn(b)?[b.company,b.name].filter(Boolean).join(" · ")+(b.role?` (${b.role})`:""):""}
+/* Copy the customer + chosen property onto a job's info; returns true if anything changed */
+function applyProp(j,c,p){const i=j.info;const want={customer:c.customer||"",phone:c.phone||"",email:c.email||"",address:p.address||"",city:p.city||"",gate:p.gate||"",propLabel:p.label||""};let ch=false;
+  Object.keys(want).forEach(k=>{if((i[k]||"")!==want[k]){i[k]=want[k];ch=true}});
+  if(p.propType&&i.propType!==p.propType){i.propType=p.propType;ch=true}
+  const bt=billOn(p.billTo)?JSON.parse(JSON.stringify(p.billTo)):null;if(JSON.stringify(i.billTo||null)!==JSON.stringify(bt)){i.billTo=bt;ch=true}
+  if(!!i.remindersOff!==!!c.remindersOff){i.remindersOff=!!c.remindersOff;ch=true}j.propId=p.id;return ch}
+function billEmail(j){const b=j.info.billTo;return (billOn(b)&&b.email)||j.info.email||""}
+function getNested(o,k){return k.split(".").reduce((a,x)=>a==null?a:a[x],o)}
+function setNested(o,k,v){const ks=k.split(".");let a=o;ks.slice(0,-1).forEach(x=>{if(!a[x]||typeof a[x]!=="object")a[x]={};a=a[x]});a[ks[ks.length-1]]=v}
+function billFields(src,attr){const b=(src.billTo)||{};const on=!!b.on;const f=(l,k,t)=>`<label class="f"><span>${l}</span><input type="${t||"text"}" ${attr}="billTo.${k}" value="${esc(b[k]||"")}"></label>`;
+  return `<div class="combo"><label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap"><input type="checkbox" ${attr}check="billTo.on" ${on?"checked":""} style="width:20px;height:20px;flex:none"><span><b>Bill someone else</b> for this property (property manager, project manager…)</span></label>
+    ${on?`<div class="f"><span>Who are they?</span><div class="chips">${BILL_ROLES.map(r=>`<button type="button" class="chip" ${attr}role="${esc(r)}" aria-pressed="${b.role===r}">${esc(r)}</button>`).join("")}</div></div>
+    <div class="grid2">${f("Contact name","name")}${f("Company","company")}${f("Phone","phone","tel")}${f("Email (gets the estimates and invoices)","email","email")}</div>
+    <div class="grid2">${f("Billing address","address")}${f("City, state ZIP","city")}</div>`:""}</div>`}
+function propForm(){const e=S.propEdit;const p=e.p;const c=S.custs[e.custId];const miss=[!String(p.address||"").trim()&&"Street address",!String(p.city||"").trim()&&"City",!p.propType&&"Residential or commercial"].filter(Boolean);
+  const f=(l,k,t)=>`<label class="f"><span>${l}</span>${t==="textarea"?`<textarea data-pf="${k}" rows="3">${esc(p[k]||"")}</textarea>`:`<input type="${t||"text"}" data-pf="${k}" value="${esc(p[k]||"")}">`}</label>`;
+  const pt=(v,l)=>`<button class="btn ${p.propType===v?"":"ghost"}" data-pfset="propType" data-v="${v}" aria-pressed="${p.propType===v}">${l}</button>`;
+  const jobsHere=Object.values(S.jobs).filter(j=>j.custId===e.custId&&j.propId===p.id).length;
+  return `<div><button class="btn quiet sm" data-propcancel="1">‹ Cancel</button></div>
+  <div class="card"><div class="eyebrow">${esc(c?c.customer:"")}</div><h2>${e.isNew?"Add a property":"Edit property"}</h2>
+    ${f("Property name (e.g. Lake house, Rental on Oak St)","label")}
+    <div class="grid2">${f("Street address *","address")}${f("City *","city")}</div>
+    <div class="grid2">${f("Gate / access code","gate")}</div>
+    <div class="f"><span>Property type *</span><div class="grid2">${pt("residential","Residential")}${pt("commercial","Commercial")}</div></div>
+    ${f("Property notes (dogs, parking, where the controller is…)","notes","textarea")}
+    ${billFields(p,"data-pf")}
+    ${miss.length?`<p class="small" style="margin:0"><b>Still needed:</b> ${esc(miss.join(", "))}</p>`:""}
+    <button class="btn" style="width:100%;min-height:52px" data-propsave="1" ${miss.length?"disabled":""}>${e.isNew?"Add property":"Save property"}</button>
+    ${!e.isNew?(jobsHere?`<p class="small muted" style="margin:0">This property has ${jobsHere} job${jobsHere===1?"":"s"}, so it can't be removed.</p>`:`<div class="row"><span class="spacer"></span>${delBtn("prop:"+e.custId+":"+p.id,"Remove this property")}</div>`):""}</div>`}
+function propsCard(c){const r=c.rec;if(!r)return "";const ps=custProps(r);
+  return `<div class="card"><div class="cardhead"><h3>Properties (${ps.length})</h3>${isOffice()?`<button class="btn ghost sm" data-propadd="${esc(r.id)}">+ Add property</button>`:""}</div>
+    <div class="acts">${ps.map((p,i)=>{const n=c.jobs.filter(j=>(j.propId||"main")===p.id).length;return `<div class="act"><div class="al"><b>${esc(propName(p,i))}</b> <span class="pill ${p.propType==="commercial"?"warn":"neutral"}">${p.propType==="commercial"?"Commercial":"Residential"}${p.typeCheck?"?":""}</span>
+      <div class="ap">${esc([p.address,p.city].filter(Boolean).join(", "))}${p.gate?` · Gate ${esc(p.gate)}`:""} · ${n} job${n===1?"":"s"}</div>
+      ${billOn(p.billTo)?`<div class="ap">Bill to: <b>${esc(billLine(p.billTo))}</b>${p.billTo.email?" · "+esc(p.billTo.email):""}</div>`:""}${p.notes?`<div class="ap">${esc(p.notes)}</div>`:""}</div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm" data-startjob="${esc(c.key)}|${esc(p.id)}">New job</button>${isOffice()?`<button class="btn ghost sm" ${p.id==="main"?`data-editcust="${esc(c.key)}"`:`data-propedit="${esc(r.id)}|${esc(p.id)}"`}>Edit</button>`:""}</div></div>`}).join("")}</div></div>`}
+function propPickCard(c){const ps=custProps(c.rec);return `<div class="card"><div class="eyebrow">New job for ${esc(c.name)}</div><h2>Which property?</h2>
+  <div class="jobs">${ps.map((p,i)=>`<button class="job" data-startjob="${esc(c.key)}|${esc(p.id)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(propName(p,i))}</strong><span>${esc([p.address,p.city].filter(Boolean).join(", "))}</span>${billOn(p.billTo)?`<span>Bill to ${esc(billLine(p.billTo))}</span>`:""}</div><div class="amt"><span class="small">Choose ›</span></div></button>`).join("")}</div>
+  <div class="row"><button class="btn quiet sm" data-proppickcancel="1">Cancel</button></div></div>`}
+/* ---- Property-type check: imported properties start as Residential and wait for a quick yes/no ---- */
+function typeCheckCard(){if(!isOffice())return "";const L=[];Object.values(S.custs).forEach(c=>{if(!c||c.mergedInto)return;custProps(c).forEach((p,i)=>{if(p.typeCheck)L.push({c,p,i})})});if(!L.length)return "";
+  L.sort((a,b)=>String(a.c.customer).localeCompare(String(b.c.customer)));const open=!!S.typeOpen;
+  return `<div class="card need"><div class="cardhead"><h2>Check property types</h2><span class="pill warn">${L.length}</span></div>
+    <p class="small muted" style="margin:0">Imported properties start as <b>Residential</b> (no sales tax). Switch any commercial ones, then tap Confirm. Rentals and homes run by property managers are still residential.</p>
+    ${open?`<div class="acts">${L.slice(0,(S.lim||{}).types||40).map(({c,p,i})=>`<div class="act"><div class="al"><b>${esc(c.customer)}</b>${custProps(c).length>1?" · "+esc(propName(p,i)):""}<div class="ap">${esc([p.address,p.city].filter(Boolean).join(", "))}</div></div>
+      <div class="chips" style="flex-wrap:nowrap"><button class="chip" data-ptype="${esc(c.id)}|${esc(p.id)}|residential" aria-pressed="${p.propType!=="commercial"}">Res</button><button class="chip" data-ptype="${esc(c.id)}|${esc(p.id)}|commercial" aria-pressed="${p.propType==="commercial"}">Com</button></div></div>`).join("")}</div>
+      ${L.length>((S.lim||{}).types||40)?moreBtn("types",(S.lim||{}).types||40,L.length):""}
+      <div class="row"><button class="btn" data-ptypeok="1">Confirm all ${L.length}</button><button class="btn quiet" data-typeopen="0">Later</button></div>`
+    :`<div class="row"><button class="btn" data-typeopen="1">Review ${L.length} propert${L.length===1?"y":"ies"}</button></div>`}</div>`}
+function setPropField(c,pid,k,v){if(pid==="main"){if(k==="label")c.propLabel=v;else if(k==="notes")c.propNotes=v;else c[k]=v}else{const p=(c.props||[]).find(x=>x.id===pid);if(p)p[k]=v}}
+/* ---------------- Customer import (Zoho Books / Invoice export, or any spreadsheet with similar columns) ----------------
+   Admin picks the .xlsx/.csv → preview shows every fix and warning → Import.
+   Cleans names, phones, states, city typos and missing ZIP/city; moves gate codes into the Gate field;
+   merges the same person's rows into ONE customer with several properties; a different billing address
+   (property manager, LLC) becomes "Bill to"; skips customers already in the app; every property waits for a
+   Residential/Commercial check. */
+const US_ST={alabama:"AL",alaska:"AK",arizona:"AZ",arkansas:"AR",california:"CA",colorado:"CO",connecticut:"CT",delaware:"DE",florida:"FL",georgia:"GA",hawaii:"HI",idaho:"ID",illinois:"IL",indiana:"IN",iowa:"IA",kansas:"KS",kentucky:"KY",louisiana:"LA",maine:"ME",maryland:"MD",massachusetts:"MA",michigan:"MI",minnesota:"MN",mississippi:"MS",missouri:"MO",montana:"MT",nebraska:"NE",nevada:"NV","new hampshire":"NH","new jersey":"NJ","new mexico":"NM","new york":"NY","north carolina":"NC","north dakota":"ND",ohio:"OH",oklahoma:"OK",oregon:"OR",pennsylvania:"PA","rhode island":"RI","south carolina":"SC","south dakota":"SD",tennessee:"TN",texas:"TX",utah:"UT",vermont:"VT",virginia:"VA",washington:"WA","west virginia":"WV",wisconsin:"WI",wyoming:"WY"};
+function lev(a,b){a=a.toLowerCase();b=b.toLowerCase();const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length]}
+function impPhone(v){if(v==null||v==="")return "";let s=typeof v==="number"?String(Math.round(v)):String(v);let d=s.replace(/\D/g,"");if(d.length===11&&d[0]==="1")d=d.slice(1);return d.length===10?`${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`:s.trim()}
+function impZip(v){if(v==null||v==="")return "";const d=String(typeof v==="number"?Math.round(v):v).replace(/[^\d-]/g,"");return /^\d{4}$/.test(d)?"0"+d:d}
+function impState(v,zip){const s=String(v||"").trim();if(s.length===2)return s.toUpperCase();const k=US_ST[s.toLowerCase()];if(k)return k;if(!s&&/^(7[5-9]|88[5])/.test(zip))return "TX";return s}
+function impStreet(a){return String(a||"").toLowerCase().replace(/^\s*\d+\s*/,"").replace(/\s+/g," ").trim()}
+function custImportPlan(rows){
+  const col=(r,...names)=>{for(const n of names){if(r[n]!=null&&String(r[n]).trim()!=="")return r[n]}return ""};
+  const S0=x=>String(x==null?"":x).trim();
+  // pass 1: raw records
+  const raw=rows.map((r,ix)=>{const row=ix+2;
+    const disp=S0(col(r,"Display Name","Customer Name","Name","Contact Name"));const first=S0(col(r,"First Name"));const last=S0(col(r,"Last Name"));
+    const bill={address:[S0(col(r,"Billing Address","Address","Street")),S0(col(r,"Billing Street2"))].filter(Boolean).join(" "),city:S0(col(r,"Billing City","City")),state:S0(col(r,"Billing State","State")),zip:impZip(col(r,"Billing Code","ZIP","Zip","Postal Code"))};
+    const ship={address:[S0(col(r,"Shipping Address")),S0(col(r,"Shipping Street2"))].filter(Boolean).join(" "),city:S0(col(r,"Shipping City")),state:S0(col(r,"Shipping State")),zip:impZip(col(r,"Shipping Code"))};
+    const phones=[col(r,"MobilePhone","Mobile","Mobile Phone"),col(r,"Billing Phone"),col(r,"Phone","Work Phone"),col(r,"Shipping Phone")].map(impPhone).filter(Boolean);
+    let notes=r["Notes"];notes=notes==null?"":typeof notes==="number"?String(Math.round(notes*100)/100):String(notes).trim();
+    return {row,disp,first,last,company:S0(col(r,"Company Name","Company")),attn:S0(col(r,"Shipping Attention","Billing Attention")),email:S0(col(r,"EmailID","Email","E-mail","Email Address")).toLowerCase(),phones:[...new Set(phones)],bill,ship,notes,
+      extId:S0(col(r,"Contact ID","Customer ID","ID")),created:r["Created Time"],status:S0(col(r,"Status"))}}).filter(x=>x.disp||x.first||x.last);
+  // city spellings & ZIP knowledge from the whole file
+  const cityN={},zipCity={},streetZip={};const addrs=[];raw.forEach(x=>[x.bill,x.ship].forEach(a=>{if(a.address)addrs.push(a)}));
+  addrs.forEach(a=>{if(a.city)cityN[a.city]=(cityN[a.city]||0)+1;if(a.city&&a.zip)(zipCity[a.zip]=zipCity[a.zip]||{})[a.city]=1+((zipCity[a.zip]||{})[a.city]||0);if(a.zip)(streetZip[impStreet(a.address)]=streetZip[impStreet(a.address)]||{})[a.zip]=1});
+  const common=Object.keys(cityN).filter(c=>cityN[c]>=3);
+  const fixAddr=(a,fx)=>{if(!a.address)return null;let city=a.city.replace(/\s+/g," ");const addr=a.address.replace(/\s+/g," ").trim();if(addr!==a.address)fx.push("extra spaces removed from the address");
+    if(city&&!common.includes(city)){const m=common.find(c=>lev(c,city)<=2&&c.toLowerCase()!==city.toLowerCase());if(m){fx.push(`city “${city}” → “${m}”`);city=m}}
+    let zip=a.zip;if(!zip){const z=Object.keys(streetZip[impStreet(addr)]||{});if(z.length===1){zip=z[0];fx.push(`ZIP filled in (${zip}, same street as another customer)`)}}
+    if(!city&&zip&&zipCity[zip]){city=Object.entries(zipCity[zip]).sort((p,q)=>q[1]-p[1])[0][0];fx.push(`city filled in from ZIP (${city})`)}
+    const st=impState(a.state,zip);if(!a.state&&st)fx.push(`state filled in (${st})`);
+    return {address:addr,city:[city,[st,zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")}};
+  // pass 2: group the same person (same name + same email or phone)
+  const nm=x=>(x.first||x.last?(x.first+" "+x.last):x.disp).replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i,"").trim();
+  const groups=[];raw.forEach(x=>{const n=nm(x).toLowerCase();const g=groups.find(g=>g.n===n&&g.items.some(y=>(x.email&&y.email===x.email)||x.phones.some(p=>y.phones.includes(p))));if(g)g.items.push(x);else groups.push({n,items:[x]})});
+  const phoneOwners={};raw.forEach(x=>x.phones.slice(0,1).forEach(p=>(phoneOwners[p]=phoneOwners[p]||new Set()).add(nm(x).toLowerCase())));
+  const existing=Object.values(S.custs).filter(c=>c&&!c.mergedInto);
+  const add=[],skip=[];
+  groups.forEach(g=>{const x0=g.items[0];const fixes=[],warns=[];
+    let name=(x0.disp&&!/^(mr|mrs|ms|miss|dr)\.?\s/i.test(x0.disp)?x0.disp:nm(x0)).replace(/\s*\([^)]*\)\s*/g," ").trim();if(x0.disp&&name!==x0.disp)fixes.push(`name “${x0.disp}” → “${name}”`);
+    const ext=g.items.map(x=>x.extId?"zoho:"+x.extId:"").filter(Boolean);
+    const dupe=existing.find(c=>(c.extIds||[]).some(e=>ext.includes(e)))||custMatch({email:x0.email,address:(x0.ship.address||x0.bill.address),city:""})||existing.find(c=>String(c.customer||"").trim().toLowerCase()===name.toLowerCase()&&String(c.email||"").toLowerCase()===x0.email&&x0.email);
+    if(dupe){skip.push({name,row:g.items.map(x=>x.row).join(", "),why:`already in the app as ${dupe.customer}${dupe.custNo?" (Customer "+dupe.custNo+")":""}`});return}
+    const props=[];const notesAll=[];let gateMain="";
+    g.items.forEach((x,k)=>{const pfx=[];const svc=x.ship.address&&normAddr(x.ship.address,"")!==normAddr(x.bill.address,"")?x.ship:x.bill;const svcA=fixAddr(Object.assign({},svc,{city:svc.city,state:svc.state,zip:svc.zip}),pfx);
+      if(!svcA){warns.push(`row ${x.row}: no street address`);return}
+      // gate & access codes → Gate field (team only)
+      let notes=x.notes;const codes=[];notes=notes.replace(/([A-Za-z ]{0,30}?)\b(gate|entry|door|lock|garage)\s*code\s*:?\s*([0-9#*]{3,})/gi,(m,pre,kind,code)=>{codes.push(`${(pre.trim()+" "+kind).trim().replace(/^\w/,c=>c.toUpperCase())} ${code}`);return ""}).replace(/[;,]\s*(?=\n|$)/g,"").replace(/\n{3,}/g,"\n\n").trim();
+      if(codes.length)pfx.push("gate/access code moved to the Gate field");
+      if(/^how did they hear about us\??$/i.test(notes)){notes="";pfx.push("empty note template removed")}
+      // billing someone else (different billing address, or a property/project manager in the company name)
+      let billTo=null;const co=x.company&&x.company.toLowerCase()!==name.toLowerCase()?x.company:"";
+      const pmM=/(property|project)\s*manag/i.exec(co+" "+x.disp);
+      if(svc===x.ship&&x.bill.address){const bA=fixAddr(x.bill,[]);billTo={on:true,name:co&&!pmM?name:(x.disp.replace(/\s*\(.*\)\s*/,"").trim()===name?name:x.disp),company:co.replace(/\s*\(.*\)\s*/,"").trim()||"",role:pmM?(pmM[1].toLowerCase()==="project"?"Project manager":"Property manager"):(co?"Owner":""),phone:x.phones[0]||"",email:x.email,address:bA.address,city:bA.city};pfx.push(`bills ${billTo.company||billTo.name} at ${bA.address}`)}
+      else if(pmM&&co){billTo={on:true,name:co.replace(/\s*\(.*\)\s*/,"").trim(),company:"",role:pmM[1].toLowerCase()==="project"?"Project manager":"Property manager",phone:"",email:"",address:"",city:""};pfx.push(`${billTo.name} added as ${billTo.role.toLowerCase()} (Bill to; add their phone/email)`)}
+      else if(co&&g.items.length===1)notes=[notes,`Company: ${co}`].filter(Boolean).join("\n");
+      const label=g.items.length>1?(x.company||x.attn||(k?"Property "+(k+1):"")):"";
+      props.push({id:k?uid("p"):"main",label,address:svcA.address,city:svcA.city,gate:codes.join(" · "),propType:"residential",typeCheck:true,notes:g.items.length>1?notes:"",billTo});
+      if(g.items.length===1&&notes)notesAll.push(notes);
+      pfx.forEach(f=>fixes.push((g.items.length>1?`${label||svcA.address}: `:"")+f))});
+    if(!props.length){skip.push({name,row:x0.row,why:"no street address"});return}
+    const email=g.items.map(x=>x.email).find(Boolean)||"";const phones=[...new Set(g.items.flatMap(x=>x.phones))];
+    if(g.items.length>1)fixes.push(`${g.items.length} rows merged into one customer with ${props.length} properties`);
+    if(!email)warns.push("no email (estimate links can go by text)");
+    if(/get (correct )?email|verify email|validate email|get email/i.test(g.items.map(x=>x.notes).join(" ")))warns.push("note says to get or verify the email");
+    if(phones[0]&&phoneOwners[phones[0]]&&phoneOwners[phones[0]].size>1)warns.push(`phone ${phones[0]} is also listed for ${[...phoneOwners[phones[0]]].filter(n=>n!==name.toLowerCase()).map(n=>n.replace(/\b\w/g,c=>c.toUpperCase())).join(", ")}`);
+    if(phones.length>1)fixes.push(`other phone kept in notes (${phones.slice(1).join(", ")})`);
+    const m=props[0];const rec=Object.assign(newCust(),{customer:name,phone:phones[0]||"",email,address:m.address,city:m.city,gate:m.gate,propType:"residential",typeCheck:true,propLabel:m.label,propNotes:m.notes,billTo:m.billTo,
+      notes:[...notesAll,phones.length>1?`Other phone: ${phones.slice(1).join(", ")}`:""].filter(Boolean).join("\n"),props:props.slice(1),extIds:ext,importedAt:Date.now(),
+      createdAt:(x0.created instanceof Date?x0.created.getTime():Date.parse(x0.created))||Date.now()});
+    rec.custNo="";add.push({rec,rows:g.items.map(x=>x.row),fixes,warns})});
+  return {add,skip,rows:raw.length}}
+async function custImportFile(file){S.cimp={step:"reading",name:file.name};render();
+  try{const X=await loadXlsx();const wb=X.read(await file.arrayBuffer(),{type:"array",cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=X.utils.sheet_to_json(ws,{defval:"",raw:true});
+    if(!rows.length)throw new Error("The file has no rows");const plan=custImportPlan(rows);window.__cimpPlan=plan;S.cimp={step:"preview",name:file.name,plan};render();window.scrollTo(0,0)}
+  catch(e){S.cimp={step:"pick",err:String(e.message||e)};render()}}
+function custImportView(){const m=S.cimp;const back=`<div><button class="btn quiet sm" data-cimp="close">‹ Customers</button></div>`;
+  if(m.step==="reading")return back+`<div class="card"><p>Reading ${esc(m.name)}…</p></div>`;
+  if(m.step==="done")return back+`<div class="card"><div class="cardhead"><h2>Import finished</h2><span class="pill ok">${m.count} added</span></div><p class="small" style="margin:0">Customer numbers are assigned as they save. Next: check which properties are commercial (on the Customers page).</p><div class="row"><button class="btn" data-cimp="close">Go to Customers</button></div></div>`;
+  if(m.step!=="preview")return back+`<div class="card"><h2>Import customers</h2>
+    <p class="small" style="margin:0">From Zoho: <b>Sales → Customers → ⋯ → Export Customers</b> (Excel or CSV). Other spreadsheets work too if they have columns like Name, Email, Phone, Address, City, State, ZIP.</p>
+    <p class="small muted" style="margin:0">Nothing is saved until you review the preview and tap Import. Customers already in the app are skipped.</p>
+    ${m.err?`<div class="note bad small">${esc(m.err)}</div>`:""}
+    <label class="btn" style="width:max-content">Choose file<input type="file" accept=".xlsx,.xls,.csv" data-cimpfile="1" hidden></label></div>`;
+  const P=m.plan;const nProps=P.add.reduce((a,x)=>a+1+x.rec.props.length,0);const nW=P.add.filter(x=>x.warns.length).length;const f=m.filter||"all";
+  const list=P.add.filter(x=>f==="warn"?x.warns.length:f==="fix"?x.fixes.length:true);
+  return back+`<div class="card"><div class="cardhead"><h2>Preview: ${esc(m.name)}</h2><span class="pill neutral">${P.rows} rows</span></div>
+    <div class="invsum" style="grid-template-columns:repeat(3,1fr)"><div><div class="eyebrow">New customers</div><b class="num">${P.add.length}</b></div><div><div class="eyebrow">Properties</div><b class="num">${nProps}</b></div><div><div class="eyebrow">Skipped</div><b class="num">${P.skip.length}</b></div></div>
+    <p class="small muted" style="margin:0">Every property imports as Residential and waits for a quick Residential/Commercial check. Notes and gate codes are team-only.</p>
+    <div class="row"><button class="btn ghost sm" data-backup="1">Download a backup first</button></div>
+    <div class="row"><button class="btn" data-cimp="go" ${P.add.length?"":"disabled"}>Import ${P.add.length} customer${P.add.length===1?"":"s"}</button><button class="btn quiet" data-cimp="again">Choose a different file</button></div></div>
+  ${P.skip.length?`<div class="card"><h3>Skipped (${P.skip.length})</h3><div class="acts">${P.skip.map(s=>`<div class="act"><div class="al">${esc(s.name)}<div class="ap">Row ${esc(String(s.row))}: ${esc(s.why)}</div></div></div>`).join("")}</div></div>`:""}
+  <div class="card"><div class="chips">${[["all","All",P.add.length],["warn","Needs attention",nW],["fix","Cleaned up",P.add.filter(x=>x.fixes.length).length]].map(([k,l,n])=>`<button class="chip" data-cimpf="${k}" aria-pressed="${f===k}">${l} (${n})</button>`).join("")}</div>
+    <div class="acts">${list.map(x=>{const r=x.rec;const ps=custProps(r);return `<div class="act" style="display:block"><div class="al"><b>${esc(r.customer)}</b> <span class="small muted">row ${x.rows.join(", ")}</span>
+      <div class="ap">${esc([r.phone,r.email].filter(Boolean).join(" · ")||"No phone or email")}</div>
+      ${ps.map((p,i)=>`<div class="ap">${ps.length>1?`<b>${esc(propName(p,i))}:</b> `:""}${esc([p.address,p.city].filter(Boolean).join(", "))}${p.gate?` · Gate ${esc(p.gate)}`:""}${billOn(p.billTo)?` · Bill to ${esc(billLine(p.billTo))}`:""}</div>`).join("")}
+      ${x.fixes.map(t=>`<div class="ap" style="color:var(--ok-ink,#1d6b3a)">✓ ${esc(t)}</div>`).join("")}${x.warns.map(t=>`<div class="ap" style="color:var(--warn-ink,#8a5a00)">⚠ ${esc(t)}</div>`).join("")}</div></div>`}).join("")||`<p class="small muted">Nothing here.</p>`}</div></div>`}
+async function custImportRun(){const P=S.cimp.plan;let n=0;for(const x of P.add){const c=x.rec;S.custs[c.id]=c;saveCust(c);n++}
+  S.cimp={step:"done",count:n};S.custF="all";render();window.scrollTo(0,0);toast(`${n} customers imported`)}
+document.addEventListener("change",e=>{const t=e.target;if(t&&t.dataset&&t.dataset.cimpfile&&t.files&&t.files[0])custImportFile(t.files[0])});
 /* New job for a returning customer: contact info plus their system, without old findings */
-function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)})}
-  const src=c.jobs.find(j=>(j.controllers||[]).length)||c.jobs[0];const nj=newJob();nj.custId=rec.id;
-  CUST_FIELDS.forEach(k=>nj.info[k]=rec[k]||"");nj.info.propType=rec.propType||(src&&src.info.propType)||"";nj.info.remindersOff=!!rec.remindersOff;
+function startJobFrom(c,pid){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)})}
+  const p=propOf(rec,pid);const here=c.jobs.filter(j=>(j.propId||"main")===p.id);
+  const src=here.find(j=>(j.controllers||[]).length)||here[0];const nj=newJob();nj.custId=rec.id;
+  applyProp(nj,rec,p);nj.info.propType=p.propType||(src&&src.info.propType)||"";
   if(!src){S.jobs[nj.id]=nj;scheduleSave(nj.id);return nj}
   if(src.info.termsAgreed&&String(src.info.termsVer)===String(termsVer()))Object.assign(nj.info,{termsAgreed:true,termsVer:src.info.termsVer,termsAt:src.info.termsAt});
   const idmap={};nj.controllers=(src.controllers||[]).map(x=>{const n=newController(1);idmap[x.id]=n.id;return Object.assign(n,{line:x.line,name:x.name,brandPick:x.brandPick,brandOther:x.brandOther,brand:x.brand,model:x.model,location:x.location,wiring:x.wiring,zones:x.zones,modular:x.modular,modules:JSON.parse(JSON.stringify(x.modules||[]))})});
@@ -3396,7 +3567,7 @@ async function loadPortal(){
   (i.data||[]).filter(x=>x.status!=="draft").forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
   S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   try{const {data}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});S.portal.resp=data||[]}catch(e){S.portal.resp=[]}
-  if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
+  if(S.me&&S.me.custId){try{const {data,error}=await sb.rpc("my_customer_card");if(!error&&data)S.portal.cust=data}catch(e){}}
   render();
 }
 const CHOICE_L={fix:"Option 1: Urgent repairs",all:"Option 2: All work",decline:"Not right now"};
@@ -3459,7 +3630,8 @@ app.addEventListener("input",ev=>{
   if(t.dataset.techf){S.techF=t.value;rr();return}
   if(t.dataset.diagcredit){const j=job();if(j){j.est.diagCredit=t.checked;scheduleSave(S.cur);rr()}return}
   if(t.dataset.cmp&&S.compose){S.compose[t.dataset.cmp]=t.value;const box=t.closest(".compbox");if(box){const m=S.compose,enc=encodeURIComponent;const g=box.querySelector('[data-cmpsent="gmail"]'),ml=box.querySelector('[data-cmpsent="mail"]');if(g)g.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;if(ml)ml.href=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`}return}
-  if(t.dataset.cf&&S.custEdit){S.custEdit[t.dataset.cf]=t.value;custLive();return}
+  if(t.dataset.cf&&S.custEdit){setNested(S.custEdit,t.dataset.cf,t.value);custLive();return}
+  if(t.dataset.pf&&S.propEdit){setNested(S.propEdit.p,t.dataset.pf,t.value);return}
   const p=t.dataset.f;if(!p||!job())return;
   if(t.tagName==="SELECT")return;
   if(job().intake===false)setTimeout(intakeLive,0);
@@ -3476,7 +3648,8 @@ app.addEventListener("change",ev=>{
   if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.csrr){rr();return}if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
   if(t.dataset.terms&&job()){const j=job();if(t.checked)Object.assign(j.info,{termsAgreed:true,termsVer:termsVer(),termsAt:Date.now()});else{j.info.termsAgreed=false;delete j.info.termsAt}scheduleSave(S.cur);rr();return}
   if(t.dataset.assign&&job()){const j=job();const p=techList().find(x=>x.id===t.value);if(p){assignTo(j,p);try{localStorage.setItem("irr.lastAssign",p.id)}catch(e){}scheduleSave(S.cur);rr()}return}
-  if(t.dataset.cfcheck&&S.custEdit){S.custEdit[t.dataset.cfcheck]=t.checked;return}
+  if(t.dataset.cfcheck&&S.custEdit){setNested(S.custEdit,t.dataset.cfcheck,t.checked);if(t.dataset.cfcheck==="billTo.on")rr();return}
+  if(t.dataset.pfcheck&&S.propEdit){setNested(S.propEdit.p,t.dataset.pfcheck,t.checked);rr();return}
   if(t.dataset.remoff&&job()){job().info.remindersOff=t.checked;{const r=S.custs[job().custId];if(r){r.remindersOff=t.checked;saveCust(r,true)}}scheduleSave(S.cur);return}
   if(t.dataset.impsel){S.impSel=S.impSel||{};S.impSel[t.dataset.impsel]=t.checked;rr();return}
   if(t.dataset.prev){openPortalDoc("report",t.value);return}
@@ -3543,9 +3716,23 @@ app.addEventListener("click",ev=>{
   if(d.custcancel){S.custEdit=null;render();return}
   if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
   if(d.custpickcancel){S.custPick=false;S.home="jobs";render();return}
-  if(d.cfset&&S.custEdit){S.custEdit[d.cfset]=d.v;render();return}
+  if(d.cfset&&S.custEdit){S.custEdit[d.cfset]=d.v;if(d.cfset==="propType")delete S.custEdit.typeCheck;render();return}
+  if(d.cfrole!=null&&S.custEdit){setNested(S.custEdit,"billTo.role",S.custEdit.billTo&&S.custEdit.billTo.role===d.cfrole?"":d.cfrole);rr();return}
+  if(d.pfrole!=null&&S.propEdit){setNested(S.propEdit.p,"billTo.role",S.propEdit.p.billTo&&S.propEdit.p.billTo.role===d.pfrole?"":d.pfrole);rr();return}
+  if(d.pfset&&S.propEdit){S.propEdit.p[d.pfset]=d.v;if(d.pfset==="propType")delete S.propEdit.p.typeCheck;rr();return}
+  if(d.propadd){const c=S.custs[d.propadd];if(!c)return;S.propEdit={custId:c.id,isNew:true,p:{id:uid("p"),label:"",address:"",city:c.city||"",gate:"",propType:c.propType||"",notes:"",billTo:null}};render();window.scrollTo(0,0);return}
+  if(d.propedit){const [cid,pid]=d.propedit.split("|");const c=S.custs[cid];const p=c&&(c.props||[]).find(x=>x.id===pid);if(!p)return;S.propEdit={custId:cid,isNew:false,p:JSON.parse(JSON.stringify(p))};render();window.scrollTo(0,0);return}
+  if(d.propcancel){S.propEdit=null;render();return}
+  if(d.cimp){if(d.cimp==="open"||d.cimp==="again"){S.cimp={step:"pick"};render();window.scrollTo(0,0);return}if(d.cimp==="close"){S.cimp=null;render();window.scrollTo(0,0);return}if(d.cimp==="go"&&S.cimp&&S.cimp.plan){custImportRun();return}return}
+  if(d.cimpf){S.cimp.filter=d.cimpf;rr();return}
+  if(d.propsave&&S.propEdit){const e=S.propEdit;const c=S.custs[e.custId];if(!c)return;const p=e.p;["label","address","city","gate","notes"].forEach(k=>p[k]=String(p[k]||"").trim());
+    c.props=(c.props||[]).filter(x=>x.id!==p.id);c.props.push(p);saveCust(c,true);S.propEdit=null;S.custOpen="c:"+c.id;render();window.scrollTo(0,0);toast(e.isNew?"Property added":"Property saved");return}
+  if(d.proppickcancel){S.propPick=null;render();return}
+  if(d.typeopen!=null){S.typeOpen=d.typeopen==="1";rr();return}
+  if(d.ptype){const [cid,pid,v]=d.ptype.split("|");const c=S.custs[cid];if(!c)return;setPropField(c,pid,"propType",v);saveCust(c,true);rr();return}
+  if(d.ptypeok){Object.values(S.custs).forEach(c=>{if(!c||c.mergedInto)return;let ch=false;if(c.typeCheck){delete c.typeCheck;ch=true}(c.props||[]).forEach(p=>{if(p.typeCheck){delete p.typeCheck;ch=true}});if(ch)saveCust(c,true)});S.typeOpen=false;rr();toast("Property types confirmed");return}
   if(d.editcust){const c=customers().find(x=>x.key===d.editcust);if(!c)return;let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)});S.custOpen="c:"+rec.id}S.custEdit=JSON.parse(JSON.stringify(rec));render();window.scrollTo(0,0);return}
-  if(d.custsave&&S.custEdit){const c=S.custEdit;if(custMissing(c).length)return;["customer","phone","email","address","city","gate","notes"].forEach(k=>c[k]=String(c[k]||"").trim());c.email=c.email.toLowerCase();
+  if(d.custsave&&S.custEdit){const c=S.custEdit;if(custMissing(c).length)return;["customer","phone","email","address","city","gate","notes"].forEach(k=>c[k]=String(c[k]||"").trim());c.email=c.email.toLowerCase();if(c.billTo&&c.billTo.email)c.billTo.email=String(c.billTo.email).trim().toLowerCase();
     saveCust(c,true);S.custEdit=null;
     if(S.custPick){S.custPick=false;const cc=customers().find(x=>x.key==="c:"+c.id);const nj=startJobFrom(cc);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("Customer saved. Now set up the visit.");return}
     S.custOpen="c:"+c.id;render();window.scrollTo(0,0);toast("Customer saved");return}
@@ -3563,7 +3750,9 @@ app.addEventListener("click",ev=>{
   if(d.filter){S.filter=d.filter;S.lim=Object.assign({},S.lim,{jobs:50});rr();return}
   if(d.opencust){S.cur=d.opencust;S.tab="mainline";S.showDetails=true;render();window.scrollTo(0,0);return}
   if(d.cust!=null){ev.preventDefault();S.custOpen=d.cust||null;S.home="customers";render();window.scrollTo(0,0);return}
-  if(d.startjob){const c=customers().find(x=>x.key===d.startjob);if(!c)return;S.custPick=false;if(sb&&isOffice()&&!S.team)loadTeam();const nj=startJobFrom(c);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
+  if(d.startjob){const [ck,pid]=d.startjob.split("|");const c=customers().find(x=>x.key===ck);if(!c)return;
+    if(!pid&&c.rec&&custProps(c.rec).length>1){S.custPick=false;S.propPick=ck;S.home="customers";S.cur=null;render();window.scrollTo(0,0);return}
+    S.propPick=null;S.custPick=false;if(sb&&isOffice()&&!S.team)loadTeam();const nj=startJobFrom(c,pid);S.cur=nj.id;S.tab="mainline";render();window.scrollTo(0,0);toast("New job started for "+c.name);return}
   if(d.remcompose){const [ck,rid]=d.remcompose.split("|");const c=customers().find(x=>x.key===ck);if(!c)return;const r=custSchedule(c).find(x=>x.id===rid);if(!r)return;S.compose=Object.assign(reminderMsg(c,r),{title:r.label+" reminder",onSent:{ck,rid}});render();return}
   if(d.compclose){S.compose=null;render();return}
   if(d.cmpcopy&&S.compose){const m=S.compose;const txt=`To: ${m.to}\nSubject: ${m.subj}\n\n${m.body}`;(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Message copied")).catch(()=>toast("Couldn't copy. Select the text and copy it."));return}
@@ -3652,7 +3841,7 @@ app.addEventListener("click",ev=>{
     const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
     const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
-    S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
+    S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:billEmail(j),subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
   if(d.diag){j.est.trip=d.diag==="on";if(d.diag==="off"){j.est.waivedAt=Date.now();j.est.waivedBy=(S.me||{}).name||""}scheduleSave(S.cur);rr();return}
   if(d.cvopen){syncCompletion(j);S.custView=true;S.cvScroll=0;S.cvAgree=false;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
   if(d.cvexit){S.custView=false;S.cvDone=false;render();return}
@@ -3682,7 +3871,7 @@ app.addEventListener("click",ev=>{
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
   if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
     (async()=>{const url=await ensureLink(jj,kind,id);if(!url)return;const m=linkMsg(jj,kind,url);
-      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:jj.info.email||"",subj:m.subj,body:m.body,onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
+      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
       if(how==="text"){const ph=(jj.info.phone||"").replace(/[^\d+]/g,"");markSent(jj,kind,`Link texted to ${jj.info.phone||"customer"}`,id);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(m.sms)}`;return}
       copyText(url,"Link copied. Paste it into a text or email.");markSent(jj,kind,"Link copied to send",id);rr()})();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
@@ -3690,7 +3879,7 @@ app.addEventListener("click",ev=>{
   if(d.estanswer){j.outcome=d.estanswer;estLog(j,"Customer "+(d.estanswer==="approved"?"approved":"declined")+" the estimate");scheduleSave(S.cur);rr();toast(d.estanswer==="approved"?"Approved. The job moves to Work.":"Marked declined.");return}
   if(d.estcopy){const txt=invoiceText(estJob(j));try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
   if(d.estsend){const b=bizInfo();const first=(j.info.customer||"").split(" ")[0]||"there";const e=buildEstimate(j);
-    S.compose={title:"Email estimate",to:j.info.email||"",subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} comes to ${money(e.total)}.\n\nYou can also view it by signing in at ${payLink()} with this email address.\n\nReply to this email or call ${b.phone||"us"} to approve it or with any questions.\n\nThank you,\n${b.name||""}\n${b.phone||""}`,onSent:{est:S.cur},sentNote:"Sent it? This marks the estimate as sent."};render();return}
+    S.compose={title:"Email estimate",to:billEmail(j),subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} comes to ${money(e.total)}.\n\nYou can also view it by signing in at ${payLink()} with this email address.\n\nReply to this email or call ${b.phone||"us"} to approve it or with any questions.\n\nThank you,\n${b.name||""}\n${b.phone||""}`,onSent:{est:S.cur},sentNote:"Sent it? This marks the estimate as sent."};render();return}
   if(d.invupd){j.inv.amount=invLive(j);invLog(j,`Invoice updated to ${money(j.inv.amount)}`);scheduleSave(S.cur);rr();return}
   if(d.invreopen){invLog(j,`Reopened (was ${INV_ST[invState(j)][0]})`);j.inv.status="";scheduleSave(S.cur);rr();return}
   if(d.payadd){const amt=r2(String(document.getElementById("pay-amt").value).replace(/[$,]/g,""));if(!(amt>0)){toast("Enter the amount paid");return}
@@ -3729,6 +3918,7 @@ function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
   if(k==="impdiscard"){discardLocal();return}
+  if(k==="prop"){const c=S.custs[a];if(!c)return;if(Object.values(S.jobs).some(x=>x.custId===a&&x.propId===b)){toast("This property has jobs, so it can't be removed");return}c.props=(c.props||[]).filter(x=>x.id!==b);saveCust(c);S.propEdit=null;S.custOpen="c:"+c.id;render();toast("Property removed");return}
   if(k==="pay"&&j&&j.inv){const x=j.inv.payments[+a];if(x&&x.source!=="stripe"){j.inv.payments.splice(+a,1);invLog(j,`Payment removed: ${money(num(x.amount))} ${x.method||""}`);scheduleSave(S.cur);rr()}return}
   if(k==="invvoid"&&j&&j.inv){j.inv.status="void";invLog(j,"Voided");scheduleSave(S.cur);rr();return}
   if(k==="invclose"&&j&&j.inv&&isAdmin()){invLog(j,`Closed without payment (${money(invBalance(j))} not collected)`);j.inv.status="closed";scheduleSave(S.cur);rr();return}
