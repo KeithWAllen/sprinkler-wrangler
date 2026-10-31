@@ -683,6 +683,7 @@ function techList(){return (S.team&&S.team.people||[]).filter(p=>p.role==="tech"
 function assignTo(j,p){j.assign={id:p.id,name:p.name||String(p.email).split("@")[0],email:p.email};j.info.tech=j.assign.name}
 let pTimer=null;
 function savePricing(){if(!isAdmin()||S.training)return;clearTimeout(pTimer);pTimer=setTimeout(async()=>{
+  if(S.mode==="db"&&!S.pricingLoaded){pTimer=null;savePricing();return}
   if(S.mode==="local")LS.set(KP()+"pricing",S.pricing);
   else if(S.mode==="db"&&!S.ro){try{await db.doc("settings/pricing").set({prices:S.pricing});await db.doc("settings/terms").set({text:termsText(),ver:termsVer()})}catch(e){handleWriteErr(e)}}
 pTimer=null},700)}
@@ -697,7 +698,7 @@ async function saveBg(id,img){
   else if(S.mode==="db"&&!S.ro){try{img?await db.doc("jobmedia/"+id).set({img}):await db.doc("jobmedia/"+id).delete()}catch(e){handleWriteErr(e)}}
 }
 function startLocal(){
-  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};ensureCustNos();migrateLegacyCusts();render();
+  S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};S.biz=LS.get(KP()+"biz")||{};ensureCustNos();migrateLegacyCusts();render();
 }
 if(/[?&]paid=/.test(location.search)){setTimeout(()=>toast("Thank you! Your payment is being processed. The invoice updates once it clears."),1200);history.replaceState(null,"",location.pathname)}
 async function boot(){
@@ -724,7 +725,9 @@ async function boot(){
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     render();
   },err=>{toast("Lost connection to saved jobs");});
-  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;const first=!S.pricingLoaded;S.pricingLoaded=true;
+    if(s.exists&&(!pTimer||first)){const srv=(s.data()||{}).prices||{};S.pricing=first?Object.assign({},srv,S.pricing):Object.assign({},srv)}bizMigrate();if(!ME.open){render.keep=true;renderKeepFocus()}},()=>{S.pricingLoaded=true;bizMigrate()});
+  db.doc("settings/business").onSnapshot(s=>{const first=!S.bizLoaded;S.bizLoaded=true;if(s.exists&&(!bTimer||first)){const srv=(s.data()||{}).biz||{};S.biz=first?Object.assign({},srv,S.biz||{}):Object.assign({},srv)}bizMigrate();if(!ME.open){render.keep=true;renderKeepFocus()}},()=>{S.bizLoaded=true});
   setTimeout(()=>{if(!S.loaded){S.loaded=true;render()}},6000);
 }
 function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA/.test(ae.tagName))return;render()}
@@ -1928,9 +1931,20 @@ function reportText(j,rev){
 /* ---- business info (Texas: name, license, address, phone + TCEQ notice on estimates & invoices) ---- */
 const TCEQ_NOTICE="Irrigation in Texas is regulated by the Texas Commission on Environmental Quality (TCEQ) (MC-178), P.O. Box 13087, Austin, Texas 78711-3087. TCEQ's website is: www.tceq.texas.gov.";
 const BIZ_FIELDS=[["_biz_name","Business name"],["_biz_irrigator","Licensed irrigator name"],["_biz_lic","Irrigator license # (LI)"],["_biz_addr","Business address"],["_biz_phone","Business phone"],["_biz_email","Business email"]];
-function bizInfo(){const p=S.pricing;return {name:p._biz_name||"",irr:p._biz_irrigator||"",lic:p._biz_lic||"",addr:p._biz_addr||"",phone:p._biz_phone||"",email:p._biz_email||""}}
+/* Business & license details live in their own saved record (settings "business"), entered once by an admin.
+   Price edits, "Reset to sample rates" and backups can never touch them. Older setups kept them in the price sheet;
+   those are read as a fallback and copied over automatically. */
+function bizSrc(){const b=S.biz||{};const p=S.pricing||{};return BIZ_FIELDS.some(([k])=>b[k])?b:p}
+function bizReady(){return S.mode!=="db"||S.training||(S.bizLoaded&&S.pricingLoaded)}
+let bTimer=null;
+function saveBiz(){if(!isAdmin()||S.training)return;clearTimeout(bTimer);bTimer=setTimeout(async()=>{bTimer=null;
+  if(S.mode==="local"){LS.set(KP()+"biz",S.biz);return}
+  if(S.mode==="db"&&!S.ro){if(!S.bizLoaded){saveBiz();return}try{await db.doc("settings/business").set({biz:S.biz,updatedAt:Date.now(),by:(S.me||{}).name||""})}catch(e){handleWriteErr(e)}}},700)}
+function bizMigrate(){if(!(S.bizLoaded&&S.pricingLoaded)||S.training)return;const b=S.biz||{};const p=S.pricing||{};
+  if(!BIZ_FIELDS.some(([k])=>b[k])&&BIZ_FIELDS.some(([k])=>p[k])){S.biz={};BIZ_FIELDS.forEach(([k])=>{if(p[k])S.biz[k]=p[k]});saveBiz()}}
+function bizInfo(){const p=bizSrc();return {name:p._biz_name||"",irr:p._biz_irrigator||"",lic:p._biz_lic||"",addr:p._biz_addr||"",phone:p._biz_phone||"",email:p._biz_email||""}}
 function bizMissing(){const b=bizInfo();const m=[];if(!b.irr)m.push("Licensed irrigator name");if(!b.lic)m.push("License #");if(!b.addr)m.push("Business address");if(!b.phone)m.push("Business phone");return m}
-function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<label class="f"><span>${l}${["_biz_irrigator","_biz_lic","_biz_addr","_biz_phone"].includes(k)?" *":""}</span><input type="text" id="p-${k}" data-price="${k}" data-biz="1" ${isAdmin()?"":"disabled"} value="${esc(S.pricing[k]||"")}"></label>`).join("")}</div>`}
+function bizFields(){return `<div class="grid2">${BIZ_FIELDS.map(([k,l])=>`<label class="f"><span>${l}${["_biz_irrigator","_biz_lic","_biz_addr","_biz_phone"].includes(k)?" *":""}</span><input type="text" id="p-${k}" data-price="${k}" data-biz="1" ${isAdmin()?"":"disabled"} value="${esc(bizSrc()[k]||"")}"></label>`).join("")}</div>`}
 
 /* ---- upgrades / upsells ---- */
 /* Upgrades/upsells are built but hidden for now — set to true to turn them back on */
@@ -2040,7 +2054,7 @@ function estDocHtml(j){return invoiceHtml(estJob(j))}
 function estState(j){const d=j.estDoc;if(!d||!d.no)return "";if(j.outcome==="approved")return "approved";if(j.outcome==="declined")return "declined";return d.sentAt?"sent":"draft"}
 const EST_ST={draft:["Draft","neutral"],sent:["Sent, waiting for answer","warn"],approved:["Approved","ok"],declined:["Declined","neutral"]};
 function estLog(j,t){j.estDoc.log=j.estDoc.log||[];j.estDoc.log.push({at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),t})}
-function estDocCard(j){const d=j.estDoc;const e=buildEstimate(j);const bm=bizMissing();
+function estDocCard(j){if(!bizReady())return `<div class="card"><p class="small muted" style="margin:0">Loading business details…</p></div>`;const d=j.estDoc;const e=buildEstimate(j);const bm=bizMissing();
   if(!d||!d.no)return `<div class="card"><div class="cardhead"><h2>Customer estimate</h2><span class="pill neutral">Not created</span></div>
     <p class="small muted" style="margin:0">Turn the prices below into a numbered estimate you can email or print (what you used Zoho for). Works for quick quotes with no inspection too: just add the items below.${(j.revs||[]).length?" For this audit, the customer can also approve the same options in the report.":""}</p>
     ${bm.length?`<p class="small"><b>Needed first (Texas):</b> ${esc(bm.join(", "))}, set in Admin settings → Business & license.</p>`:`<div><button class="btn" data-mkest="1" ${e.lines.length?"":"disabled"}>Create estimate (${money(e.total)})</button></div>`}</div>`;
@@ -2180,7 +2194,7 @@ async function shareClick(d){const sh=S.sh;const x=sh.d;if(!x)return;
     x.answer={name,at:(r.data&&r.data.at)||new Date().toISOString(),items:its.map((i,ix)=>[i.k,sh.picks[ix]]),total:t.total};x.status="answered";sh.just=true;render();window.scrollTo(0,0);toast("Thank you! Your answer is saved.");return}}
 document.addEventListener("click",ev=>{if(S.mode!=="share")return;const t=ev.target.closest("[data-shpick],[data-shall],[data-shconfirm],[data-shpay],[data-shprint],[data-cvclear]");if(!t)return;ev.preventDefault();ev.stopPropagation();shareClick(t.dataset)},true);
 function invPreviewJob(j){return Object.assign({},j,{inv:Object.assign({},j.inv||{},{kind:"invoice"})})}
-function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
+function invoiceTab(){if(!bizReady())return `<div class="card"><p class="small muted" style="margin:0">Loading business details…</p></div>`;const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Tap Details at the top of the job to add them.</p><div><button class="btn" data-showdetails="1">Go to Customer</button></div></div>`;
   const blocks=[];
   if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this in Admin settings."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
@@ -3105,7 +3119,9 @@ function startDb(d){
     if(ME.open)return;
     render();
   },()=>toast("Lost connection to saved jobs. Check your signal."));
-  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;if(s.exists&&!pTimer){S.pricing=Object.assign({},(s.data()||{}).prices||{});if(S.home==="prices"&&!S.cur)renderKeepFocus()}},()=>{});
+  db.doc("settings/pricing").onSnapshot(s=>{S.pricingReady=true;const first=!S.pricingLoaded;S.pricingLoaded=true;
+    if(s.exists&&(!pTimer||first)){const srv=(s.data()||{}).prices||{};S.pricing=first?Object.assign({},srv,S.pricing):Object.assign({},srv)}bizMigrate();if(!ME.open){render.keep=true;renderKeepFocus()}},()=>{S.pricingLoaded=true;bizMigrate()});
+  db.doc("settings/business").onSnapshot(s=>{const first=!S.bizLoaded;S.bizLoaded=true;if(s.exists&&(!bTimer||first)){const srv=(s.data()||{}).biz||{};S.biz=first?Object.assign({},srv,S.biz||{}):Object.assign({},srv)}bizMigrate();if(!ME.open){render.keep=true;renderKeepFocus()}},()=>{S.bizLoaded=true});
   db.collection("customers").onSnapshot(snap=>{if(S.training)return;S.custsErr=false;
     for(const ch of snap.docChanges()){const id=ch.doc.id;if(ch.type==="removed"){delete S.custs[id];continue}const d=ch.doc.data();const prev=S.custs[id];if(prev&&d&&d.custNo&&prev.custNo!==d.custNo)prev.custNo=d.custNo;if(custTimers[id]&&prev)continue;if(prev&&prev.updatedAt>=d.updatedAt&&ch.type!=="added")continue;S.custs[id]=JSON.parse(JSON.stringify(d))}
     S.custsLoaded=true;if(S.loaded){ensureCustNos();migrateLegacyCusts()}
@@ -3434,6 +3450,7 @@ app.addEventListener("toggle",ev=>{const t=ev.target;if(t.dataset&&t.dataset.adm
 app.addEventListener("keydown",ev=>{const t=ev.target;if(ev.key==="Enter"&&t.dataset&&t.dataset.ctlrecin!=null){ev.preventDefault();const b=document.querySelector('[data-ctlrecadd="'+t.dataset.ctlrecin+'"]');if(b)b.click()}});
 app.addEventListener("input",ev=>{
   const t=ev.target;
+  if(t.dataset.price!=null&&t.dataset.biz){if(!isAdmin())return;const cur=bizSrc();S.biz={};BIZ_FIELDS.forEach(([k])=>{if(cur[k])S.biz[k]=cur[k]});S.biz[t.dataset.price]=t.value;saveBiz();return}
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
   if(t.dataset.acctyear){S.acctYear=t.value;rr();return}
@@ -3720,7 +3737,7 @@ function doRemove(key){
   if(k==="trainreset"){resetTraining();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
-  if(k==="resetprices"){S.pricing={};savePricing();toast("Sample rates restored");return}
+  if(k==="resetprices"){const keep={};Object.keys(S.pricing||{}).forEach(x=>{if(x.startsWith("_"))keep[x]=S.pricing[x]});S.pricing=keep;savePricing();toast("Prices reset to sample rates. Business details and settings kept.");return}
   if(k==="cust"){if(!isChief())return;const ck=key.slice(5).replace(/~/g,":");const c=customers().find(x=>x.key===ck);if(!c)return;
     c.jobs.forEach(jj=>deleteJob(jj.id));
     if(c.rec){const id=c.rec.id;delete S.custs[id];if(S.mode==="local")LS.set(KP()+"custs",S.custs);else if(S.mode==="db"&&!S.ro)db.doc("customers/"+id).delete().catch(handleWriteErr)}
