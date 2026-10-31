@@ -333,6 +333,13 @@ table.dgridt{table-layout:fixed;width:100%}
 .twbulk{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.twbulk input{width:72px;text-align:center}.twrun{padding:2px 10px}.twbr{color:inherit;opacity:.9;font-weight:800}
 .twsplit{display:grid;gap:8px;padding:8px;border-radius:8px;background:color-mix(in srgb,var(--tl-r) 8%,transparent)}
 .f.need input{border-color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 25%,transparent)}
+.invsum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.invsum>div{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}.invsum b{font-size:1.05rem}
+@media (max-width:520px){.invsum{grid-template-columns:repeat(2,1fr)}}
+.payform{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.invmetrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}.invmetrics .card{margin:0;text-align:center}.invmetrics b{font-size:1.3rem}
+@media (min-width:760px){.invmetrics{grid-template-columns:repeat(4,1fr)}}
+.invrow{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px dashed var(--line);padding:10px 2px;color:inherit;font:inherit;cursor:pointer}.invrow .al{flex:1;min-width:0}.invamt{display:grid;justify-items:end;gap:4px}
+.paytbl{width:100%;border-collapse:collapse;margin-bottom:6px}.paytbl td{padding:3px 4px;border-bottom:1px solid var(--line)}.paytbl td.num{text-align:right}.baldue{font-size:1.1rem}.voidst{color:var(--muted)!important;border-color:var(--muted)!important}
 .twkey{display:flex;gap:4px 12px;align-items:center;flex-wrap:wrap}.twkey>span{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}.twkey .twn{min-width:14px;min-height:14px;padding:0}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
@@ -466,6 +473,28 @@ function jobStatus(j){const o=j.outcome;
   if((j.revs||[]).length)return "Audited";
   if((j.controllers||[]).length||(j.mainline||[]).some(m=>(m.meters||[]).some(w=>w.flow)))return "In progress";
   return "Scheduled"}
+/* ---------------- Invoice management (modeled on Jobber) ----------------
+   Statuses: Draft → Awaiting payment (or Partly paid) → Past due → Paid, plus Void and Bad debt.
+   Payment is due on completion by default (Bradley). Payments are a ledger on the job (manual or Stripe).
+   Deposits: the ledger supports them (p.deposit), but the option is hidden until Bradley wants it. */
+const INV_TERMS=[["completion","Due upon completion",0],["net15","Net 15",15],["net30","Net 30",30]];
+const SHOW_DEPOSITS=false;
+const PAY_METHODS=["Card","Check","Cash","Bank (ACH)","Zelle","Other"];
+const INV_ST={draft:["Draft","neutral"],sent:["Awaiting payment","warn"],partial:["Partly paid","warn"],pastdue:["Past due","bad"],paid:["Paid","ok"],void:["Void","neutral"],baddebt:["Bad debt","bad"],closed:["Closed, no payment","neutral"]};
+function defTerms(){return (S.pricing||{})._invTerms||"completion"}
+function r2(x){return Math.round(num(x)*100)/100}
+function invLive(j){return r2(invoiceEstimate(j).total)}
+function invTotal(j){const inv=j.inv||{};return inv.sentAt&&inv.amount!=null?r2(inv.amount):invLive(j)}
+function invPays(j){return (j.inv||{}).payments||[]}
+function invPaid(j){return r2(invPays(j).reduce((a,x)=>a+num(x.amount),0))}
+function invBalance(j){const inv=j.inv||{};if(inv.status==="paid"&&!invPays(j).length)return 0;return Math.max(0,r2(invTotal(j)-invPaid(j)))}
+function invDue(j){const inv=j.inv||{};if(!inv.issued)return "";const t=INV_TERMS.find(x=>x[0]===(inv.terms||defTerms()))||INV_TERMS[0];const d=new Date(inv.issued+"T12:00");d.setDate(d.getDate()+t[2]);return d.toISOString().slice(0,10)}
+function invState(j){const inv=j.inv||{};if(inv.kind!=="invoice"||!inv.no)return "";if(inv.status==="void")return "void";if(inv.status==="baddebt")return "baddebt";if(inv.status==="closed")return "closed";
+  if(invBalance(j)<=0.004&&(invPays(j).length||inv.status==="paid"))return "paid";if(!inv.sentAt)return "draft";const due=invDue(j);if(due&&due<today())return "pastdue";return invPaid(j)>0?"partial":"sent"}
+function invPill(j){const st=invState(j);const x=INV_ST[st];return x?`<span class="pill ${x[1]}">${x[0]}</span>`:""}
+function invLog(j,t){j.inv=j.inv||{};j.inv.log=j.inv.log||[];j.inv.log.push({at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),t})}
+function fmtD(d){return d?new Date(d+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}
+function payLink(){return location.origin+"/"}
 const PROGS=["A","B","C","D"];
 const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
 
@@ -627,6 +656,7 @@ async function saveBg(id,img){
 function startLocal(){
   S.mode="local";S.jobs=LS.get(KP()+"jobs")||{};Object.values(S.jobs).forEach(normalizeJob);S.custs=LS.get(KP()+"custs")||{};S.pricing=LS.get(KP()+"pricing")||{};ensureCustNos();migrateLegacyCusts();render();
 }
+if(/[?&]paid=/.test(location.search)){setTimeout(()=>toast("Thank you! Your payment is being processed. The invoice updates once it clears."),1200);history.replaceState(null,"",location.pathname)}
 async function boot(){
   render();
   if(!window.claude||!window.claude.use){if(window.SW_CONFIG&&window.SW_CONFIG.url){cloudBoot();return}startLocal();return}
@@ -779,12 +809,90 @@ function banner(){
   if(S.localCount&&S.mode==="db")return `<div class="note info row"><span class="spacer">This device has ${S.localCount} job${S.localCount===1?"":"s"} saved from before sign-in. Review them to choose which, if any, go to the server.</span><button class="btn sm" data-home="import">Review</button></div>`;
   return "";
 }
+/* ---------------- Year-end & accounting ----------------
+   Built for the CPA: a full year-end workbook (Excel) plus QuickBooks-style CSVs.
+   Accrual (invoiced) and cash (collected) views, sales tax by month, residential vs commercial flagged on every row
+   (Texas taxes residential repair labor differently from commercial), payments by method, write-offs and per-customer totals. */
+function acctRows(year){const Y=String(year);const jobs=Object.values(S.jobs).filter(j=>j&&j.inv&&j.inv.kind==="invoice"&&j.inv.no);
+  const md=d=>{if(!d)return "";const [y,m,dd]=d.split("-");return `${m}/${dd}/${y}`};
+  const inv=[],lines=[],pays=[],offs=[];
+  jobs.forEach(j=>{const st=invState(j);const e=invoiceEstimate(j);const c=S.custs[j.custId]||{};const prop=j.info.propType==="commercial"?"Commercial":"Residential";
+    const issued=j.inv.issued||(j.inv.at?new Date(j.inv.at).toISOString().slice(0,10):"");const tot=invTotal(j);const k=tot&&e.total?tot/e.total:1;
+    const base={no:j.inv.no,custNo:c.custNo||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),prop};
+    if(issued.startsWith(Y)){
+      inv.push(Object.assign({},base,{date:issued,due:invDue(j)||issued,terms:(INV_TERMS.find(x=>x[0]===(j.inv.terms||defTerms()))||INV_TERMS[0])[1],status:(INV_ST[st]||[st])[0],void:st==="void",
+        sales:r2((e.sub-e.disc)*k),disc:r2(e.disc*k),tax:r2(e.tax*k),total:tot,paid:invPaid(j),balance:st==="void"||st==="baddebt"||st==="closed"?0:invBalance(j),
+        lastPaid:(invPays(j).slice(-1)[0]||{}).date||"",written:st==="baddebt"||st==="closed"?invBalance(j):0,job:jobTitle(j)}));
+      if(st!=="void")e.lines.forEach(l=>lines.push(Object.assign({},base,{date:issued,section:l.sec,item:l.label,qty:l.qty,unit:l.unit,rate:r2(l.price*k),amount:r2(l.total*k),parts:l.m?"Yes":"No",sec2:/Service/.test(l.sec)?"Service call":l.m?"Parts & labor":"Labor"})));
+      if(st==="baddebt"||st==="closed")offs.push(Object.assign({},base,{date:issued,type:st==="baddebt"?"Bad debt":"Closed, no payment",amount:invBalance(j),note:((j.inv.log||[]).filter(x=>/bad debt|without payment/i.test(x.t)).slice(-1)[0]||{}).t||""}))}
+    invPays(j).filter(x=>String(x.date).startsWith(Y)).forEach(x=>pays.push(Object.assign({},base,{date:x.date,method:x.method||"",ref:x.ref||"",amount:r2(x.amount),online:x.source==="stripe"?"Yes":"No",deposit:x.deposit?"Yes":"No"})))});
+  const live=inv.filter(x=>!x.void);
+  const months=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,"0");const iv=live.filter(x=>x.date.slice(5,7)===mm);const pv=pays.filter(x=>x.date.slice(5,7)===mm);
+    return {month:new Date(+Y,i,1).toLocaleDateString("en-US",{month:"long"}),count:iv.length,sales:r2(iv.reduce((a,x)=>a+x.sales,0)),tax:r2(iv.reduce((a,x)=>a+x.tax,0)),
+      resSales:r2(iv.filter(x=>x.prop==="Residential").reduce((a,x)=>a+x.sales,0)),comSales:r2(iv.filter(x=>x.prop==="Commercial").reduce((a,x)=>a+x.sales,0)),invoiced:r2(iv.reduce((a,x)=>a+x.total,0)),collected:r2(pv.reduce((a,x)=>a+x.amount,0))}});
+  const sum=k=>r2(live.reduce((a,x)=>a+x[k],0));
+  const byMethod={};pays.forEach(x=>byMethod[x.method]=r2((byMethod[x.method]||0)+x.amount));
+  const custs={};live.forEach(x=>{const c=custs[x.custNo+"|"+x.customer]=custs[x.custNo+"|"+x.customer]||{custNo:x.custNo,customer:x.customer,address:x.address,prop:x.prop,count:0,invoiced:0,paid:0,balance:0};c.count++;c.invoiced=r2(c.invoiced+x.total);c.paid=r2(c.paid+x.paid);c.balance=r2(c.balance+x.balance)});
+  return {Y,md,inv,live,lines,pays,offs,months,byMethod,custs:Object.values(custs),
+    tot:{count:live.length,sales:sum("sales"),disc:sum("disc"),tax:sum("tax"),invoiced:sum("total"),collected:r2(pays.reduce((a,x)=>a+x.amount,0)),open:sum("balance"),written:r2(offs.reduce((a,x)=>a+x.amount,0)),
+      resSales:r2(live.filter(x=>x.prop==="Residential").reduce((a,x)=>a+x.sales,0)),comSales:r2(live.filter(x=>x.prop==="Commercial").reduce((a,x)=>a+x.sales,0)),online:r2(pays.filter(x=>x.online==="Yes").reduce((a,x)=>a+x.amount,0))}}}
+function acctYears(){const ys=new Set([String(new Date().getFullYear())]);Object.values(S.jobs).forEach(j=>{if(j&&j.inv&&j.inv.kind==="invoice"&&j.inv.no){if(j.inv.issued)ys.add(j.inv.issued.slice(0,4));invPays(j).forEach(x=>x.date&&ys.add(String(x.date).slice(0,4)))}});return [...ys].sort().reverse()}
+function acctCard(){const Y=S.acctYear||acctYears()[0];const a=acctRows(Y);const t=a.tot;
+  const row=(l,v,strong)=>`<div class="act"><div class="al">${l}</div><b class="num" ${strong?"":'style="font-weight:600"'}>${v}</b></div>`;
+  return `<div class="card"><div class="cardhead"><h2>Year-end & accounting</h2><select data-acctyear="1" aria-label="Year">${acctYears().map(y=>`<option ${y===Y?"selected":""}>${y}</option>`).join("")}</select></div>
+    <div class="acts">${row("Invoices issued",t.count)}${row("Sales before tax (after discounts)",money(t.sales))}${row("&nbsp;&nbsp;Residential",money(t.resSales))}${row("&nbsp;&nbsp;Commercial",money(t.comSales))}${row("Sales tax charged",money(t.tax))}${row("Total invoiced (accrual)",money(t.invoiced),1)}${row("Collected (cash basis)",money(t.collected),1)}${row("&nbsp;&nbsp;Paid online through Stripe",money(t.online))}${Object.entries(a.byMethod).filter(([m])=>m!=="Card"||1).map(([m,v])=>row("&nbsp;&nbsp;"+esc(m||"Other"),money(v))).join("")}${row("Still owed on this year's invoices",money(t.open))}${row("Written off (bad debt / closed)",money(t.written))}</div>
+    <div class="row"><button class="btn" data-acctx="xlsx">Year-end package (Excel)</button><button class="btn ghost" data-acctx="qbinv">QuickBooks invoices (CSV)</button><button class="btn ghost" data-acctx="qbpay">QuickBooks payments (CSV)</button></div>
+    <p class="small muted" style="margin:0">The Excel package has a sheet each for the summary, months, invoices, line items, payments, sales tax, write-offs and customers. Residential vs commercial is marked on every row because Texas taxes residential repair labor differently from commercial work; have your CPA confirm how sales tax should be charged. Card and bank fees, and Stripe's 1099-K, come from your Stripe dashboard (Reports).</p></div>`}
+function csvEsc(v){v=v==null?"":String(v);return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v}
+function toCsv(head,rows){return [head.join(","),...rows.map(r=>r.map(csvEsc).join(","))].join("\r\n")}
+function dlFile(name,content,type){const blob=content instanceof Blob?content:new Blob([content],{type:type||"text/csv"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},500)}
+function loadXlsx(){return window.XLSX?Promise.resolve(window.XLSX):new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";sc.onload=()=>ok(window.XLSX);sc.onerror=()=>no(new Error("Couldn't load the Excel tool. Check your connection."));document.head.appendChild(sc)})}
+async function acctExport(kind){const Y=S.acctYear||acctYears()[0];const a=acctRows(Y);const biz=(bizInfo().name||"Sprinkler-Wrangler").replace(/[^\w]+/g,"-");
+  if(kind==="qbinv"){const rows=[];a.inv.filter(x=>!x.void).forEach(x=>{a.lines.filter(l=>l.no===x.no).forEach((l,i)=>rows.push([x.no,x.customer+(x.custNo?" ("+x.custNo+")":""),a.md(x.date),a.md(x.due),x.terms,i?"":`${x.prop} · ${x.address}${x.disc?` · includes discount ${money(x.disc)}`:""}`,l.section,l.item,l.qty,l.rate.toFixed(2),l.amount.toFixed(2),x.tax>0?"Y":"N",a.md(x.date)]))});
+    dlFile(`${biz}-invoices-${Y}-QuickBooks.csv`,toCsv(["InvoiceNo","Customer","InvoiceDate","DueDate","Terms","Memo","Item(Product/Service)","ItemDescription","ItemQuantity","ItemRate","ItemAmount","Taxable","ServiceDate"],rows));toast("QuickBooks invoices file saved");return}
+  if(kind==="qbpay"){dlFile(`${biz}-payments-${Y}-QuickBooks.csv`,toCsv(["PaymentDate","InvoiceNo","Customer","PaymentMethod","ReferenceNo","Amount","PaidOnline"],a.pays.map(x=>[a.md(x.date),x.no,x.customer+(x.custNo?" ("+x.custNo+")":""),x.method,x.ref,x.amount.toFixed(2),x.online])));toast("QuickBooks payments file saved");return}
+  let X;try{X=await loadXlsx()}catch(e){toast(e.message);return}
+  const wb=X.utils.book_new();const sheet=(name,head,rows,widths)=>{const ws=X.utils.aoa_to_sheet([head,...rows]);ws["!cols"]=(widths||head.map(()=>14)).map(w=>({wch:w}));X.utils.book_append_sheet(wb,ws,name)};
+  const t=a.tot;const b=bizInfo();
+  sheet("Summary",["Item","Amount"],[[`${b.name||"Business"} · Year-end summary ${Y}`,""],[`Prepared ${new Date().toLocaleDateString("en-US")} from Sprinkler Wrangler`,""],["",""],["Invoices issued",t.count],["Sales before tax (after discounts)",t.sales],["  Residential sales",t.resSales],["  Commercial sales",t.comSales],["Discounts given",t.disc],["Sales tax charged",t.tax],["Total invoiced (accrual basis)",t.invoiced],["Collected in "+Y+" (cash basis)",t.collected],["  Paid online through Stripe",t.online],...Object.entries(a.byMethod).map(([m,v])=>["  Collected by "+(m||"Other"),v]),["Still owed on "+Y+" invoices",t.open],["Written off (bad debt / closed without payment)",t.written],["",""],["Notes for the CPA",""],["Residential vs commercial is marked on every invoice and line. Texas taxes residential repair labor differently from commercial work.",""],["Card and bank processing fees and the Stripe 1099-K are in the Stripe dashboard (Reports).",""],["Voided invoices are listed on the Invoices sheet but left out of every total.",""]],[70,16]);
+  sheet("By month",["Month","Invoices","Residential sales","Commercial sales","Sales before tax","Sales tax","Total invoiced","Collected"],a.months.map(m=>[m.month,m.count,m.resSales,m.comSales,m.sales,m.tax,m.invoiced,m.collected]),[12,9,16,16,16,12,14,12]);
+  sheet("Invoices",["Invoice #","Date","Due","Terms","Customer #","Customer","Service address","Property","Status","Sales before tax","Discount","Sales tax","Total","Paid","Balance","Written off","Last payment","Job"],a.inv.map(x=>[x.no,x.date,x.due,x.terms,x.custNo,x.customer,x.address,x.prop,x.void?"Void":x.status,x.void?0:x.sales,x.void?0:x.disc,x.void?0:x.tax,x.void?0:x.total,x.paid,x.balance,x.written,x.lastPaid,x.job]),[16,11,11,16,10,20,30,12,16,12,10,10,11,11,11,11,11,18]);
+  sheet("Line items",["Invoice #","Date","Customer","Property","Section","Item","Qty","Unit","Rate","Amount","Category","Includes parts"],a.lines.map(l=>[l.no,l.date,l.customer,l.prop,l.section,l.item,l.qty,l.unit,l.rate,l.amount,l.sec2,l.parts]),[16,11,20,12,16,40,6,8,10,11,14,12]);
+  sheet("Payments",["Date","Invoice #","Customer #","Customer","Method","Reference","Amount","Paid online","Deposit"],a.pays.map(x=>[x.date,x.no,x.custNo,x.customer,x.method,x.ref,x.amount,x.online,x.deposit]),[11,16,10,20,12,22,11,10,8]);
+  sheet("Sales tax",["Month","Residential sales","Commercial sales","Sales before tax","Sales tax charged"],a.months.map(m=>[m.month,m.resSales,m.comSales,m.sales,m.tax]).concat([["Total",t.resSales,t.comSales,t.sales,t.tax]]),[12,16,16,16,16]);
+  sheet("Write-offs",["Invoice #","Date","Customer","Type","Amount","Note"],a.offs.map(x=>[x.no,x.date,x.customer,x.type,x.amount,x.note]),[16,11,20,18,11,40]);
+  sheet("Customers",["Customer #","Customer","Address","Property","Invoices","Invoiced","Paid","Balance"],a.custs.map(c=>[c.custNo,c.customer,c.address,c.prop,c.count,c.invoiced,c.paid,c.balance]),[10,20,30,12,9,12,12,12]);
+  const out=X.write(wb,{bookType:"xlsx",type:"array"});dlFile(`${biz}-year-end-${Y}.xlsx`,new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));toast("Year-end package saved")}
+function invSettingsCard(){const adm=isAdmin();const on=!!(S.pricing||{})._payOnline;
+  return `<div class="card"><h2>Invoices & payments</h2>
+  <label class="f"><span>Default payment terms</span><select data-price="_invTerms" ${adm?"":"disabled"}>${INV_TERMS.map(x=>`<option value="${x[0]}" ${defTerms()===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></label>
+  <div class="q"><span class="ql">Online payments through Stripe</span><div class="chips"><button class="chip" data-payonline="1" aria-pressed="${on}" ${adm?"":"disabled"}>On</button><button class="chip" data-payonline="0" aria-pressed="${!on}" ${adm?"":"disabled"}>Off</button></div></div>
+  <p class="small muted" style="margin:0">When on, customers see a <b>Pay now</b> button on unpaid invoices in their account and can pay by card or bank transfer (ACH) through your Stripe account. Payments land on the invoice automatically. Turn this on only after the Stripe setup steps are finished.</p></div>`}
+function invoicesView(){const jobs=Object.values(S.jobs).filter(Boolean);const inv=jobs.filter(j=>j.inv&&j.inv.kind==="invoice"&&j.inv.no);
+  const st=j=>invState(j);const openSt=["sent","partial","pastdue"];
+  const outstanding=inv.filter(j=>openSt.includes(st(j))).reduce((a,j)=>a+invBalance(j),0);
+  const pd=inv.filter(j=>st(j)==="pastdue");const pdAmt=pd.reduce((a,j)=>a+invBalance(j),0);
+  const d30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+  const coll=inv.reduce((a,j)=>a+invPays(j).filter(x=>x.date>=d30).reduce((b,x)=>b+num(x.amount),0),0);
+  const paidJ=inv.filter(j=>st(j)==="paid"&&j.inv.issued&&invPays(j).length);
+  const avgDays=paidJ.length?Math.round(paidJ.reduce((a,j)=>a+Math.max(0,(new Date(invPays(j)[invPays(j).length-1].date)-new Date(j.inv.issued))/864e5),0)/paidJ.length):null;
+  const ready=jobs.filter(j=>!(j.inv&&j.inv.kind==="invoice"&&j.inv.no)&&(jobStatus(j)==="Completed"||(j.outcome==="declined"&&(j.revs||[]).length)));
+  const F=[["open","Unpaid"],["draft","Draft"],["pastdue","Past due"],["paid","Paid"],["closed","Closed"],["all","All"]];const f=S.invFilter||"open";
+  const keep=j=>f==="all"||(f==="open"?openSt.includes(st(j)):f==="closed"?["void","baddebt","closed"].includes(st(j)):st(j)===f);
+  const list=inv.filter(keep).sort((a,b)=>(invDue(a)||"9").localeCompare(invDue(b)||"9")||String(b.inv.no).localeCompare(String(a.inv.no)));
+  return `<div class="invmetrics"><div class="card"><div class="eyebrow">Owed to you</div><b class="num">${money(outstanding)}</b></div><div class="card ${pd.length?"need":""}"><div class="eyebrow">Past due</div><b class="num">${money(pdAmt)}</b><div class="small muted">${pd.length} invoice${pd.length===1?"":"s"}</div></div><div class="card"><div class="eyebrow">Collected, last 30 days</div><b class="num">${money(coll)}</b></div><div class="card"><div class="eyebrow">Average days to get paid</div><b class="num">${avgDays==null?"–":avgDays}</b></div></div>
+  ${ready.length?`<div class="card need"><div class="cardhead"><h2>Ready to invoice</h2><span class="pill warn">${ready.length}</span></div><p class="small muted" style="margin:0">Completed jobs (and declined audits, for the audit fee) with no invoice yet.</p>
+    ${ready.map(j=>`<div class="act"><div class="al">${esc(j.info.customer||"Customer")} <span class="small muted mono">${esc(jobTitle(j)||"")}</span><div class="ap">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))} · ${esc(jobStatus(j)==="Completed"?"Work completed":"Audit declined")} · ${money(invoiceEstimate(Object.assign({},j,{inv:{kind:"invoice"}})).total)}</div></div><button class="btn sm" data-invready="${esc(j.id||"")}">Create invoice</button></div>`).join("")}</div>`:""}
+  <div class="card"><div class="cardhead"><h2>Invoices</h2><span class="muted small">${list.length}</span></div>
+    <div class="chips">${F.map(([k,l])=>`<button class="chip" data-invfilter="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
+    ${list.length?list.map(j=>{const s0=st(j);return `<button type="button" class="invrow" data-invopen="${esc(j.id||"")}"><div class="al"><b>${esc(j.inv.no)}</b> · ${esc(j.info.customer||"")}<div class="small muted">${esc(j.info.address||"")} · ${s0==="paid"?"Paid":(j.inv.terms||defTerms())==="completion"?"Due on completion":"Due "+esc(fmtD(invDue(j)))}</div></div><div class="invamt"><b class="num">${money(s0==="paid"||s0==="void"?invTotal(j):invBalance(j))}</b>${invPill(j)}</div></button>`}).join(""):`<p class="muted small" style="margin:0">No invoices here.</p>`}</div>${isAdmin()?acctCard():""}`}
 function homeView(){
-  if(!isOffice()&&(S.home==="reminders"||S.home==="customers"))S.home="jobs";
-  const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[])];
+  if(!isOffice()&&(S.home==="reminders"||S.home==="customers"||S.home==="invoices"))S.home="jobs";
+  if(S.home==="invoices"&&!homeView._imp){homeView._imp=1;setTimeout(()=>{homeView._imp=0;importStripePayments()},50)}
+  const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["invoices","Invoices"]]:[]),...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[])];
   let body="";
   if(S.mode==="loading"||(S.mode==="db"&&!S.loaded))body=`<div class="card empty"><h2>Loading jobs…</h2><p class="muted">Your saved jobs will appear here.</p></div>`;
-  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
+  else if(S.home==="jobs")body=jobsList();else if(S.home==="docket")body=docketView();else if(S.home==="upsells")body=upsellPipeline();else if(S.home==="reminders")body=remindersView();else if(S.home==="customers")body=customersView();else if(S.home==="invoices")body=invoicesView();else if(S.home==="team"&&sb)body=teamView();else if(S.home==="import"&&sb)body=importView();else body=pricesView();
   if(S.home==="prices"&&!canSettings())S.home="jobs";
   const side=S.home==="team"||S.home==="import"||S.home==="prices";
   return `<div class="top"><header class="bar"><div class="wrap">${side?`<button class="iconbtn" data-home="jobs" aria-label="Back to jobs">‹ Jobs</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${S.home==="prices"?"Admin settings":S.home==="docket"?"Dispatch docket":S.home==="upsells"?"Upgrades":S.home==="reminders"?"Reminders":S.home==="customers"?(S.custPick?"New job":"Customers"):S.home==="team"?(isAdmin()?"Team & account":"Your account"):S.home==="import"?"Review saved jobs":"Jobs"}</h1></div>
@@ -834,6 +942,7 @@ function pricesView(){
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" id="p-_commercial" data-price="_commercial" ${isAdmin()?"":"disabled"} value="${esc(commPct())}" aria-label="Commercial markup percent"></label><span class="mono">%</span></div></div>
 `,"nohead2")}
   ${secd("brands","Brands &amp; ratings","Quality grades for brands and product lines",brandsCard(),"nohead")}
+  ${secd("invpay","Invoices &amp; payments","Payment terms and online payments (Stripe)",invSettingsCard(),"nohead")}
   ${secd("ohm","Wire reading ranges","Ohm cut-offs for zone wire readings",ohmRangesCard(),"nohead")}
   ${secd("terms","Terms of Service","Wording customers agree to at sign-up",termsCard(),"nohead")}`;
 }
@@ -1777,34 +1886,56 @@ function invoiceHtmlReal(j){
   return `<div class="lh"><div><div class="eyebrow">${kind}</div><h1>${esc(b.name||"Your business name")}</h1>
     <div class="small">${esc(b.addr)}</div><div class="small">${esc([b.phone,b.email].filter(Boolean).join(" · "))}</div>
     <div class="small">Licensed Irrigator: ${esc(b.irr||"—")} · LI ${esc(b.lic||"—")}</div></div>
-    <div style="text-align:right"><div class="eyebrow">${kind} #</div><div><b>${esc(inv.no||"—")}</b></div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
+    <div style="text-align:right"><div class="eyebrow">${kind} #</div><div><b>${esc(inv.no||"—")}</b></div><div class="eyebrow" style="margin-top:6px">Date</div><div>${esc(inv.kind==="invoice"&&inv.issued?fmtD(inv.issued):inv.at?new Date(inv.at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"")}</div>
+    ${inv.kind==="invoice"&&inv.issued?`<div class="eyebrow" style="margin-top:6px">Due</div><div>${esc((INV_TERMS.find(x=>x[0]===(inv.terms||defTerms()))||INV_TERMS[0])[0]==="completion"?"Upon completion":fmtD(invDue(j)))}</div>`:""}
     ${jobTitle(j)?`<div class="eyebrow" style="margin-top:6px">Job</div><div>${esc(jobTitle(j))}</div>`:""}${cur?`<div class="eyebrow" style="margin-top:6px">Report</div><div>Rev ${revNo(cur.n)}</div>`:""}</div></div>
   <section class="grid2"><div><div class="eyebrow">Bill to</div><div><b>${esc(j.info.customer)}</b></div><div class="small">${esc(j.info.address)}${j.info.city?", "+esc(j.info.city):""}</div><div class="small">${esc([j.info.phone,j.info.email].filter(Boolean).join(" · "))}</div></div>
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
-  ${inv.kind==="invoice"?`<section>${inv.status==="paid"?`<div class="paid">PAID${inv.paidAt?" · "+esc(new Date(inv.paidAt).toLocaleDateString("en-US")):""}${inv.method?" · "+esc(inv.method):""}</div>`:`<p><b>Amount due: ${money(e.total)}</b></p>`}</section>`:""}
+  ${inv.kind==="invoice"?invPaySection(j):""}
   ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Ask us to add it.</div></div></section>`:""}
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
   ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
 }
+function invPaySection(j){const inv=j.inv||{};const st=invState(j);const pays=invPays(j);const bal=invBalance(j);
+  if(st==="void")return `<section><div class="paid voidst">VOID</div></section>`;if(st==="closed")return `<section><div class="paid voidst">CLOSED</div></section>`;
+  return `<section>${pays.length?`<table class="paytbl"><tbody>${pays.map(x=>`<tr><td>${esc(fmtD(x.date))}</td><td>${x.deposit?"Deposit":"Payment"} · ${esc(x.method||"")}${x.ref?" #"+esc(x.ref):""}</td><td class="num">−${money(num(x.amount))}</td></tr>`).join("")}</tbody></table>`:""}
+    ${st==="paid"?`<div class="paid">PAID${pays.length?" · "+esc(fmtD(pays[pays.length-1].date)):""}</div>`:`<p class="baldue"><b>Balance due: ${money(bal)}</b></p>${inv.payOnline!==false&&(S.pricing||{})._payOnline?`<p class="small">Pay online: sign in at ${esc(payLink())} and tap Pay now.</p>`:""}`}</section>`}
 function invoiceText(j){const e=invoiceEstimate(j);const b=bizInfo();const inv=j.inv||{};const kind=inv.kind==="invoice"?"INVOICE":"ESTIMATE";const L=[];
   L.push(kind+" "+(inv.no||""));L.push(b.name);L.push(b.addr);L.push([b.phone,b.email].filter(Boolean).join(" · "));L.push("Licensed Irrigator: "+b.irr+" · LI "+b.lic);L.push("");
   L.push("Bill to: "+j.info.customer);L.push([j.info.address,j.info.city].filter(Boolean).join(", "));const cur=currentRev(j);if(cur)L.push("Report: Rev "+revNo(cur.n));L.push("");
   let last=null;e.lines.forEach(l=>{if(l.sec!==last){L.push(l.sec);last=l.sec}L.push(`  ${l.label}  ×${l.qty}${showU(l.unit)?" "+l.unit:""}  ${money(l.total)}`)});
   L.push("");L.push("Subtotal: "+money(e.sub));if(e.disc)L.push("Discount: -"+money(e.disc));L.push("Tax: "+money(e.tax));L.push("TOTAL: "+money(e.total));
-  if(inv.kind==="invoice")L.push(inv.status==="paid"?"PAID":"Amount due: "+money(e.total));
+  if(inv.kind==="invoice"){invPays(j).forEach(x=>L.push(`${x.deposit?"Deposit":"Payment"} ${fmtD(x.date)} (${x.method||""}): -${money(num(x.amount))}`));const st=invState(j);L.push(st==="void"?"VOID":st==="paid"?"PAID":"Balance due: "+money(invBalance(j)));if(st!=="paid"&&st!=="void"&&(S.pricing||{})._payOnline)L.push("Pay online: sign in at "+payLink()+" and tap Pay now.")}
   if(j.est.terms){L.push("");L.push(j.est.terms)}L.push("");L.push(TCEQ_NOTICE);return L.join("\n")}
+function invManage(j){const inv=j.inv;const st=invState(j);const tot=invTotal(j),paid=invPaid(j),bal=invBalance(j);const live=invLive(j);const closed=st==="void"||st==="baddebt"||st==="closed";
+  const pf=S.payForm||{};
+  return `<div class="invsum"><div><div class="eyebrow">Total</div><b class="num">${money(tot)}</b></div><div><div class="eyebrow">Paid</div><b class="num">${money(paid)}</b></div><div><div class="eyebrow">Balance due</div><b class="num">${money(bal)}</b></div><div><div class="eyebrow">Due</div><b>${(inv.terms||defTerms())==="completion"?"On completion":esc(fmtD(invDue(j)))}</b></div></div>
+    ${inv.sentAt&&Math.abs(live-tot)>0.004&&!closed&&st!=="paid"?`<div class="note warn small">The job changed after this invoice was sent: it now totals <b>${money(live)}</b>. <button class="btn sm" data-invupd="1">Update invoice to ${money(live)}</button></div>`:""}
+    ${closed?"":`<div class="grid2">${sel("Payment terms","inv.terms",INV_TERMS.map(x=>[x[0],x[1]]))}${fld("Invoice date","inv.issued","date",'data-rr="1"')}</div>`}
+    ${closed?`<div class="row"><span class="spacer small muted">This invoice is ${st==="void"?"void":st==="closed"?"closed without payment":"written off as bad debt"}.</span><button class="btn ghost sm" data-invreopen="1">Reopen</button></div>`:`<div class="row">
+      ${st==="draft"?`<button class="btn" data-invsend="1">Email invoice</button><button class="btn ghost" data-invmarksent="1">Mark as sent</button>`:st!=="paid"?`<button class="btn ghost" data-invremind="1">Send payment reminder</button>`:""}</div>`}
+    <div class="combo"><h4>Payments</h4>
+      ${invPays(j).length?invPays(j).map((x,i)=>`<div class="act"><div class="al">${money(num(x.amount))} · ${esc(x.method||"")}${x.ref?" #"+esc(x.ref):""}${x.deposit?' <span class="pill neutral">Deposit</span>':""}<div class="ap">${esc(fmtD(x.date))}${x.source==="stripe"?" · paid online":""}${x.note?" · "+esc(x.note):""}</div></div>${x.source==="stripe"?"":delBtn("pay:"+i,"✕")}</div>`).join(""):`<p class="small muted" style="margin:0">No payments yet.</p>`}
+      ${closed||st==="paid"?"":`<div class="payform"><label class="f"><span>Amount</span><input type="text" inputmode="decimal" id="pay-amt" value="${esc(pf.amount!=null?pf.amount:bal.toFixed(2))}"></label>
+        <label class="f"><span>Method</span><select id="pay-method">${PAY_METHODS.map(m=>`<option ${(pf.method||"Card")===m?"selected":""}>${m}</option>`).join("")}</select></label>
+        <label class="f"><span>Date</span><input type="date" id="pay-date" value="${esc(pf.date||today())}"></label>
+        <label class="f"><span>Check # / reference</span><input type="text" id="pay-ref" value="${esc(pf.ref||"")}"></label></div>
+        ${SHOW_DEPOSITS?`<label class="small"><input type="checkbox" id="pay-dep"> This is a deposit</label>`:""}
+        <div><button class="btn" data-payadd="1">Record payment</button></div>`}</div>
+    ${closed||st==="paid"?"":`<div class="row" style="justify-content:flex-end;gap:6px">${!paid?delBtn("invvoid","Void invoice"):""}${isAdmin()&&st!=="draft"?delBtn("invclose","Close without payment")+delBtn("invbad","Write off as bad debt"):""}</div>`}
+    ${(inv.log||[]).length?`<details class="small"><summary>Activity (${inv.log.length})</summary><ul class="changelog">${inv.log.slice().reverse().map(l=>`<li>${esc(fmtDT(l.at))}${l.by?" · "+esc(l.by):""}: ${esc(l.t)}</li>`).join("")}</ul></details>`:""}`}
 function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Tap Details at the top of the job to add them.</p><div><button class="btn" data-showdetails="1">Go to Customer</button></div></div>`;
   const blocks=[];
   if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this in Admin settings."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
   if(!cur)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
   const ready=!bm.length&&cur;
-  return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Unpaid</span>'):'<span class="pill neutral">Estimate</span>'}</div>
-    ${seg("Document",'inv.kind',[["estimate","Estimate (before work)"],["invoice","Invoice (work done)"]])}
-    ${inv.kind==="invoice"?`${seg("Payment",'inv.status',[["unpaid","Unpaid"],["paid","Paid"]])}${inv.status==="paid"?`<div class="grid2">${sel("Method",'inv.method',["","Card","Check","Cash","Bank transfer","Zelle"])}${fld("Paid on",'inv.paidDate',"date")}</div>`:""}`:""}
-    ${ready?`<div class="row">${inv.no?"":`<button class="btn" data-mkinv="1">Create ${inv.kind==="invoice"?"invoice":"estimate"} number</button>`}${inv.no?`${CAN_PRINT?`<button class="btn" data-print="invoice">Print</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-invcopy="1">Copy as text</button>${downloads?`<button class="btn ghost" data-invsave="1">Save file</button>`:""}`:""}</div>`:`<p class="small muted" style="margin:0">Copy and save unlock once the items above are done.</p>`}
+  return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.no?invPill(j):'<span class="pill neutral">Not created</span>'):'<span class="pill neutral">Estimate</span>'}</div>
+    ${invState(j)&&invState(j)!=="draft"?"":seg("Document",'inv.kind',[["estimate","Estimate (before work)"],["invoice","Invoice (work done)"]])}
+    ${inv.kind==="invoice"&&inv.no?invManage(j):""}
+    ${ready?`<div class="row">${inv.no?"":`<button class="btn" data-mkinv="1">Create ${inv.kind==="invoice"?"invoice":"estimate"}</button>`}${inv.no?`${CAN_PRINT?`<button class="btn" data-print="invoice">Print</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-invcopy="1">Copy as text</button>${downloads?`<button class="btn ghost" data-invsave="1">Save file</button>`:""}`:""}</div>`:`<p class="small muted" style="margin:0">Copy and save unlock once the items above are done.</p>`}
     <p class="small muted" style="margin:0">Prices, discount, tax and terms are set on the Estimate tab.${SHOW_UPSELLS?" Accepted upgrades are included automatically.":""}</p></div>
   <article class="sheet">${invoiceHtml(j)}</article>`;
 }
@@ -1989,7 +2120,7 @@ function composeModal(){const m=S.compose;if(!m)return "";const enc=encodeURICom
     <label class="f"><span>Subject</span><input type="text" id="cmp-subj" value="${esc(m.subj)}" data-cmp="subj"></label>
     <label class="f"><span>Message</span><textarea id="cmp-body" rows="9" data-cmp="body">${esc(m.body)}</textarea></label>
     <div class="row"><a class="btn sm" href="${gmail}" target="_blank" rel="noopener" data-cmpsent="gmail">Open in Gmail</a><a class="btn ghost sm" href="${mailto}" data-cmpsent="mail">Open in Mail app</a><button class="btn ghost sm" data-cmpcopy="1">Copy message</button></div>
-    ${m.onSent?`<div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="spacer small muted">Sent it? This takes the reminder off the list.</span><button class="btn sm" data-cmpdone="1">Mark as sent</button></div>`:""}</div></div>`}
+    ${m.onSent?`<div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="spacer small muted">${esc(m.sentNote||"Sent it? This takes the reminder off the list.")}</span><button class="btn sm" data-cmpdone="1">Mark as sent</button></div>`:""}</div></div>`}
 function reminderMail(c,r){const b=bizInfo();const subj=`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`;
   const body=`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`;
   return `mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`}
@@ -2516,7 +2647,10 @@ function makeSupaDb(){
     if(lastEmail[id]!==undefined&&lastEmail[id]!==c.customer_email){await sb.from("reports").update({customer_email:c.customer_email,customer_name:c.customer_name,address:c.address}).eq("job_id",id)}
     lastEmail[id]=c.customer_email;
     if(j.inv&&j.inv.no){const e=invoiceEstimate(j);
-      const {error}=await sb.from("invoices").upsert(Object.assign({job_id:id,no:j.inv.no,kind:j.inv.kind||"estimate",status:j.inv.kind==="invoice"?(j.inv.status||"unpaid"):"estimate",total:e.total,html:invoiceHtml(j),updated_at:new Date().toISOString()},c));
+      const isInv=j.inv.kind==="invoice";const row=Object.assign({job_id:id,no:j.inv.no,kind:j.inv.kind||"estimate",status:isInv?invState(j):"estimate",total:isInv?invTotal(j):e.total,html:invoiceHtml(j),updated_at:new Date().toISOString()},c);
+      const extra=isInv?{balance:invBalance(j),paid_total:invPaid(j),due_date:invDue(j)||null,pay_online:!!(S.pricing||{})._payOnline}:{};
+      let {error}=await sb.from("invoices").upsert(Object.assign({},row,extra));
+      if(error&&/balance|paid_total|due_date|pay_online/i.test(error.message||"")){({error}=await sb.from("invoices").upsert(row))}
       if(error)throw sbErr(error)}
   }
   function doc(path){const [col,id]=path.split("/");
@@ -2593,7 +2727,7 @@ function startDb(d){
       S.jobs[id]=normalizeJob(JSON.parse(JSON.stringify(data)));
       if(id===S.cur&&prev)changedCur=true;
     }
-    if(!S.loaded){S.loaded=true;ensureCustNos();migrateLegacyCusts()}
+    if(!S.loaded){S.loaded=true;ensureCustNos();migrateLegacyCusts();setTimeout(importStripePayments,1500)}
     const ae=document.activeElement;
     if(changedCur&&ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
     if(ME.open)return;
@@ -2742,6 +2876,15 @@ function jobMenu(j){if(!isChief())return "";
 /* ---- Notifications (bell) ---- */
 function seenMap(){try{return JSON.parse(localStorage.getItem("irr.seen."+((S.me||{}).id||""))||"{}")}catch(e){return {}}}
 function markSeen(id){try{const m=seenMap();m[id]=Date.now();localStorage.setItem("irr.seen."+((S.me||{}).id||""),JSON.stringify(m))}catch(e){}}
+/* Stripe payments arrive in the payments table (written only by the Stripe webhook).
+   The team's app copies each new one onto its job's invoice ledger and marks it imported. */
+async function importStripePayments(){if(!sb||!S.me||S.me.role!=="tech"||!S.loaded)return;
+  try{const {data,error}=await sb.from("payments").select("*").eq("imported",false);if(error||!data||!data.length)return;
+    for(const x of data){const j=S.jobs[x.job_id];if(!j)continue;j.inv=j.inv||{kind:"invoice"};j.inv.payments=j.inv.payments||[];
+      if(!j.inv.payments.some(p=>p.ref===x.ref)){j.inv.payments.push({id:uid("pay"),amount:r2(x.amount),method:x.method||"Card",date:String(x.paid_at||new Date().toISOString()).slice(0,10),ref:x.ref,source:"stripe"});invLog(j,`Paid online: ${money(+x.amount)} by ${x.method||"card"}`);scheduleSave(x.job_id);toast(`Online payment received: ${money(+x.amount)} from ${j.info.customer||"a customer"}`)}
+      await sb.from("payments").update({imported:true}).eq("id",x.id)}
+    render()}catch(e){console.warn("payments",e)}}
+setInterval(()=>{if(document.visibilityState==="visible")importStripePayments()},90000);
 async function loadResponses(){if(!sb)return;try{const {data,error}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});if(!error){S.responses=data||[];if(!ME.open){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))render()}}}catch(e){}}
 function latestResp(j){return (S.responses||[]).find(r=>r.job_id===j.id)||null}
 function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return L;
@@ -2858,9 +3001,9 @@ async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_emai
 
 /* ---------- Owner portal ---------- */
 async function loadPortal(){
-  const [r,i]=await Promise.all([sb.from("reports").select("*").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at")]);
+  const [r,i]=await Promise.all([sb.from("reports").select("*").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,balance,pay_online,customer_name,address,updated_at").then(x=>x.error?sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at"):x)]);
   const by={};(r.data||[]).forEach(x=>{(by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.issued_at}).reports.push(x)});
-  (i.data||[]).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
+  (i.data||[]).filter(x=>!(x.kind==="invoice"&&x.status==="draft")).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
   S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   try{const {data}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});S.portal.resp=data||[]}catch(e){S.portal.resp=[]}
   if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
@@ -2883,6 +3026,11 @@ async function openPortalDoc(kind,id){
   const q=kind==="report"?sb.from("reports").select("html").eq("id",id).maybeSingle():sb.from("invoices").select("html").eq("job_id",id).maybeSingle();
   const {data}=await q;S.portal.view.html=data?data.html:'<p class="muted">This document isn\'t available.</p>';render();
 }
+function portalPayable(inv){return !!(inv&&inv.kind==="invoice"&&inv.pay_online&&["sent","partial","pastdue"].includes(inv.status)&&+(inv.balance!=null?inv.balance:inv.total)>=0.5)}
+async function payNow(jobId){if(!sb)return;S.paying=jobId;toast("Opening secure payment…");
+  try{const {data,error}=await sb.functions.invoke("create-checkout",{body:{job_id:jobId}});
+    if(error||!data||!data.url){let msg=(data&&data.error)||"";try{if(!msg&&error&&error.context&&error.context.json)msg=(await error.context.json()).error}catch(e){}toast(msg||"Online payment isn't available right now. Please use the contact details on the invoice.");return}
+    location.href=data.url}catch(e){toast("Online payment isn't available right now.")}finally{S.paying=null}}
 function portalView(){
   const p=S.portal;const me=S.me;
   const head=`<div class="top"><header class="bar"><div class="wrap">${p.view?`<button class="iconbtn" data-pback="1">‹ Back</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${p.view?(p.view.kind==="report"?"Inspection report":"Invoice"):"Your properties"}</h1></div>${p.view?"":`<button class="iconbtn" data-signout="1">Sign out</button>`}</div></header></div>`;
@@ -2891,16 +3039,16 @@ function portalView(){
     return head+`<div class="wrap"><main>
       <div class="card"><div class="row">${revs.length>1?`<label class="f" style="flex:1;min-width:160px"><span>Revision</span><select data-prev="1">${revs.map(r=>`<option value="${esc(r.id)}" ${r.id===p.view.id?"selected":""}>Rev ${revNo(r.rev)} · ${esc(new Date(r.issued_at).toLocaleDateString("en-US"))}</option>`).join("")}</select></label>`:""}
       <button class="btn" data-pprint="1" ${p.view.html?"":"disabled"}>Print</button></div>
-      ${p.view.kind==="invoice"&&g&&g.inv&&g.inv.kind==="invoice"&&g.inv.status!=="paid"?`<div class="note info">Online payment is coming soon. To pay now, use the contact details on this invoice.</div>`:""}</div>
+      ${p.view.kind==="invoice"&&g&&portalPayable(g.inv)?`<button class="btn" data-paynow="${esc(g.job)}">Pay ${money(+(g.inv.balance!=null?g.inv.balance:g.inv.total))} now</button>`:p.view.kind==="invoice"&&g&&g.inv&&g.inv.kind==="invoice"&&!["paid","void","closed","baddebt"].includes(g.inv.status)?`<div class="note info small">To pay, use the contact details on this invoice.</div>`:""}</div>
       <article class="sheet">${p.view.html||'<p class="muted">Loading…</p>'}</article></main></div>`}
   let body;
   if(!p.list)body=`<div class="card"><p class="muted">Loading your reports…</p></div>`;
   else if(!p.list.length)body=`<div class="card empty"><h2>No reports yet</h2><p class="muted" style="max-width:40ch">Your inspection reports and invoices appear here after your technician issues them to <b>${esc(me.email)}</b>.</p></div>`;
   else body=p.list.map(g=>{const r=g.reports[0];const inv=g.inv;
-    return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
+    return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':["void","closed","baddebt"].includes(inv.status)?'<span class="pill neutral">Closed</span>':inv.status==="pastdue"?'<span class="pill bad">Past due</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
       ${r?`<div class="act"><div class="al">Inspection report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
       ${r?portalOptions(g,r):""}
-      ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button></div>`:""}</div>`}).join("");
+      ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${inv.kind==="invoice"&&inv.balance!=null&&inv.status!=="paid"?`Balance due ${money(+inv.balance)} of ${money(+inv.total||0)}`:money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button>${portalPayable(inv)?`<button class="btn sm" data-paynow="${esc(g.job)}">Pay now</button>`:""}</div>`:""}</div>`}).join("");
   return head+`<div class="wrap"><main>${portalCustCard()}${body}</main></div>`;
 }
 
@@ -2913,6 +3061,7 @@ app.addEventListener("input",ev=>{
   const t=ev.target;
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
+  if(t.dataset.acctyear){S.acctYear=t.value;rr();return}
   if(t.dataset.cmp&&S.compose){S.compose[t.dataset.cmp]=t.value;const box=t.closest(".compbox");if(box){const m=S.compose,enc=encodeURIComponent;const g=box.querySelector('[data-cmpsent="gmail"]'),ml=box.querySelector('[data-cmpsent="mail"]');if(g)g.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;if(ml)ml.href=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`}return}
   if(t.dataset.cf&&S.custEdit){S.custEdit[t.dataset.cf]=t.value;custLive();return}
   const p=t.dataset.f;if(!p||!job())return;
@@ -2950,7 +3099,7 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
     if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
@@ -2970,6 +3119,7 @@ app.addEventListener("click",ev=>{
     if(d.presp){const [choice,rid,jid,rev]=d.presp.split("|");(async()=>{const {error}=await sb.from("customer_responses").insert({job_id:jid,report_id:rid,rev:+rev,choice,customer_email:String(S.me.email).toLowerCase()});
       if(error){toast("Couldn't send your answer. Please try again.");return}S.portal.changing=false;toast(choice==="decline"?"Thanks for letting us know":"Approved. We'll be in touch to schedule");loadPortal()})();return}
     if(d.popen){const [k,id]=d.popen.split("|");openPortalDoc(k,id);return}
+    if(d.paynow){payNow(d.paynow);return}
     if(d.pback){S.portal.view=null;render();return}
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
     if(d.impgo){importSelected();return}
@@ -2980,6 +3130,10 @@ app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent],a[data-cmpsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
+  if(d.invfilter){S.invFilter=d.invfilter;rr();return}
+  if(d.acctx){acctExport(d.acctx);return}
+  if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.payonline!=null){if(!isAdmin())return;S.pricing._payOnline=d.payonline==="1";savePricing();rr();return}
   if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
@@ -3013,14 +3167,17 @@ app.addEventListener("click",ev=>{
   if(d.remcompose){const [ck,rid]=d.remcompose.split("|");const c=customers().find(x=>x.key===ck);if(!c)return;const r=custSchedule(c).find(x=>x.id===rid);if(!r)return;S.compose=Object.assign(reminderMsg(c,r),{title:r.label+" reminder",onSent:{ck,rid}});render();return}
   if(d.compclose){S.compose=null;render();return}
   if(d.cmpcopy&&S.compose){const m=S.compose;const txt=`To: ${m.to}\nSubject: ${m.subj}\n\n${m.body}`;(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Message copied")).catch(()=>toast("Couldn't copy. Select the text and copy it."));return}
+  if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.inv){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.inv];if(jj){if(o.kind==="send"){jj.inv.sentAt=Date.now();jj.inv.amount=invLive(jj);invLog(jj,`Emailed to ${jj.info.email||"customer"} (${money(jj.inv.amount)})`)}else{jj.inv.reminded=Date.now();invLog(jj,"Payment reminder emailed")}scheduleSave(o.inv)}render();toast("Marked as sent");return}
   if(d.cmpdone&&S.compose){const o=S.compose.onSent;S.compose=null;if(o){const c=customers().find(x=>x.key===o.ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[o.rid]:Date.now()});scheduleSave(lj.id)}}render();toast("Marked as sent");return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
   if(d.ltier!=null){if(!isAdmin())return;const i=d.ltier.lastIndexOf("|");const key=d.ltier.slice(0,i),t=d.ltier.slice(i+1);S.pricing._lineTiers=Object.assign({},S.pricing._lineTiers||{});S.pricing._lineTiers[key]=t||"none";savePricing();rr();return}
   if(d.tier!=null){if(!isAdmin())return;const [bn,t]=d.tier.split("|");S.pricing._brandTiers=Object.assign({},S.pricing._brandTiers||{});S.pricing._brandTiers[bn]=t||"none";savePricing();rr();return}
   if(d.tab){S.tab=d.tab;S.drawLine=null;render();window.scrollTo(0,0);return}
   if(!j)return;
-  if(d.set==="inv.status"&&d.v==="paid"){j.inv=j.inv||{};if(!j.inv.paidDate)j.inv.paidDate=today()}
-  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);scheduleSave(S.cur);rr();return}
+
+  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
+    if(d.set==="inv.kind"&&d.v==="invoice"&&j.inv.no&&!j.inv.issued){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}
+    scheduleSave(S.cur);rr();return}
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
   if(d.step){const v=Math.max(0,num(getP(j,d.step))+num(d.d));setP(j,d.step,v);scheduleSave(S.cur);rr();return}
   if(d.chk){const cur=getP(j,d.chk);const on=d.def==="1"?cur!==false:!!cur;setP(j,d.chk,!on);scheduleSave(S.cur);rr();return}
@@ -3086,7 +3243,20 @@ app.addEventListener("click",ev=>{
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
-  if(d.mkinv){j.inv=Object.assign({kind:"estimate",status:"unpaid"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();scheduleSave(S.cur);rr();return}
+  if(d.mkinv){j.inv=Object.assign({kind:"estimate"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
+  if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
+  if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
+    const online=(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
+    const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
+      :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
+    S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
+  if(d.invupd){j.inv.amount=invLive(j);invLog(j,`Invoice updated to ${money(j.inv.amount)}`);scheduleSave(S.cur);rr();return}
+  if(d.invreopen){invLog(j,`Reopened (was ${INV_ST[invState(j)][0]})`);j.inv.status="";scheduleSave(S.cur);rr();return}
+  if(d.payadd){const amt=r2(String(document.getElementById("pay-amt").value).replace(/[$,]/g,""));if(!(amt>0)){toast("Enter the amount paid");return}
+    const x={id:uid("pay"),amount:amt,method:document.getElementById("pay-method").value,date:document.getElementById("pay-date").value||today(),ref:document.getElementById("pay-ref").value.trim(),source:"manual"};
+    const dep=document.getElementById("pay-dep");if(dep&&dep.checked)x.deposit=true;
+    j.inv.payments=j.inv.payments||[];j.inv.payments.push(x);if(!j.inv.sentAt){j.inv.sentAt=Date.now();j.inv.amount=invLive(j)}invLog(j,`Payment recorded: ${money(amt)} by ${x.method}${x.ref?" #"+x.ref:""}`);
+    S.payForm=null;scheduleSave(S.cur);rr();toast(invState(j)==="paid"?"Paid in full":"Payment recorded. Balance "+money(invBalance(j)));return}
   if(d.invcopy){const txt=invoiceText(j);try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
   if(d.invsave){if(!downloads)return;const nm=((j.inv||{}).kind==="invoice"?"invoice-":"estimate-")+((j.inv||{}).no||"draft")+".html";
     downloads.save({filename:nm,data:standaloneReport(j,invoiceHtml(j))}).then(r=>{if(r.status==="saved")toast("Saved")}).catch(e=>{if(e&&e.code!=="declined")toast("Couldn't save the file here")});return}
@@ -3118,6 +3288,10 @@ function fallbackCopy(txt){const ta=document.createElement("textarea");ta.value=
 function doRemove(key){
   const j=job();const [k,a,b]=key.split(":");
   if(k==="impdiscard"){discardLocal();return}
+  if(k==="pay"&&j&&j.inv){const x=j.inv.payments[+a];if(x&&x.source!=="stripe"){j.inv.payments.splice(+a,1);invLog(j,`Payment removed: ${money(num(x.amount))} ${x.method||""}`);scheduleSave(S.cur);rr()}return}
+  if(k==="invvoid"&&j&&j.inv){j.inv.status="void";invLog(j,"Voided");scheduleSave(S.cur);rr();return}
+  if(k==="invclose"&&j&&j.inv&&isAdmin()){invLog(j,`Closed without payment (${money(invBalance(j))} not collected)`);j.inv.status="closed";scheduleSave(S.cur);rr();return}
+  if(k==="invbad"&&j&&j.inv&&isAdmin()){invLog(j,`Written off as bad debt (${money(invBalance(j))})`);j.inv.status="baddebt";scheduleSave(S.cur);rr();return}
   if(k==="twleg"){const c=j.controllers[+a];c.legs.splice(+b,1);c.legs.forEach(L=>{if(L.from){const [lj,kk]=L.from.split(":").map(Number);if(lj===+b)L.from="";else if(lj>+b)L.from=(lj-1)+":"+kk}});S.twSel="";scheduleSave(S.cur);rr();return}
   if(k==="trainreset"){resetTraining();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
