@@ -352,6 +352,7 @@ table.dgridt{table-layout:fixed;width:100%}
 @media (min-width:760px){.invmetrics{grid-template-columns:repeat(4,1fr)}}
 .invrow{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px dashed var(--line);padding:10px 2px;color:inherit;font:inherit;cursor:pointer}.invrow .al{flex:1;min-width:0}.invamt{display:grid;justify-items:end;gap:4px}
 .paytbl{width:100%;border-collapse:collapse;margin-bottom:6px}.paytbl td{padding:3px 4px;border-bottom:1px solid var(--line)}.paytbl td.num{text-align:right}.baldue{font-size:1.1rem}.voidst{color:var(--muted)!important;border-color:var(--muted)!important}
+.diagnote{margin:6px 0 0;padding:6px 8px;border-left:3px solid var(--accent);background:var(--accent-soft)}
 .twkey{display:flex;gap:4px 12px;align-items:center;flex-wrap:wrap}.twkey>span{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}.twkey .twn{min-width:14px;min-height:14px;padding:0}
 .custbar{padding:12px 14px}.custbar.need{border-color:var(--warn,#d9a441)}.custdetails{margin-top:12px;border-top:1px solid var(--line);padding-top:4px}.custdetails>.card{box-shadow:none;border:0;padding:8px 0;margin:0}
 .whopick{display:grid;gap:10px;margin:6px 0 4px}.whopick .btn{width:100%;text-align:left}.signterms{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap}.authf .termtick,.termtick{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px}.termtick span{flex:1;min-width:0}.authf .termtick input{width:22px!important;height:22px;flex:none;margin-top:2px}
@@ -401,7 +402,7 @@ const OTHER_ACTS={
 /* Texas sample rates — compiled from DFW/Texas published repair ranges; edit on the Price sheet */
 const PRICE_DEFAULTS=(()=>{
   const P={};const add=(k,g,l,u,p,m)=>P[k]={g,l,u,p,m:!!m};
-  add("trip","Service","Service call / trip charge","each",85);
+  add("trip","Service","Diagnostic fee (service call)","each",85);
   add("map_pkg","Add-ons","Property map package (as-built irrigation map)","each",150);
   add("labor_hour","Service","Additional labor","hour",80);
   add("head_raise","Heads","Raise head to grade","each",25);
@@ -703,6 +704,7 @@ function renderKeepFocus(){const ae=document.activeElement;if(ae&&/INPUT|TEXTARE
 /* ---------------- estimate ---------------- */
 /* Fill in any missing pieces so an older or partial job can never break a screen */
 function normalizeJob(j){if(!j||typeof j!=="object")return j;
+  if(j.inv&&j.inv.no&&j.inv.kind!=="invoice"){j.estDoc=j.estDoc||{no:j.inv.no,at:j.inv.at||Date.now(),sentAt:j.inv.at||Date.now(),log:[]};j.inv={}}
   (j.controllers||[]).forEach(c=>{(c.legs||[]).forEach(L=>(L.decoders||[]).forEach(d=>{if(d.st==="bad")d.st="nc"}));if(!c.legs){c.legs=[];const old=String(c.badDecoders||"").split(/[,\s]+/).filter(Boolean);if(old.length)c.legs.push({oc:"",decoders:old.map(a=>({addr:a,zones:"",st:"nc"}))})}});
   j.info=Object.assign({customer:"",phone:"",email:"",address:"",city:"",date:"",status:"Scheduled"},j.info||{});
   {const r0=(j.revs||[])[0];if(r0&&r0.at&&j.info.date){const d=new Date(r0.at);const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");if(j.info.date>iso){j.info.scheduledDate=j.info.scheduledDate||j.info.date;j.info.date=iso}}}
@@ -806,7 +808,8 @@ function statusLabel(st){return {Waiting:"Waiting to hear",Declined:"Audit only"
 /* One status for the whole job, everywhere: the work status until an invoice is sent, then the invoice status. */
 function jobPhase(j){const ist=typeof invState==="function"?invState(j):"";if(ist&&ist!=="draft"){const x=INV_ST[ist];return {label:ist==="sent"?"Invoiced":x[0],cls:x[1]}}
   const st=jobStatus(j);const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Waiting:"warn",Approved:"ok",Declined:"neutral",Completed:"ok"};
-  return {label:st==="Completed"||(st==="Declined"&&(j.revs||[]).length)?(statusLabel(st)+(ist==="draft"?" · invoice draft":" · to invoice")):statusLabel(st),cls:m[st]||"neutral"}}
+  const lab=st==="Declined"&&!(j.revs||[]).length?"Declined":statusLabel(st);const owes=st==="Completed"||(st==="Declined"&&diagAmt(j)>0);
+  return {label:owes?(lab+(ist==="draft"?" · invoice draft":" · to invoice")):lab,cls:m[st]||"neutral"}}
 function phasePill(j){const p=jobPhase(j);return `<span class="pill ${p.cls}">${esc(p.label)}</span>`}
 /* Stage bar shown at the top of every job, on every tab */
 function jobStages(j){const revs=j.revs||[];const last=revs[revs.length-1];const cur=currentRev(j);const o=j.outcome;const inv=j.inv||{};const ist=invState(j);const steps=jobSteps(j);
@@ -815,7 +818,7 @@ function jobStages(j){const revs=j.revs||[];const last=revs[revs.length-1];const
     {k:"sched",l:"Booked",done:true,sub:j.info.date?fmtD(j.info.date):"",tab:null},
     {k:"insp",l:"Inspect",done:inspDone,sub:inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
     {k:"report",l:"Report",done:!!revs.length,warn:revs.length&&!cur,sub:revs.length?("Rev "+revNo(last.n)+(cur?"":" · changed")):"Not issued",tab:"report"},
-    {k:"decide",l:"Approval",done:o==="approved"||o==="declined",sub:o==="approved"?"Approved":o==="declined"?"Audit only":o==="waiting"?"Waiting":"No answer",tab:"completion"},
+    {k:"decide",l:"Approval",done:o==="approved"||o==="declined",sub:o==="approved"?"Approved":o==="declined"?((j.revs||[]).length?"Audit only":"Declined"):o==="waiting"?"Waiting":"No answer",tab:"completion"},
     {k:"work",l:"Work",done:o==="declined"||!!(o==="approved"&&j.completion&&j.completion.issuedAt),skip:o==="declined",sub:o==="declined"?"Not hired":o==="approved"?(j.completion&&j.completion.issuedAt?"Completed":"In progress"):"",tab:"completion"},
     {k:"inv",l:"Invoice",done:!!ist&&ist!=="draft",warn:ist==="pastdue",sub:ist?INV_ST[ist][0]:"Not created",tab:"invoice"},
     {k:"paid",l:"Paid",done:ist==="paid",sub:ist==="paid"?money(invPaid(j)):ist==="partial"||ist==="pastdue"||ist==="sent"?money(invBalance(j))+" due":"",tab:"invoice"}];
@@ -857,7 +860,7 @@ function acctRows(year){const Y=String(year);const jobs=Object.values(S.jobs).fi
       inv.push(Object.assign({},base,{date:issued,due:invDue(j)||issued,terms:(INV_TERMS.find(x=>x[0]===(j.inv.terms||defTerms()))||INV_TERMS[0])[1],status:(INV_ST[st]||[st])[0],void:st==="void",
         sales:r2((e.sub-e.disc)*k),disc:r2(e.disc*k),tax:r2(e.tax*k),total:tot,paid:invPaid(j),balance:st==="void"||st==="baddebt"||st==="closed"?0:invBalance(j),
         lastPaid:(invPays(j).slice(-1)[0]||{}).date||"",written:st==="baddebt"||st==="closed"?invBalance(j):0,job:jobTitle(j)}));
-      if(st!=="void")e.lines.forEach(l=>lines.push(Object.assign({},base,{date:issued,section:l.sec,item:l.label,qty:l.qty,unit:l.unit,rate:r2(l.price*k),amount:r2(l.total*k),parts:l.m?"Yes":"No",sec2:/Service/.test(l.sec)?"Service call":l.m?"Parts & labor":"Labor"})));
+      if(st!=="void")e.lines.forEach(l=>lines.push(Object.assign({},base,{key:l.key||"",date:issued,section:l.sec,item:l.label,qty:l.qty,unit:l.unit,rate:r2(l.price*k),amount:r2(l.total*k),parts:l.m?"Yes":"No",sec2:/Service/.test(l.sec)?"Service call":l.m?"Parts & labor":"Labor"})));
       if(st==="baddebt"||st==="closed")offs.push(Object.assign({},base,{date:issued,type:st==="baddebt"?"Bad debt":"Closed, no payment",amount:invBalance(j),note:((j.inv.log||[]).filter(x=>/bad debt|without payment/i.test(x.t)).slice(-1)[0]||{}).t||""}))}
     invPays(j).filter(x=>String(x.date).startsWith(Y)).forEach(x=>pays.push(Object.assign({},base,{date:x.date,method:x.method||"",ref:x.ref||"",amount:r2(x.amount),online:x.source==="stripe"?"Yes":"No",deposit:x.deposit?"Yes":"No"})))});
   const live=inv.filter(x=>!x.void);
@@ -867,14 +870,15 @@ function acctRows(year){const Y=String(year);const jobs=Object.values(S.jobs).fi
   const sum=k=>r2(live.reduce((a,x)=>a+x[k],0));
   const byMethod={};pays.forEach(x=>byMethod[x.method]=r2((byMethod[x.method]||0)+x.amount));
   const custs={};live.forEach(x=>{const c=custs[x.custNo+"|"+x.customer]=custs[x.custNo+"|"+x.customer]||{custNo:x.custNo,customer:x.customer,address:x.address,prop:x.prop,count:0,invoiced:0,paid:0,balance:0};c.count++;c.invoiced=r2(c.invoiced+x.total);c.paid=r2(c.paid+x.paid);c.balance=r2(c.balance+x.balance)});
-  return {Y,md,inv,live,lines,pays,offs,months,byMethod,custs:Object.values(custs),
+  const waived=Object.values(S.jobs).filter(j=>j&&j.est&&j.est.trip===false&&((j.revs||[]).length||j.estDoc)&&String(j.info.date||"").startsWith(Y)).map(j=>({date:j.info.date,customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),value:price("trip",j),by:j.est.waivedBy||"",job:jobTitle(j)}));
+  return {Y,md,inv,live,lines,pays,offs,months,byMethod,waived,custs:Object.values(custs),
     tot:{count:live.length,sales:sum("sales"),disc:sum("disc"),tax:sum("tax"),invoiced:sum("total"),collected:r2(pays.reduce((a,x)=>a+x.amount,0)),open:sum("balance"),written:r2(offs.reduce((a,x)=>a+x.amount,0)),
       resSales:r2(live.filter(x=>x.prop==="Residential").reduce((a,x)=>a+x.sales,0)),comSales:r2(live.filter(x=>x.prop==="Commercial").reduce((a,x)=>a+x.sales,0)),online:r2(pays.filter(x=>x.online==="Yes").reduce((a,x)=>a+x.amount,0))}}}
 function acctYears(){const ys=new Set([String(new Date().getFullYear())]);Object.values(S.jobs).forEach(j=>{if(j&&j.inv&&j.inv.kind==="invoice"&&j.inv.no){if(j.inv.issued)ys.add(j.inv.issued.slice(0,4));invPays(j).forEach(x=>x.date&&ys.add(String(x.date).slice(0,4)))}});return [...ys].sort().reverse()}
 function acctCard(){const Y=S.acctYear||acctYears()[0];const a=acctRows(Y);const t=a.tot;
   const row=(l,v,strong)=>`<div class="act"><div class="al">${l}</div><b class="num" ${strong?"":'style="font-weight:600"'}>${v}</b></div>`;
   return `<div class="card"><div class="cardhead"><h2>Year-end & accounting</h2><select data-acctyear="1" aria-label="Year">${acctYears().map(y=>`<option ${y===Y?"selected":""}>${y}</option>`).join("")}</select></div>
-    <div class="acts">${row("Invoices issued",t.count)}${row("Sales before tax (after discounts)",money(t.sales))}${row("&nbsp;&nbsp;Residential",money(t.resSales))}${row("&nbsp;&nbsp;Commercial",money(t.comSales))}${row("Sales tax charged",money(t.tax))}${row("Total invoiced (accrual)",money(t.invoiced),1)}${row("Collected (cash basis)",money(t.collected),1)}${row("&nbsp;&nbsp;Paid online through Stripe",money(t.online))}${Object.entries(a.byMethod).filter(([m])=>m!=="Card"||1).map(([m,v])=>row("&nbsp;&nbsp;"+esc(m||"Other"),money(v))).join("")}${row("Still owed on this year's invoices",money(t.open))}${row("Written off (bad debt / closed)",money(t.written))}</div>
+    <div class="acts">${row("Invoices issued",t.count)}${row("Sales before tax (after discounts)",money(t.sales))}${row("&nbsp;&nbsp;Residential",money(t.resSales))}${row("&nbsp;&nbsp;Commercial",money(t.comSales))}${row("Sales tax charged",money(t.tax))}${row("Total invoiced (accrual)",money(t.invoiced),1)}${row("Collected (cash basis)",money(t.collected),1)}${row("&nbsp;&nbsp;Paid online through Stripe",money(t.online))}${Object.entries(a.byMethod).filter(([m])=>m!=="Card"||1).map(([m,v])=>row("&nbsp;&nbsp;"+esc(m||"Other"),money(v))).join("")}${row("Still owed on this year's invoices",money(t.open))}${row("Written off (bad debt / closed)",money(t.written))}${row(`Free estimates (${a.waived.length}): diagnostic fees waived`,money(a.waived.reduce((x,w)=>x+w.value,0)))}</div>
     <div class="row"><button class="btn" data-acctx="xlsx">Year-end package (Excel)</button><button class="btn ghost" data-acctx="qbinv">QuickBooks invoices (CSV)</button><button class="btn ghost" data-acctx="qbpay">QuickBooks payments (CSV)</button></div>
     <p class="small muted" style="margin:0">The Excel package has a sheet each for the summary, months, invoices, line items, payments, sales tax, write-offs and customers. Residential jobs are flat rate with no sales tax charged; commercial jobs are taxed, so residential vs commercial is marked on every row. Card and bank fees, and Stripe's 1099-K, come from your Stripe dashboard (Reports).</p></div>`}
 function csvEsc(v){v=v==null?"":String(v);return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v}
@@ -882,7 +886,7 @@ function toCsv(head,rows){return [head.join(","),...rows.map(r=>r.map(csvEsc).jo
 function dlFile(name,content,type){const blob=content instanceof Blob?content:new Blob([content],{type:type||"text/csv"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},500)}
 function loadXlsx(){return window.XLSX?Promise.resolve(window.XLSX):new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";sc.onload=()=>ok(window.XLSX);sc.onerror=()=>no(new Error("Couldn't load the Excel tool. Check your connection."));document.head.appendChild(sc)})}
 async function acctExport(kind){const Y=S.acctYear||acctYears()[0];const a=acctRows(Y);const biz=(bizInfo().name||"Sprinkler-Wrangler").replace(/[^\w]+/g,"-");
-  if(kind==="qbinv"){const rows=[];a.inv.filter(x=>!x.void).forEach(x=>{a.lines.filter(l=>l.no===x.no).forEach((l,i)=>rows.push([x.no,x.customer+(x.custNo?" ("+x.custNo+")":""),a.md(x.date),a.md(x.due),x.terms,i?"":`${x.prop} · ${x.address}${x.disc?` · includes discount ${money(x.disc)}`:""}`,l.section,l.item,l.qty,l.rate.toFixed(2),l.amount.toFixed(2),x.tax>0?"Y":"N",a.md(x.date)]))});
+  if(kind==="qbinv"){const rows=[];a.inv.filter(x=>!x.void).forEach(x=>{const cred=a.lines.some(l=>l.no===x.no&&l.key==="trip_credit");a.lines.filter(l=>l.no===x.no&&!(cred&&(l.key==="trip"||l.key==="trip_credit"))).forEach((l,i)=>rows.push([x.no,x.customer+(x.custNo?" ("+x.custNo+")":""),a.md(x.date),a.md(x.due),x.terms,i?"":`${x.prop} · ${x.address}${x.disc?` · includes discount ${money(x.disc)}`:""}${cred?" · diagnostic fee credited (work approved)":""}`,l.section,l.item,l.qty,l.rate.toFixed(2),l.amount.toFixed(2),x.tax>0?"Y":"N",a.md(x.date)]))});
     dlFile(`${biz}-invoices-${Y}-QuickBooks.csv`,toCsv(["InvoiceNo","Customer","InvoiceDate","DueDate","Terms","Memo","Item(Product/Service)","ItemDescription","ItemQuantity","ItemRate","ItemAmount","Taxable","ServiceDate"],rows));toast("QuickBooks invoices file saved");return}
   if(kind==="qbpay"){dlFile(`${biz}-payments-${Y}-QuickBooks.csv`,toCsv(["PaymentDate","InvoiceNo","Customer","PaymentMethod","ReferenceNo","Amount","PaidOnline"],a.pays.map(x=>[a.md(x.date),x.no,x.customer+(x.custNo?" ("+x.custNo+")":""),x.method,x.ref,x.amount.toFixed(2),x.online])));toast("QuickBooks payments file saved");return}
   let X;try{X=await loadXlsx()}catch(e){toast(e.message);return}
@@ -895,6 +899,7 @@ async function acctExport(kind){const Y=S.acctYear||acctYears()[0];const a=acctR
   sheet("Payments",["Date","Invoice #","Customer #","Customer","Method","Reference","Amount","Paid online","Deposit"],a.pays.map(x=>[x.date,x.no,x.custNo,x.customer,x.method,x.ref,x.amount,x.online,x.deposit]),[11,16,10,20,12,22,11,10,8]);
   sheet("Sales tax",["Month","Residential sales","Commercial sales","Sales before tax","Sales tax charged"],a.months.map(m=>[m.month,m.resSales,m.comSales,m.sales,m.tax]).concat([["Total",t.resSales,t.comSales,t.sales,t.tax]]),[12,16,16,16,16]);
   sheet("Write-offs",["Invoice #","Date","Customer","Type","Amount","Note"],a.offs.map(x=>[x.no,x.date,x.customer,x.type,x.amount,x.note]),[16,11,20,18,11,40]);
+  sheet("Free estimates",["Date","Customer","Address","Diagnostic fee waived","Waived by","Job"],a.waived.map(w=>[w.date,w.customer,w.address,w.value,w.by,w.job]),[11,20,30,14,14,18]);
   sheet("Customers",["Customer #","Customer","Address","Property","Invoices","Invoiced","Paid","Balance"],a.custs.map(c=>[c.custNo,c.customer,c.address,c.prop,c.count,c.invoiced,c.paid,c.balance]),[10,20,30,12,9,12,12,12]);
   const out=X.write(wb,{bookType:"xlsx",type:"array"});dlFile(`${biz}-year-end-${Y}.xlsx`,new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));toast("Year-end package saved")}
 function invSettingsCard(){const adm=isAdmin();const on=!!(S.pricing||{})._payOnline;
@@ -910,13 +915,14 @@ function invoicesView(){const jobs=Object.values(S.jobs).filter(Boolean);const i
   const coll=inv.reduce((a,j)=>a+invPays(j).filter(x=>x.date>=d30).reduce((b,x)=>b+num(x.amount),0),0);
   const paidJ=inv.filter(j=>st(j)==="paid"&&j.inv.issued&&invPays(j).length);
   const avgDays=paidJ.length?Math.round(paidJ.reduce((a,j)=>a+Math.max(0,(new Date(invPays(j)[invPays(j).length-1].date)-new Date(j.inv.issued))/864e5),0)/paidJ.length):null;
-  const ready=jobs.filter(j=>!(j.inv&&j.inv.kind==="invoice"&&j.inv.no)&&(jobStatus(j)==="Completed"||(j.outcome==="declined"&&(j.revs||[]).length)));
+  const ready=jobs.filter(j=>!(j.inv&&j.inv.kind==="invoice"&&j.inv.no)&&(jobStatus(j)==="Completed"||(j.outcome==="declined"&&((j.revs||[]).length||j.estDoc)))&&invLive(invPreviewJob(j))>0);
+  const waived=jobs.filter(j=>j.est&&j.est.trip===false&&((j.revs||[]).length||j.estDoc)&&String(j.info.date||"").slice(0,4)===String(new Date().getFullYear()));
   const F=[["open","Unpaid"],["draft","Draft"],["pastdue","Past due"],["paid","Paid"],["closed","Closed"],["all","All"]];const f=S.invFilter||"open";
   const keep=j=>f==="all"||(f==="open"?openSt.includes(st(j)):f==="closed"?["void","baddebt","closed"].includes(st(j)):st(j)===f);
   const list=inv.filter(keep).sort((a,b)=>(invDue(a)||"9").localeCompare(invDue(b)||"9")||String(b.inv.no).localeCompare(String(a.inv.no)));
-  return `<div class="invmetrics"><div class="card"><div class="eyebrow">Owed to you</div><b class="num">${money(outstanding)}</b></div><div class="card ${pd.length?"need":""}"><div class="eyebrow">Past due</div><b class="num">${money(pdAmt)}</b><div class="small muted">${pd.length} invoice${pd.length===1?"":"s"}</div></div><div class="card"><div class="eyebrow">Collected, last 30 days</div><b class="num">${money(coll)}</b></div><div class="card"><div class="eyebrow">Average days to get paid</div><b class="num">${avgDays==null?"–":avgDays}</b></div></div>
-  ${ready.length?`<div class="card need"><div class="cardhead"><h2>Ready to invoice</h2><span class="pill warn">${ready.length}</span></div><p class="small muted" style="margin:0">Completed jobs (and declined audits, for the audit fee) with no invoice yet.</p>
-    ${ready.map(j=>`<div class="act"><div class="al">${esc(j.info.customer||"Customer")} <span class="small muted mono">${esc(jobTitle(j)||"")}</span><div class="ap">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))} · ${esc(jobStatus(j)==="Completed"?"Work completed":"Audit declined")} · ${money(invoiceEstimate(Object.assign({},j,{inv:{kind:"invoice"}})).total)}</div></div><button class="btn sm" data-invready="${esc(j.id||"")}">Create invoice</button></div>`).join("")}</div>`:""}
+  return `<div class="invmetrics"><div class="card"><div class="eyebrow">Owed to you</div><b class="num">${money(outstanding)}</b></div><div class="card ${pd.length?"need":""}"><div class="eyebrow">Past due</div><b class="num">${money(pdAmt)}</b><div class="small muted">${pd.length} invoice${pd.length===1?"":"s"}</div></div><div class="card"><div class="eyebrow">Collected, last 30 days</div><b class="num">${money(coll)}</b></div><div class="card"><div class="eyebrow">Average days to get paid</div><b class="num">${avgDays==null?"–":avgDays}</b></div><div class="card"><div class="eyebrow">Free estimates this year</div><b class="num">${waived.length}</b><div class="small muted">${money(waived.reduce((a,j)=>a+price("trip",j),0))} in diagnostic fees waived</div></div></div>
+  ${ready.length?`<div class="card need"><div class="cardhead"><h2>Ready to invoice</h2><span class="pill warn">${ready.length}</span></div><p class="small muted" style="margin:0">Completed jobs, and declined estimates (for the diagnostic fee), with no invoice yet.</p>
+    ${ready.map(j=>`<div class="act"><div class="al">${esc(j.info.customer||"Customer")} <span class="small muted mono">${esc(jobTitle(j)||"")}</span><div class="ap">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))} · ${esc(jobStatus(j)==="Completed"?"Work completed":"Declined: diagnostic fee")} · ${money(invLive(invPreviewJob(j)))}</div></div><button class="btn sm" data-invready="${esc(j.id||"")}">Create invoice</button></div>`).join("")}</div>`:""}
   <div class="card"><div class="cardhead"><h2>Invoices</h2><span class="muted small">${list.length}</span></div>
     <div class="chips">${F.map(([k,l])=>`<button class="chip" data-invfilter="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
     ${list.length?list.map(j=>{const s0=st(j);return `<button type="button" class="invrow" data-invopen="${esc(j.id||"")}"><div class="al"><b>${esc(j.inv.no)}</b> · ${esc(j.info.customer||"")}<div class="small muted">${esc(j.info.address||"")} · ${s0==="paid"?"Paid":(j.inv.terms||defTerms())==="completion"?"Due on completion":"Due "+esc(fmtD(invDue(j)))}</div></div><div class="invamt"><b class="num">${money(s0==="paid"||s0==="void"?invTotal(j):invBalance(j))}</b>${invPill(j)}</div></button>`}).join(""):`<p class="muted small" style="margin:0">No invoices here.</p>`}</div>${isAdmin()?acctCard():""}`}
@@ -1737,12 +1743,16 @@ function estTable(e,editable){
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div class="totals"><div><span>Subtotal</span><span>${money(e.sub)}</span></div>${e.disc?`<div><span>Discount</span><span>−${money(e.disc)}</span></div>`:""}${e.tax?`<div><span>Tax</span><span>${money(e.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(e.total)}</span></div></div>`;
 }
+function diagRow(j){const on=j.est.trip!==false;const a=price("trip",j);
+  return `<div class="act" style="flex-wrap:wrap"><div class="al">Diagnostic fee <span class="num">${money(a)}</span><div class="ap">${on?(j.est.diagCredit!==false?"Charged on every estimate visit. Credited toward the work if the customer approves; billed on its own if they decline.":"Charged on every estimate visit, even if the customer approves."):"Waived: free estimate. Counted on the Invoices page so it isn't lost."}</div></div>
+    <div class="chips"><button class="chip" data-diag="on" aria-pressed="${on}">Charge</button><button class="chip" data-diag="off" aria-pressed="${!on}">Waive (free estimate)</button></div>
+    ${on?`<label class="small" style="flex-basis:100%"><input type="checkbox" data-diagcredit="1" ${j.est.diagCredit!==false?"checked":""}> Credit it toward the work if approved</label>`:""}</div>`}
 function estimateTab(){const j=job();const e=buildEstimate(j);
-  return `<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTableTL(j,e,true)}</div>
-  <div class="card"><h2>Adjustments</h2><div class="acts">${chk("est.trip","Service call / trip charge","trip",true)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
+  return `${estDocCard(j)}<div class="card"><div class="cardhead"><h2>Estimate</h2><span class="pill neutral">${e.lines.length} lines</span></div>${estTableTL(j,e,true)}</div>
+  <div class="card"><h2>Adjustments</h2><div class="acts">${diagRow(j)}${stepRow("Additional labor hours","est.laborHours","labor_hour","hour")}</div>
   ${(()=>{const rows=[];j.controllers.forEach((c,ci)=>(c.custom||[]).forEach((x,xi)=>rows.push([c,ci,x,xi])));if(!rows.length)return "";const need=rows.filter(r=>!num(r[2].price)).length;
     return `<div class="combo ${need?"need":""}"><h4>Technician recommendations</h4><p class="small muted" style="margin:0">Added on the Controller tab. ${need?`<b>${need} still need${need===1?"s":""} a price.</b>`:"All priced."}</p>${rows.map(([c,ci,x,xi])=>`<div class="grid3" style="align-items:end"><div class="f"><span>${esc(c.name)}</span><div>${esc(x.desc)}</div></div>${fld("Qty",`controllers.${ci}.custom.${xi}.qty`,"number")}${fld("Price each",`controllers.${ci}.custom.${xi}.price`,"number",'inputmode="decimal" step="0.01"')}</div>`).join("")}</div>`})()}
-  <div class="combo"><h4>Additional items</h4>${(j.est.extra||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`est.extra.${ci}.desc`)}${fld("Qty",`est.extra.${ci}.qty`,"number")}${fld("Price each",`est.extra.${ci}.price`,"number")}<div>${delBtn("ext:"+ci,"Remove")}</div></div>`).join("")}<div><button class="btn ghost sm" data-add="est.extra" data-tpl="custom">+ Add item</button></div></div>
+  <div class="combo"><h4>Additional items</h4>${(j.est.extra||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`est.extra.${ci}.desc`,"text",'data-rr="1"')}${fld("Qty",`est.extra.${ci}.qty`,"number",'data-rr="1"')}${fld("Price each",`est.extra.${ci}.price`,"number",'data-rr="1"')}<div>${delBtn("ext:"+ci,"Remove")}</div></div>`).join("")}<div><button class="btn ghost sm" data-add="est.extra" data-tpl="custom">+ Add item</button></div></div>
   ${fld("Terms shown on estimate/invoice","est.terms","textarea")}</div>`;
 }
 
@@ -1960,18 +1970,41 @@ function invManage(j){const inv=j.inv;const st=invState(j);const tot=invTotal(j)
         <div><button class="btn" data-payadd="1">Record payment</button></div>`}</div>
     ${closed||st==="paid"?"":`<div class="row" style="justify-content:flex-end;gap:6px">${!paid?delBtn("invvoid","Void invoice"):""}${isAdmin()&&st!=="draft"?delBtn("invclose","Close without payment")+delBtn("invbad","Write off as bad debt"):""}</div>`}
     ${(inv.log||[]).length?`<details class="small"><summary>Activity (${inv.log.length})</summary><ul class="changelog">${inv.log.slice().reverse().map(l=>`<li>${esc(fmtDT(l.at))}${l.by?" · "+esc(l.by):""}: ${esc(l.t)}</li>`).join("")}</ul></details>`:""}`}
+/* ---------------- Customer estimate (replaces Zoho estimates) ----------------
+   Lives on the Estimate tab: numbered EST-…, Draft → Sent → Approved / Declined (the job's Approval answer).
+   Audit jobs also carry the same options inside the Report for online approval. */
+function estNo(){return invNo().replace(/^INV-/,"EST-")}
+function estJob(j){return Object.assign({},j,{inv:{kind:"estimate",no:(j.estDoc||{}).no,at:(j.estDoc||{}).at}})}
+function estDocHtml(j){return invoiceHtml(estJob(j))}
+function estState(j){const d=j.estDoc;if(!d||!d.no)return "";if(j.outcome==="approved")return "approved";if(j.outcome==="declined")return "declined";return d.sentAt?"sent":"draft"}
+const EST_ST={draft:["Draft","neutral"],sent:["Sent, waiting for answer","warn"],approved:["Approved","ok"],declined:["Declined","neutral"]};
+function estLog(j,t){j.estDoc.log=j.estDoc.log||[];j.estDoc.log.push({at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),t})}
+function estDocCard(j){const d=j.estDoc;const e=buildEstimate(j);const bm=bizMissing();
+  if(!d||!d.no)return `<div class="card"><div class="cardhead"><h2>Customer estimate</h2><span class="pill neutral">Not created</span></div>
+    <p class="small muted" style="margin:0">Turn the prices below into a numbered estimate you can email or print (what you used Zoho for). Works for quick quotes with no inspection too: just add the items below.${(j.revs||[]).length?" For this audit, the customer can also approve the same options in the report.":""}</p>
+    ${bm.length?`<p class="small"><b>Needed first (Texas):</b> ${esc(bm.join(", "))}, set in Admin settings → Business & license.</p>`:`<div><button class="btn" data-mkest="1" ${e.lines.length?"":"disabled"}>Create estimate (${money(e.total)})</button></div>`}</div>`;
+  const st=estState(j);const x=EST_ST[st];
+  return `<div class="card"><div class="cardhead"><h2>Estimate ${esc(d.no)}</h2><span class="pill ${x[1]}">${x[0]}</span></div>
+    <div class="invsum" style="grid-template-columns:repeat(2,1fr)"><div><div class="eyebrow">Estimate total</div><b class="num">${money(e.total)}</b></div><div><div class="eyebrow">Date</div><b>${esc(new Date(d.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))}</b></div></div>
+    <div class="row">${st==="draft"?`<button class="btn" data-estsend="1">Email estimate</button><button class="btn ghost" data-estmark="1">Mark as sent</button>`:""}${CAN_PRINT?`<button class="btn ${st==="draft"?"quiet":"ghost"}" data-print="estimate">Print</button>`:""}<button class="btn quiet" data-estcopy="1">Copy as text</button></div>
+    ${st==="sent"?`<div class="row"><span class="spacer small">Customer's answer:</span><button class="btn sm" data-estanswer="approved">Approved</button><button class="btn ghost sm" data-estanswer="declined">Declined</button></div>`:""}
+    ${st==="approved"?`<p class="small" style="margin:0">Approved. Do the work, then invoice it on the <button class="linkbtn" data-tab="invoice">Invoice tab</button>.</p>`:""}
+    <details><summary class="small">Preview the estimate</summary><article class="sheet">${estDocHtml(j)}</article></details>
+    ${(d.log||[]).length?`<details class="small"><summary>Activity (${d.log.length})</summary><ul class="changelog">${d.log.slice().reverse().map(l=>`<li>${esc(fmtDT(l.at))}${l.by?" · "+esc(l.by):""}: ${esc(l.t)}</li>`).join("")}</ul></details>`:""}</div>`}
+function invPreviewJob(j){return Object.assign({},j,{inv:Object.assign({},j.inv||{},{kind:"invoice"})})}
 function invoiceTab(){const j=job();const miss=missingCustomer(j);const bm=bizMissing();const inv=j.inv||{};const cur=currentRev(j);const revs=j.revs||[];
   if(miss.length)return `<div class="card"><h2>Customer details needed</h2><p>Still needed: <b>${miss.map(esc).join(", ")}</b>. Tap Details at the top of the job to add them.</p><div><button class="btn" data-showdetails="1">Go to Customer</button></div></div>`;
   const blocks=[];
   if(bm.length)blocks.push(`<div class="card"><div class="cardhead"><h2>Business & license info</h2><span class="pill warn">Required in Texas</span></div><p class="small" style="margin:0">Texas requires the licensed irrigator's name, license number, business address and phone on every estimate and invoice. Still needed: <b>${bm.join(", ")}</b>. ${isAdmin()?"You only enter this once.":"An admin needs to enter this in Admin settings."}</p>${isAdmin()?bizFields()+`<div><button class="btn sm" data-tab="invoice">Done</button></div>`:""}</div>`);
-  if(!cur)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
-  const ready=!bm.length&&cur;
-  return blocks.join("")+`<div class="card"><div class="cardhead"><h2>${inv.kind==="invoice"?"Invoice":"Estimate"}${inv.no?" "+esc(inv.no):""}</h2>${inv.kind==="invoice"?(inv.no?invPill(j):'<span class="pill neutral">Not created</span>'):'<span class="pill neutral">Estimate</span>'}</div>
-    ${invState(j)&&invState(j)!=="draft"?"":seg("Document",'inv.kind',[["estimate","Estimate (before work)"],["invoice","Invoice (work done)"]])}
-    ${inv.kind==="invoice"&&inv.no?invManage(j):""}
-    ${ready?`<div class="row">${inv.no?"":`<button class="btn" data-mkinv="1">Create ${inv.kind==="invoice"?"invoice":"estimate"}</button>`}${inv.no?`${CAN_PRINT?`<button class="btn" data-print="invoice">Print</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-invcopy="1">Copy as text</button>${downloads?`<button class="btn ghost" data-invsave="1">Save file</button>`:""}`:""}</div>`:`<p class="small muted" style="margin:0">Copy and save unlock once the items above are done.</p>`}
+  const needRep=revs.length>0;
+  if(!cur&&needRep)blocks.push(`<div class="note bad">${revs.length?`The job changed after report Rev ${revNo(revs[revs.length-1].n)}. Issue a new report revision first so the invoice matches the report.`:"Issue the report (Rev 00) first. The invoice always matches an issued report."} <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div>`);
+  const ready=!bm.length&&(cur||!needRep);const has=inv.kind==="invoice"&&inv.no;const pv=invPreviewJob(j);
+  const what=j.outcome==="declined"?((j.revs||[]).length?"Audit only: diagnostic fee":"Declined: diagnostic fee only"):j.completion&&j.completion.issuedAt?"Completed work (from the completion report)":(j.revs||[]).length?"The work in the current report":"The items on the Estimate tab";
+  return blocks.join("")+`<div class="card"><div class="cardhead"><h2>Invoice${has?" "+esc(inv.no):""}</h2>${has?invPill(j):'<span class="pill neutral">Not created</span>'}</div>
+    ${has?invManage(j):`<p style="margin:0">Will bill: <b>${esc(what)}</b> · <b class="num">${money(invLive(pv))}</b></p>`}
+    ${ready?`<div class="row">${has?"":`<button class="btn" data-mkinv="1">Create invoice</button>`}${has?`${CAN_PRINT?`<button class="btn" data-print="invoice">Print</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-invcopy="1">Copy as text</button>${downloads?`<button class="btn ghost" data-invsave="1">Save file</button>`:""}`:""}</div>`:`<p class="small muted" style="margin:0">Copy and save unlock once the items above are done.</p>`}
     <p class="small muted" style="margin:0">Prices, discount, tax and terms are set on the Estimate tab.${SHOW_UPSELLS?" Accepted upgrades are included automatically.":""}</p></div>
-  <article class="sheet">${invoiceHtml(j)}</article>`;
+  <article class="sheet">${invoiceHtml(has?j:pv)}</article>`;
 }
 /* ---- Property map is a paid add-on (or included for premium customers) ---- */
 function mapIncluded(j){return j.mapSold==="sold"||j.mapSold==="included"}
@@ -2018,11 +2051,15 @@ function jobPrint(j){
   const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
   return hashStr(JSON.stringify({c:[i.customer||"",i.address||"",i.city||"",i.propType||""],
     f:findings(j,false).map(([h,it])=>[h,(it||[]).map(strip)]),
-    l:buildEstimate(j).lines.map(l=>[l.sec,l.label,l.qty,l.price]),m:j.mapSold||"",v:3,...(j.est.showTech?{t:techSection(j).replace(/<[^>]+>/g," ").replace(/\s+/g," ")}:{})}))}
+    l:buildEstimate(j).lines.map(l=>[l.sec,l.key==="trip"?"Service call / trip charge":l.label,l.qty,l.price]),m:j.mapSold||"",v:3,...(j.est.showTech?{t:techSection(j).replace(/<[^>]+>/g," ").replace(/\s+/g," ")}:{})}))}
 /* Option totals (with tax) for the portal: Fix now (incl. service), Recommended, All work */
-function estOptions(j){const e=buildEstimate(j);const rate=jobTax(j)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});
+/* Diagnostic fee (Bradley): charged on every estimate visit, credited toward the work if the customer approves,
+   billed on its own if they decline. "Free estimate" waives it, and waived fees are counted so they aren't lost. */
+function diagAmt(j){return j.est&&j.est.trip!==false?price("trip",j):0}
+function diagCredits(j){return diagAmt(j)>0&&j.est.diagCredit!==false}
+function estOptions(j){const e=buildEstimate(j);const rate=jobTax(j)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;
   const t=(sub,disc)=>{const b=sub-(disc||0);return {sub:Math.round(sub*100)/100,disc:disc||0,tax:Math.round(b*rate*100)/100,total:Math.round(b*(1+rate)*100)/100}};
-  return {rate:jobTax(j),fix:t(g.s+g.r),rec:g.y?t(g.y):null,all:t(e.sub,e.disc)}}
+  return {rate:jobTax(j),fix:t(g.s+g.r-cr),rec:g.y?t(g.y):null,all:t(e.sub-cr,e.disc),diag:diagAmt(j),credit:cr}}
 /* Automatic change log: what the customer would see differently since the last issued revision */
 function revSnap(j){const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
   return {tech:!!(j.est||{}).showTech,who:[i.customer||"",[i.address,i.city].filter(Boolean).join(", ")],date:i.date||"",
@@ -2309,10 +2346,10 @@ function estTableTL(j,e,editable){
   if(!e.lines.length)return `<p class="muted">No work items yet. Mark repairs in the Mainline, Controllers and Zones tabs.</p>`;
   return `<div class="tbl"><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
     ${block("s","Service & add-ons",groups.s)}${block("r","Fix now",groups.r)}${block("y","Recommended",groups.y)}</tbody></table></div>
-  ${(()=>{const rate=jobTax(j)/100;const fx=sub(groups.s)+sub(groups.r),rc=sub(groups.y);
-    const blk=(cls,title,note,st,disc)=>{const base=st-(disc||0);const tx=base*rate;return `<div class="totblk ${cls}"><div class="tbh"><span>${title}</span>${note?`<span class="small muted">${note}</span>`:""}</div><div><span>Subtotal</span><span>${money(st)}</span></div>${disc?`<div><span>Discount</span><span>−${money(disc)}</span></div>`:""}${rate?`<div><span>Tax (${jobTax(j)}%)</span><span>${money(tx)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(base+tx)}</span></div></div>`};
+  ${(()=>{const rate=jobTax(j)/100;const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;const fx=sub(groups.s)+sub(groups.r)-cr,rc=sub(groups.y);
+    const blk=(cls,title,note,st,disc)=>{const base=st-(disc||0);const tx=base*rate;return `<div class="totblk ${cls}"><div class="tbh"><span>${title}</span>${note?`<span class="small muted">${note}</span>`:""}</div>${cr&&cls!=="tb-y"?`<div class="small"><span>Diagnostic fee credited</span><span>−${money(cr)}</span></div>`:""}<div><span>Subtotal</span><span>${money(st)}</span></div>${disc?`<div><span>Discount</span><span>−${money(disc)}</span></div>`:""}${rate?`<div><span>Tax (${jobTax(j)}%)</span><span>${money(tx)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(base+tx)}</span></div></div>`};
     const two=groups.y.length>0;
-    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,"Stops damage and water loss. Includes the service call.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub,e.disc):""}</div>`})()}
+    return `<div class="totals3">${blk("tb-r",`${tlDot("r")} ${two?"Option 1: ":""}Fix now only`,cr?"Stops damage and water loss. Diagnostic fee credited.":"Stops damage and water loss. Includes the service call.",fx)}${two?blk("tb-y",`${tlDot("y")} Recommended items`,"Add to Option 1 now, or schedule later.",rc):""}${two?blk("tb-all","Option 2: All work","Fix now + Recommended.",e.sub-cr,e.disc):e.disc?blk("tb-all","Total","After discount.",e.sub-cr,e.disc):""}</div>${cr?`<p class="small diagnote">The ${money(cr)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the ${money(cr)} diagnostic fee is due.</p>`:diagAmt(j)?"":(j.revs||[]).length||j.estDoc?`<p class="small diagnote">Free estimate: no diagnostic fee.</p>`:""}`})()}
   ${editable?`<p class="small muted">Tap a colored dot to switch an item between Fix now and Recommended.</p>`:""}`}
 
 /* ---------------- Completion: what was (audit) vs what is (after the work) ----------------
@@ -2375,7 +2412,12 @@ function completionText(j){const c=j.completion;const n=compCounts(c.items);cons
   `Before: ${n.r} fix now, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} fix now, ${n.yLeft} recommended`,""];
   c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
 /* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
-function invoiceEstimate(j){const e=buildEstimate(j);const c=j.completion;
+function invoiceEstimate(j){const r=invoiceEstimate0(j);
+  if((j.inv||{}).kind==="invoice"&&j.outcome==="approved"&&diagCredits(j)&&r.lines.some(l=>l.key==="trip")&&r.lines.some(l=>l.key!=="trip"&&l.total>0)){const a=diagAmt(j);
+    const lines=r.lines.concat([{sec:"Service",key:"trip_credit",label:"Diagnostic fee credited (work approved)",qty:1,unit:"each",price:-a,total:-a,m:false}]);
+    const sub=lines.reduce((x,l)=>x+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*jobTax(j)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}
+  return r}
+function invoiceEstimate0(j){const e=buildEstimate(j);const c=j.completion;
   if((j.inv||{}).kind==="invoice"&&j.outcome==="declined"){const lines=e.lines.filter(l=>l.sec==="Service"||l.sec==="Add-ons");const sub=lines.reduce((a,l)=>a+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*jobTax(j)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}if(!((j.inv||{}).kind==="invoice"&&c&&(c.items||[]).length))return e;
   const inAudit=new Set(c.items.map(i=>i.k)),done=new Set(c.items.filter(i=>i.status==="done").map(i=>i.k));
   const lines=e.lines.filter(l=>l.sec==="Service"||!inAudit.has(lineKey(l))||done.has(lineKey(l)));
@@ -2680,6 +2722,7 @@ function makeSupaDb(){
     const c=custOf(j);
     if(lastEmail[id]!==undefined&&lastEmail[id]!==c.customer_email){await sb.from("reports").update({customer_email:c.customer_email,customer_name:c.customer_name,address:c.address}).eq("job_id",id)}
     lastEmail[id]=c.customer_email;
+    if(!(j.inv&&j.inv.no)&&j.estDoc&&j.estDoc.no){const e=buildEstimate(j);const {error}=await sb.from("invoices").upsert(Object.assign({job_id:id,no:j.estDoc.no,kind:"estimate",status:j.estDoc.sentAt?"estimate":"draft",total:e.total,html:estDocHtml(j),updated_at:new Date().toISOString()},c));if(error)throw sbErr(error)}
     if(j.inv&&j.inv.no){const e=invoiceEstimate(j);
       const isInv=j.inv.kind==="invoice";const row=Object.assign({job_id:id,no:j.inv.no,kind:j.inv.kind||"estimate",status:isInv?invState(j):"estimate",total:isInv?invTotal(j):e.total,html:invoiceHtml(j),updated_at:new Date().toISOString()},c);
       const extra=isInv?{balance:invBalance(j),paid_total:invPaid(j),due_date:invDue(j)||null,pay_online:!!(S.pricing||{})._payOnline}:{};
@@ -3037,7 +3080,7 @@ async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_emai
 async function loadPortal(){
   const [r,i]=await Promise.all([sb.from("reports").select("*").order("issued_at",{ascending:false}),sb.from("invoices").select("job_id,no,kind,status,total,balance,pay_online,customer_name,address,updated_at").then(x=>x.error?sb.from("invoices").select("job_id,no,kind,status,total,customer_name,address,updated_at"):x)]);
   const by={};(r.data||[]).forEach(x=>{(by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.issued_at}).reports.push(x)});
-  (i.data||[]).filter(x=>!(x.kind==="invoice"&&x.status==="draft")).forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
+  (i.data||[]).filter(x=>x.status!=="draft").forEach(x=>{const g=by[x.job_id]=by[x.job_id]||{job:x.job_id,reports:[],inv:null,name:x.customer_name,address:x.address,at:x.updated_at};g.inv=x});
   S.portal.list=Object.values(by).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   try{const {data}=await sb.from("customer_responses").select("*").order("created_at",{ascending:false});S.portal.resp=data||[]}catch(e){S.portal.resp=[]}
   if(S.me&&S.me.custId){try{const {data}=await sb.from("customers").select("data").eq("id",S.me.custId).maybeSingle();if(data&&data.data)S.portal.cust=data.data}catch(e){}}
@@ -3049,6 +3092,7 @@ function portalOptions(g,r){const o=r.options;const resp=(S.portal.resp||[]).fin
   if(resp&&!S.portal.changing)return `<div class="presp ${resp.choice==="decline"?"":"ok"}"><b>${resp.choice==="decline"?"You chose: Not right now":"You approved "+esc(CHOICE_L[resp.choice])}</b> on ${esc(fmt(resp.created_at))}.<div class="small">${resp.choice==="decline"?"No problem. The report stays here if you change your mind.":"Thank you! We'll contact you to schedule the work."}</div><button class="linkbtn" data-pchange="1">Change my answer</button></div>`;
   const tile=(cls,title,sub,t,choice,btn)=>`<div class="totblk ${cls}"><div class="tbh"><span>${title}</span><span class="small muted">${sub}</span></div><div><span>Subtotal</span><span>${money(t.sub)}</span></div>${t.disc?`<div><span>Discount</span><span>−${money(t.disc)}</span></div>`:""}${o.rate?`<div><span>Tax (${o.rate}%)</span><span>${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span>${money(t.total)}</span></div>${choice?`<button class="btn sm" style="margin-top:6px" data-presp="${choice}|${esc(r.id)}|${esc(g.job)}|${r.rev}">${btn}</button>`:""}</div>`;
   return `<div class="pchoose"><div class="eyebrow" style="margin-top:8px">Your options</div><div class="totals3">${tile("tb-r",`${tlDot("r")} ${o.rec?"Option 1: ":""}Fix now only`,"Stops damage and water loss. Includes the service call.",o.fix,"fix",o.rec?"Approve Option 1":"Approve")}${o.rec?tile("tb-y",`${tlDot("y")} Recommended items`,"Included in Option 2.",o.rec,null)+tile("tb-all","Option 2: All work","Fix now + Recommended.",o.all,"all","Approve Option 2"):""}</div>
+    ${o.credit?`<p class="small diagnote">The ${money(o.credit)} diagnostic fee is credited toward the work when you approve it. If you decide not to go ahead, only the diagnostic fee is due.</p>`:""}
     <div class="row" style="margin-top:6px"><button class="btn quiet sm" data-presp="decline|${esc(r.id)}|${esc(g.job)}|${r.rev}">Not right now</button><span class="small muted">Approving tells us to schedule the work. We'll confirm with you first.</span></div></div>`}
 function portalCustCard(){const c=S.portal.cust||{};const g=(S.portal.list||[])[0]||{};const name=c.customer||g.name||(S.me.name||"");if(!name&&!c.address&&!g.address)return "";
   const tel=String(c.phone||"").replace(/[^\d+]/g,"");
@@ -3096,6 +3140,7 @@ app.addEventListener("input",ev=>{
   if(t.dataset.price!=null){S.pricing[t.dataset.price]=t.value;savePricing();return}
   if(t.dataset.docket){S.docketDate=t.value;rr();return}
   if(t.dataset.acctyear){S.acctYear=t.value;rr();return}
+  if(t.dataset.diagcredit){const j=job();if(j){j.est.diagCredit=t.checked;scheduleSave(S.cur);rr()}return}
   if(t.dataset.cmp&&S.compose){S.compose[t.dataset.cmp]=t.value;const box=t.closest(".compbox");if(box){const m=S.compose,enc=encodeURIComponent;const g=box.querySelector('[data-cmpsent="gmail"]'),ml=box.querySelector('[data-cmpsent="mail"]');if(g)g.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;if(ml)ml.href=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`}return}
   if(t.dataset.cf&&S.custEdit){S.custEdit[t.dataset.cf]=t.value;custLive();return}
   const p=t.dataset.f;if(!p||!job())return;
@@ -3201,6 +3246,7 @@ app.addEventListener("click",ev=>{
   if(d.remcompose){const [ck,rid]=d.remcompose.split("|");const c=customers().find(x=>x.key===ck);if(!c)return;const r=custSchedule(c).find(x=>x.id===rid);if(!r)return;S.compose=Object.assign(reminderMsg(c,r),{title:r.label+" reminder",onSent:{ck,rid}});render();return}
   if(d.compclose){S.compose=null;render();return}
   if(d.cmpcopy&&S.compose){const m=S.compose;const txt=`To: ${m.to}\nSubject: ${m.subj}\n\n${m.body}`;(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Message copied")).catch(()=>toast("Couldn't copy. Select the text and copy it."));return}
+  if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.est){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.est];if(jj&&jj.estDoc){jj.estDoc.sentAt=Date.now();estLog(jj,`Emailed to ${jj.info.email||"customer"}`);scheduleSave(o.est)}render();toast("Marked as sent");return}
   if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.inv){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.inv];if(jj){if(o.kind==="send"){jj.inv.sentAt=Date.now();jj.inv.amount=invLive(jj);invLog(jj,`Emailed to ${jj.info.email||"customer"} (${money(jj.inv.amount)})`)}else{jj.inv.reminded=Date.now();invLog(jj,"Payment reminder emailed")}scheduleSave(o.inv)}render();toast("Marked as sent");return}
   if(d.cmpdone&&S.compose){const o=S.compose.onSent;S.compose=null;if(o){const c=customers().find(x=>x.key===o.ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[o.rid]:Date.now()});scheduleSave(lj.id)}}render();toast("Marked as sent");return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
@@ -3245,7 +3291,7 @@ app.addEventListener("click",ev=>{
   if(d.satopen){satOpen();return}
   if(d.mkreport){render();window.scrollTo(0,0);return}
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
-  if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else printDoc(invoiceHtml(j));return}
+  if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else if(d.print==="estimate")printDoc(estDocHtml(j));else printDoc(invoiceHtml(j));return}
   if(d.ohmband){const [cid,z,v]=d.ohmband.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmBand=Object.assign({},c.ohmBand||{},{[z]:v});scheduleSave(S.cur);rr()}return}
   if(d.ohmfix){const [cid,z,k]=d.ohmfix.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmFix=Object.assign({},c.ohmFix||{},{[z]:k});scheduleSave(S.cur);rr()}return}
   if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
@@ -3277,13 +3323,20 @@ app.addEventListener("click",ev=>{
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
-  if(d.mkinv){j.inv=Object.assign({kind:"estimate"},j.inv||{});j.inv.no=invNo();j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
+  if(d.mkinv){j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=invNo();j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
   if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
   if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
     const online=(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
     const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
     S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
+  if(d.diag){j.est.trip=d.diag==="on";if(d.diag==="off"){j.est.waivedAt=Date.now();j.est.waivedBy=(S.me||{}).name||""}scheduleSave(S.cur);rr();return}
+  if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
+  if(d.estmark){j.estDoc.sentAt=Date.now();estLog(j,"Marked as sent");scheduleSave(S.cur);rr();return}
+  if(d.estanswer){j.outcome=d.estanswer;estLog(j,"Customer "+(d.estanswer==="approved"?"approved":"declined")+" the estimate");scheduleSave(S.cur);rr();toast(d.estanswer==="approved"?"Approved. The job moves to Work.":"Marked declined.");return}
+  if(d.estcopy){const txt=invoiceText(estJob(j));try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
+  if(d.estsend){const b=bizInfo();const first=(j.info.customer||"").split(" ")[0]||"there";const e=buildEstimate(j);
+    S.compose={title:"Email estimate",to:j.info.email||"",subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} comes to ${money(e.total)}.\n\nYou can also view it by signing in at ${payLink()} with this email address.\n\nReply to this email or call ${b.phone||"us"} to approve it or with any questions.\n\nThank you,\n${b.name||""}\n${b.phone||""}`,onSent:{est:S.cur},sentNote:"Sent it? This marks the estimate as sent."};render();return}
   if(d.invupd){j.inv.amount=invLive(j);invLog(j,`Invoice updated to ${money(j.inv.amount)}`);scheduleSave(S.cur);rr();return}
   if(d.invreopen){invLog(j,`Reopened (was ${INV_ST[invState(j)][0]})`);j.inv.status="";scheduleSave(S.cur);rr();return}
   if(d.payadd){const amt=r2(String(document.getElementById("pay-amt").value).replace(/[$,]/g,""));if(!(amt>0)){toast("Enter the amount paid");return}
