@@ -927,6 +927,13 @@ async function acctExport(kind){const Y=S.acctYear||acctYears()[0];const a=acctR
   sheet("Free estimates",["Date","Customer","Address","Diagnostic fee waived","Waived by","Job"],a.waived.map(w=>[w.date,w.customer,w.address,w.value,w.by,w.job]),[11,20,30,14,14,18]);
   sheet("Customers",["Customer #","Customer","Address","Property","Invoices","Invoiced","Paid","Balance"],a.custs.map(c=>[c.custNo,c.customer,c.address,c.prop,c.count,c.invoiced,c.paid,c.balance]),[10,20,30,12,9,12,12,12]);
   const out=X.write(wb,{bookType:"xlsx",type:"array"});dlFile(`${biz}-year-end-${Y}.xlsx`,new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));toast("Year-end package saved")}
+async function dataBackup(){toast("Preparing backup…");const out={app:"Sprinkler Wrangler",made:new Date().toISOString(),by:(S.me||{}).email||"",version:1,tables:{},errors:{}};
+  if(sb){const T=[["jobs","id,data,customer_email,updated_at"],["customers","id,data,updated_at"],["settings","key,data,updated_at"],["invoices","job_id,no,kind,status,total,balance,paid_total,due_date,pay_online,customer_email,customer_name,address,updated_at"],["payments","*"],["reports","id,job_id,rev,total,issued_at,issued_by,customer_email,customer_name,address,options"],["customer_responses","*"],["profiles","id,email,name,role,is_admin,is_chief,approved,cust_id,created_at"],["staff_emails","*"]];
+    for(const [t,cols] of T){try{let all=[],from=0;for(;;){const {data,error}=await sb.from(t).select(cols).range(from,from+999);if(error)throw error;all=all.concat(data||[]);if(!data||data.length<1000)break;from+=1000}out.tables[t]=all}catch(e){out.errors[t]=String((e&&e.message)||e)}}}
+  else{out.tables.jobs=Object.values(S.jobs);out.tables.customers=Object.values(S.custs);out.tables.settings=[{key:"pricing",data:{prices:S.pricing}}]}
+  const n=Object.entries(out.tables).map(([k,v])=>`${v.length} ${k}`).join(", ");
+  dlFile(`Sprinkler-Wrangler-data-backup-${today()}.json`,JSON.stringify(out,null,1),"application/json");
+  S.pricing._lastBackup=String(Date.now());savePricing();toast("Backup saved: "+n+(Object.keys(out.errors).length?" (some tables skipped)":""))}
 function invSettingsCard(){const adm=isAdmin();const on=!!(S.pricing||{})._payOnline;
   return `<div class="card"><h2>Invoices & payments</h2>
   <label class="f"><span>Default payment terms</span><select data-price="_invTerms" ${adm?"":"disabled"}>${INV_TERMS.map(x=>`<option value="${x[0]}" ${defTerms()===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></label>
@@ -1009,7 +1016,8 @@ function pricesView(){
   ${secd("brands","Brands &amp; ratings","Quality grades for brands and product lines",brandsCard(),"nohead")}
   ${secd("invpay","Invoices &amp; payments","Payment terms and online payments (Stripe)",invSettingsCard(),"nohead")}
   ${secd("ohm","Wire reading ranges","Ohm cut-offs for zone wire readings",ohmRangesCard(),"nohead")}
-  ${secd("terms","Terms of Service","Wording customers agree to at sign-up",termsCard(),"nohead")}`;
+  ${secd("terms","Terms of Service","Wording customers agree to at sign-up",termsCard(),"nohead")}
+  ${isAdmin()?secd("backup","Data backup","Download a full copy of your business data",`<div class="card"><h2>Data backup</h2><p class="small muted" style="margin:0">Downloads one file with every customer, job (all inspection details, estimates, approvals and signatures), invoice, payment, report record, customer response and your settings and prices, read straight from the database. Save it to Google Drive. Do this weekly, and always before big changes. Photos and the printed report pages stay in Supabase and aren't included.</p><div><button class="btn" data-backup="1">Download data backup</button></div>${S.pricing._lastBackup?`<p class="small muted" style="margin:0">Last backup: ${esc(fmtDT(+S.pricing._lastBackup))}</p>`:""}</div>`,"nohead"):""}`;
 }
 function jobView(){
   const j=job();const e=buildEstimate(j);
@@ -3277,6 +3285,7 @@ app.addEventListener("click",ev=>{
   const t=ev.target.closest("button,a[data-open],a[data-cust],a[data-remsent],a[data-cmpsent]");if(!t)return;const d=t.dataset;const j=job();
   if(d.arm!=null){if(S.armed===d.arm){S.armed=null;doRemove(d.arm)}else{S.armed=d.arm;clearTimeout(S.armT);S.armT=setTimeout(()=>{S.armed=null;rr()},4000)}rr();return}
   S.armed=null;
+  if(d.backup){dataBackup();return}
   if(d.invfilter){S.invFilter=d.invfilter;rr();return}
   if(d.acctx){acctExport(d.acctx);return}
   if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
