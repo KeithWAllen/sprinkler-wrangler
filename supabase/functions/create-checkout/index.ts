@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
 
     const f = new URLSearchParams();
     f.set("mode", "payment");
-    f.append("payment_method_types[]", "card");
-    f.append("payment_method_types[]", "us_bank_account");
+    // No payment_method_types: Stripe offers whatever methods are already turned on in the
+    // account's own payment settings (card, ACH, wallets...). Nothing in Stripe needs changing.
     f.set("line_items[0][quantity]", "1");
     f.set("line_items[0][price_data][currency]", "usd");
     f.set("line_items[0][price_data][unit_amount]", String(cents));
