@@ -777,7 +777,7 @@ function buildEstimate(j){
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit!=="none")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
       if(c.present==="no"&&(k==="iso"||k==="mv")){if(c.noneAction!=="none")add(sec,p+"_install",1);return}
       if(c.present!=="yes")return;
@@ -2501,7 +2501,7 @@ function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0
       <ul class="talk small"><li><b>RPZ is required</b> if chemicals or fertilizer are injected into the system, if the property has a septic system (on-site sewage facility), or if there's another health hazard (30 TAC §344.51).</li><li><b>PVB</b> must sit at least 12 inches above the highest sprinkler head or pipe downstream, with no backpressure.</li><li><b>Double check (DCVA)</b> is allowed when there's no health hazard and the city doesn't prohibit it.</li></ul>
       ${seg("Is there an isolation valve (shut-off for the sprinklers only)?",`mainline.${mi}.iso.present`,[["yes","Yes"],["no","No"]])}
       ${m.iso&&m.iso.present==="no"?`<p class="small" style="margin:0">An isolation valve is required when work is done at the meter or upstream of the backflow (30 TAC §344.64(c)), so its install is included in the estimate below.</p>`:""}
-      <div class="q"><span class="ql">City permit & inspection</span><div class="chips"><button class="chip" data-bfpermit="required" data-bfm="${mi}" aria-pressed="${m.bf.permit!=="none"}">Required here</button><button class="chip" data-bfpermit="none" data-bfm="${mi}" aria-pressed="${m.bf.permit==="none"}">Not required in this city</button></div></div>
+      <div class="q"><span class="ql">City permit & inspection</span><div class="chips"><button class="chip" data-bfpermit="required" data-bfm="${mi}" aria-pressed="${m.bf.permit==="required"}">Required here</button><button class="chip" data-bfpermit="none" data-bfm="${mi}" aria-pressed="${m.bf.permit==="none"}">Not required in this city</button></div></div>
       <p class="small muted" style="margin:0">Most Texas cities and water utilities require a permit and inspection for a new backflow preventer. Check with the city or water utility for this address.</p>
       <p class="small" style="margin:0"><b>Testing:</b> a licensed backflow tester must test it when it's installed, and the results go to the water utility within 10 business days (30 TAC §344.52(c)).</p></div>
     <div class="combo"><h4>3 · Backflow estimate</h4>
@@ -2510,12 +2510,12 @@ function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0
 
       <p class="small muted" style="margin:0">Plus the diagnostic fee for today's visit. Prices come from your price sheet (Admin settings). The permit fee varies by city.</p>
       ${j.completion&&j.completion.confirm?`<div class="note ok small"><b>${esc(j.completion.confirm.name)} approved ${j.completion.confirm.acc} item${j.completion.confirm.acc===1?"":"s"}</b> on ${esc(fmtDT(j.completion.confirm.at))} (${money(j.completion.confirm.total)}). Schedule the install.</div>`:""}
-      <div class="row"><button class="btn" data-cvopen="1">Go over it with the customer (customer view)</button><button class="btn ghost" data-bfdecline="1">Customer declined</button></div></div>
+      ${(()=>{const miss=[!typ&&"backflow type",!(m.iso&&m.iso.present)&&"isolation valve",!m.bf.permit&&"city permit"].filter(Boolean);return `${miss.length?`<p class="small" style="margin:0"><b>Answer first:</b> ${miss.join(", ")} (section 2).</p>`:""}<div class="row"><button class="btn" data-cvopen="1" ${miss.length?"disabled":""}>Go over it with the customer (customer view)</button><button class="btn ghost" data-bfdecline="1">Customer declined</button></div>`})()}</div>
     <div class="combo"><h4>4 · After it's installed</h4>
       ${step("installed","Backflow preventer installed",typ?esc(typ)+", at least 12 in. clearance for testing":"Install per manufacturer, with clearance for testing")}
       ${step("tested","Tested by a licensed backflow tester","Tester name and license # go on the test report")}
       ${step("sent","Test results sent to the water utility","Within 10 business days (30 TAC §344.52(c))")}
-      ${m.bf.permit==="none"?"":step("inspected","City permit closed / inspection passed","Keep the permit number on file")}
+      ${m.bf.permit==="required"?step("inspected","City permit closed / inspection passed","Keep the permit number on file"):""}
       <div><button class="btn" data-bfresume="1">Resume the audit</button></div>
       <p class="small muted" style="margin:0">Resuming unlocks Controllers, Zones and Map, and records the new backflow preventer on the Mainline tab.</p></div>
     <div class="row small"><span class="spacer muted">Mistake?</span><button class="btn quiet sm" data-bffound="1">Found one after all</button><button class="btn quiet sm" data-bfelse="1">Protection is elsewhere</button></div></div>`}
