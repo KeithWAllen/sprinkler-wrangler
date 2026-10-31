@@ -531,6 +531,9 @@ const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
 /* ---------------- state ---------------- */
 const S={jobs:{},custs:{},pricing:{},cur:null,tab:"mainline",home:"jobs",mode:"loading",ro:false,
   mapTool:"select",mapHide:{},mapSel:null,drawLine:null,bg:{},docketDate:today(),showTech:false,armed:null,filter:"open"};
+/* Refresh keeps you on the same screen: the current job + tab (or home list) live in the page address (#job=…&tab=…). */
+(function(){try{const h=new URLSearchParams(location.hash.slice(1));if(h.get("job")){S.cur=h.get("job");S.tab=h.get("tab")||"mainline";if(h.get("zone"))S.zoneOpen=h.get("zone")}else if(h.get("home"))S.home=S.restoredHome=h.get("home")}catch(e){}})();
+function saveView(){if(S.mode!=="db"&&S.mode!=="local")return;try{const h=S.cur?`#job=${encodeURIComponent(S.cur)}&tab=${encodeURIComponent(S.tab||"mainline")}${S.zoneOpen&&S.tab==="zones"?"&zone="+encodeURIComponent(S.zoneOpen):""}`:`#home=${encodeURIComponent(S.home||"jobs")}`;if(location.hash!==h)history.replaceState(null,"",location.pathname+location.search+h)}catch(e){}}
 let db=null,downloads=null;
 const saving={},dirty={},timers={};
 
@@ -857,6 +860,7 @@ function render(){
   if(S.compose&&S.mode==="db")app.insertAdjacentHTML("beforeend",composeModal());
   if(keepScroll)window.scrollTo(0,sy);
   if(S.custView)cvAfterRender();
+  saveView();
   hydratePhotos(app);
 }
 function banner(){
@@ -948,7 +952,7 @@ function invoicesView(){const jobs=Object.values(S.jobs).filter(Boolean);const i
     <div class="chips">${F.map(([k,l])=>`<button class="chip" data-invfilter="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
     ${list.length?list.map(j=>{const s0=st(j);return `<button type="button" class="invrow" data-invopen="${esc(j.id||"")}"><div class="al"><b>${esc(j.inv.no)}</b> · ${esc(j.info.customer||"")}<div class="small muted">${esc(j.info.address||"")} · ${s0==="paid"?"Paid":(j.inv.terms||defTerms())==="completion"?"Due on completion":"Due "+esc(fmtD(invDue(j)))}</div></div><div class="invamt"><b class="num">${money(s0==="paid"||s0==="void"?invTotal(j):invBalance(j))}</b>${invPill(j)}</div></button>`}).join(""):`<p class="muted small" style="margin:0">No invoices here.</p>`}</div>${isAdmin()?acctCard():""}`}
 function homeView(){
-  if(!isOffice()&&(S.home==="reminders"||S.home==="customers"||S.home==="invoices"))S.home="jobs";
+  if(S.me&&!isOffice()&&(S.home==="reminders"||S.home==="customers"||S.home==="invoices"))S.home="jobs";
   if(S.home==="invoices"&&!homeView._imp){homeView._imp=1;setTimeout(()=>{homeView._imp=0;importStripePayments()},50)}
   const tabs=[...(isOffice()?[["customers","Customers"]]:[]),["jobs","Jobs"],...(isOffice()?[["invoices","Invoices"]]:[]),...(isOffice()?[["reminders","Reminders"]]:[]),["docket","Dispatch docket"],...(SHOW_UPSELLS?[["upsells","Upgrades"]]:[])];
   let body="";
@@ -2902,7 +2906,7 @@ async function afterSignIn(session){
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
   S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||"",approved:!!p.approved,custId:p.cust_id||""};
-  if(p.role==="tech"){S.home=S.me.admin?"customers":"jobs";startDb(makeSupaDb());checkLocalImport()}
+  if(p.role==="tech"){S.home=S.restoredHome||(S.me.admin?"customers":"jobs");S.restoredHome=null;startDb(makeSupaDb());checkLocalImport()}
   else if(p.approved||SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
   else{S.mode="auth";S.auth=Object.assign(S.auth,{step:"waiting",busy:false,err:"",msg:""});render()}
 }
