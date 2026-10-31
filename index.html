@@ -275,6 +275,18 @@ body.training .bar{color:#fff}
 .hints{display:grid;gap:6px}.hint{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem;border-left:3px solid var(--warn);padding-left:8px}.hint span{flex:1;min-width:160px}
 .chip.zo-short,.chip.zo-float,.chip.zo-open{background:#D23B32;border-color:#D23B32;color:#fff}.chip.zo-high{background:#E8860C;border-color:#E8860C;color:#fff}
 .chip.zc-yes{border-color:var(--good)}.chip.zc-no{border-color:var(--bad)}
+.stagebar{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:8px 10px;margin-bottom:10px}
+.stagehead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.stages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.stg>button,.stg>div{all:unset;box-sizing:border-box;display:grid;justify-items:center;text-align:center;gap:2px;width:100%;padding:4px 2px;border-radius:8px;cursor:pointer}
+.stg>div{cursor:default}.stg>button:focus-visible{outline:2px solid var(--accent)}
+.sdot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.8rem;border:2px solid var(--line);color:var(--muted);background:var(--bg)}
+.sl{font-size:.72rem;font-weight:700;line-height:1.1}.ss{font-size:.64rem;color:var(--muted);line-height:1.1;min-height:.7rem}
+.stg.done .sdot{background:var(--good,#2E9E5B);border-color:var(--good,#2E9E5B);color:#fff}
+.stg.skip .sdot{background:var(--line);color:var(--muted)}
+.stg.now .sdot{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}.stg.now .sl{color:var(--accent)}
+.stg.warn .sdot{border-color:#E8860C;background:#E8860C;color:#fff}.stg.warn .ss{color:#C46F06;font-weight:700}
+@media (max-width:480px){.sl{font-size:.62rem}.ss{display:none}.sdot{width:22px;height:22px}}
 .guide{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
 .gprog{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}.gprog span{display:block;height:100%;background:var(--accent);border-radius:999px}
 .tabok{color:var(--good);font-weight:800;margin-right:4px}
@@ -791,6 +803,26 @@ function stepRow(label,path,pk,unit){const q=num(getP(job(),path));
   return `<div class="act ${q>0?"on":""}"><div class="al">${esc(label)}${unit&&unit!=="each"?`<div class="ap">per ${esc(unit)}</div>`:""}</div>
   <div class="step"><button type="button" data-step="${path}" data-d="-1" aria-label="Less">−</button><input type="number" inputmode="numeric" id="f-${path}" data-f="${path}" data-num="1" value="${q||""}" placeholder="0" aria-label="${esc(label)} quantity"><button type="button" data-step="${path}" data-d="1" aria-label="More">+</button></div></div>`}
 function statusLabel(st){return {Waiting:"Waiting to hear",Declined:"Audit only"}[st]||st}
+/* One status for the whole job, everywhere: the work status until an invoice is sent, then the invoice status. */
+function jobPhase(j){const ist=typeof invState==="function"?invState(j):"";if(ist&&ist!=="draft"){const x=INV_ST[ist];return {label:ist==="sent"?"Invoiced":x[0],cls:x[1]}}
+  const st=jobStatus(j);const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Waiting:"warn",Approved:"ok",Declined:"neutral",Completed:"ok"};
+  return {label:st==="Completed"||(st==="Declined"&&(j.revs||[]).length)?(statusLabel(st)+(ist==="draft"?" · invoice draft":" · to invoice")):statusLabel(st),cls:m[st]||"neutral"}}
+function phasePill(j){const p=jobPhase(j);return `<span class="pill ${p.cls}">${esc(p.label)}</span>`}
+/* Stage bar shown at the top of every job, on every tab */
+function jobStages(j){const revs=j.revs||[];const last=revs[revs.length-1];const cur=currentRev(j);const o=j.outcome;const inv=j.inv||{};const ist=invState(j);const steps=jobSteps(j);
+  const inspDone=steps.slice(0,3).every(x=>x.done)||revs.length>0;const started=jobStatus(j)!=="Scheduled";
+  const S0=[
+    {k:"sched",l:"Booked",done:true,sub:j.info.date?fmtD(j.info.date):"",tab:null},
+    {k:"insp",l:"Inspect",done:inspDone,sub:inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
+    {k:"report",l:"Report",done:!!revs.length,warn:revs.length&&!cur,sub:revs.length?("Rev "+revNo(last.n)+(cur?"":" · changed")):"Not issued",tab:"report"},
+    {k:"decide",l:"Approval",done:o==="approved"||o==="declined",sub:o==="approved"?"Approved":o==="declined"?"Audit only":o==="waiting"?"Waiting":"No answer",tab:"completion"},
+    {k:"work",l:"Work",done:o==="declined"||!!(o==="approved"&&j.completion&&j.completion.issuedAt),skip:o==="declined",sub:o==="declined"?"Not hired":o==="approved"?(j.completion&&j.completion.issuedAt?"Completed":"In progress"):"",tab:"completion"},
+    {k:"inv",l:"Invoice",done:!!ist&&ist!=="draft",warn:ist==="pastdue",sub:ist?INV_ST[ist][0]:"Not created",tab:"invoice"},
+    {k:"paid",l:"Paid",done:ist==="paid",sub:ist==="paid"?money(invPaid(j)):ist==="partial"||ist==="pastdue"||ist==="sent"?money(invBalance(j))+" due":"",tab:"invoice"}];
+  return S0}
+function stageBar(j){const st=jobStages(j);const curI=st.findIndex(x=>!x.done);const ph=jobPhase(j);
+  return `<nav class="stagebar" aria-label="Job status"><div class="stagehead"><span class="small muted">Job status</span> <span class="pill ${ph.cls}">${esc(ph.label)}</span></div>
+  <ol class="stages">${st.map((x,i)=>{const state=x.done?(x.skip?"skip":"done"):i===curI?"now":"todo";return `<li class="stg ${state} ${x.warn?"warn":""}">${x.tab?`<button type="button" data-tab="${x.tab}">`:"<div>"}<span class="sdot">${x.done?(x.skip?"–":"✓"):i+1}</span><span class="sl">${esc(x.l)}</span><span class="ss">${esc(x.sub||"")}</span>${x.tab?"</button>":"</div>"}</li>`}).join("")}</ol></nav>`}
 function pillFor(status){const m={Scheduled:"neutral","In progress":"warn",Audited:"warn",Waiting:"warn",Approved:"ok",Declined:"neutral",Completed:"ok"};const label=statusLabel(status);return `<span class="pill ${m[status]||"neutral"}">${esc(label)}</span>`}
 function delBtn(id,label){const armed=S.armed===id;return `<button type="button" class="btn danger sm ${armed?"armed":""}" data-arm="${esc(id)}">${armed?"Tap again to remove":label||"Remove"}</button>`}
 
@@ -914,7 +946,7 @@ function jobsList(){
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
     return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
     <div class="who"><strong>${jobNoTag(j)} ${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
-    <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${pillFor(j.info.status)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
+    <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${phasePill(j)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">No open jobs. Switch to All to see completed work.</p>`}</div>`;
 }
 function docketView(){
   const day=Object.values(S.jobs).filter(myJob).filter(j=>j.info.date===S.docketDate).sort((a,b)=>(a.info.window||"").localeCompare(b.info.window||""));
@@ -968,9 +1000,9 @@ function jobView(){
   if(S.tab==="dispatch")S.tab="mainline";
   const v={score:scoreTab,map:mapTab,mainline:mainlineTab,controllers:controllersTab,zones:zonesTab,estimate:estimateTab,report:reportTab,upsells:upsellsTab,invoice:invoiceTab,completion:completionTab}[S.tab]();
   return `<div class="top"><header class="bar"><div class="wrap"><button class="iconbtn" data-back="1" aria-label="Back to jobs">‹ Jobs</button>
-    <div style="flex:1;min-width:0"><div class="sub">${jobTitle(j)?esc(jobTitle(j))+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(statusLabel(j.info.status))}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
+    <div style="flex:1;min-width:0"><div class="sub">${jobTitle(j)?esc(jobTitle(j))+" · ":""}${j.info.propType==="commercial"?"Commercial":"Residential"} · ${esc(jobPhase(j).label)}${(j.revs||[]).length?" · "+(currentRev(j)?"Rev "+revNo(currentRev(j).n):"Changed since Rev "+revNo(j.revs[j.revs.length-1].n)):""}</div><h1>${esc(j.info.customer||("Job · "+(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"new")))}</h1></div>${jobMenu(j)}${acctChip()}</div></header>
   <nav class="tabs"><div class="inner">${(()=>{const dn={};jobSteps(j).forEach(s=>dn[s.k]=s.done);return tabs.map(([k,l,c])=>{const st=k in dn?(dn[k]?"done":"need"):"";return `<button class="tab ${st?"tab-"+st:""}" data-tab="${k}" aria-current="${S.tab===k}">${st==="done"?'<span class="tabok" aria-label="complete">✓</span>':st==="need"?'<span class="tabdot" aria-label="needs details"></span>':""}${l}${c?`<span class="ct">${c}</span>`:""}</button>`}).join("")})()}</div></nav></div>
-  <div class="wrap"><main>${banner()}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
+  <div class="wrap"><main>${banner()}${stageBar(j)}${custBar(j)}${v}${guideBar(j)}</main></div>${need.length?photoModal(need[0],need.length):""}`;
 }
 const REQ=[["info.customer","Customer name"],["info.address","Street address"],["info.city","City"]];
 function missingCustomer(j){const m=REQ.filter(([p])=>!String(getP(j,p)||"").trim()).map(r=>r[1]);if(!String(j.info.phone||"").trim()&&!String(j.info.email||"").trim())m.push("Phone or email");if(SHOW_JOB_TERMS&&!j.info.termsAgreed)m.push("Terms of Service agreement");return m}
@@ -2182,7 +2214,7 @@ function customersView(){if(S.custEdit)return custForm();const cs=customers();
     <div class="row" style="margin-top:10px"><button class="btn" data-newcust="1">+ New customer</button></div></div>
   ${cs.length?`<div class="jobs">${cs.map(c=>{const nx=custSchedule(c)[0];const open=c.lastAudit?openItems(c.lastAudit).length:0;
     return `<button class="job" data-cust="${esc(c.key)}" style="grid-template-columns:1fr auto"><div class="who"><strong>${esc(c.name)}${c.rec&&c.rec.custNo?` <span class="small muted">Customer ${esc(c.rec.custNo)}</span>`:""}</strong><span>${esc(c.address||"No address")}</span><span>${c.jobs.length?`${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"No jobs yet"}${c.lastAudit?" · last audit "+esc(new Date(latestAudit(c.lastAudit).at).toLocaleDateString("en-US")):""}</span></div>
-      ${c.jobs.length?`<div class="custjobs">${c.jobs.slice(0,4).map(j=>`<span>${jobNoTag(j)} ${esc(statusLabel(j.info.status))}</span>`).join("")}${c.jobs.length>4?`<span class="muted">+${c.jobs.length-4} more</span>`:""}</div>`:""}
+      ${c.jobs.length?`<div class="custjobs">${c.jobs.slice(0,4).map(j=>`<span>${jobNoTag(j)} ${esc(jobPhase(j).label)}</span>`).join("")}${c.jobs.length>4?`<span class="muted">+${c.jobs.length-4} more</span>`:""}</div>`:""}
       <div class="amt">${open?`<span class="pill warn">${open} open</span>`:""}${nx?`<span class="small muted">${esc(nx.label)}: ${esc(dueLabel(nx.due))}</span>`:""}</div></button>`}).join("")}</div>`
     :`<div class="card empty"><h2>No customers yet</h2><p class="muted">Tap New customer to add the first one.</p></div>`}${nocustCard}`}
 function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{controllers:[],mainline:[],zones:[]};const eq=l?equipmentRows(sysJob):[];const sched=custSchedule(c);const open=c.lastAudit?openItems(c.lastAudit):[];
@@ -2197,7 +2229,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
   <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
   ${isChief()?`<div class="card sunk"><div class="row"><div class="spacer small muted">${c.jobs.length?`Deletes this customer and their ${c.jobs.length} job${c.jobs.length===1?"":"s"} (reports and invoices included) for everyone. It can't be undone.`:"Deletes this customer for everyone. It can't be undone."}</div>${delBtn("cust:"+c.key.replace(/:/g,"~"),c.jobs.length?`Delete customer + ${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"Delete customer")}</div></div>`:""}
-  <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<button type="button" class="act custjob" data-open="${j.id}"><div class="al">${jobNoTag(j)}<div class="small">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</div><div class="ap">${(j.revs||[]).length?"Report Rev "+revNo(j.revs[j.revs.length-1].n):"No report yet"}${j.completion&&j.completion.issuedAt?" · completion report issued":""}</div></div>${pillFor(j.info.status)}</button>`).join("")}</div></div>`}
+  <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<button type="button" class="act custjob" data-open="${j.id}"><div class="al">${jobNoTag(j)}<div class="small">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</div><div class="ap">${(j.revs||[]).length?"Report Rev "+revNo(j.revs[j.revs.length-1].n):"No report yet"}${j.completion&&j.completion.issuedAt?" · completion report issued":""}</div></div>${phasePill(j)}</button>`).join("")}</div></div>`}
 /* New job for a returning customer: contact info plus their system, without old findings */
 function startJobFrom(c){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);saveCust(rec);c.jobs.forEach(j=>{j.custId=rec.id;scheduleSave(j.id)})}
   const src=c.jobs.find(j=>(j.controllers||[]).length)||c.jobs[0];const nj=newJob();nj.custId=rec.id;
