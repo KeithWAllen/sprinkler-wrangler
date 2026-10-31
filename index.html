@@ -355,7 +355,13 @@ table.dgridt{table-layout:fixed;width:100%}
 .diagnote{margin:6px 0 0;padding:6px 8px;border-left:3px solid var(--accent);background:var(--accent-soft)}
 .cvwrap{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding:max(12px,env(safe-area-inset-top)) 12px 24px}
 .cvinner{max-width:760px;margin:0 auto;display:grid;gap:10px}.cvtop{align-items:flex-start}
-.cvgrp{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}.cvgh{display:flex;align-items:center;gap:6px;font-weight:800;padding:8px 12px;border-bottom:1px solid var(--line)}
+.cvgrp{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.cvgh{display:flex;align-items:center;gap:10px;padding:12px 14px}.cvgt{font-weight:900;font-size:1.15rem;letter-spacing:.02em}.cvgb{font-size:.85rem;opacity:.95}.cvgs{text-align:right;display:grid;gap:4px;justify-items:end}.cvgs .num{font-weight:900;font-size:1.1rem}
+.cvallbtn{border:2px solid currentColor;background:transparent;color:inherit;border-radius:999px;padding:4px 12px;font-weight:800;cursor:pointer}
+.cvg-r{border:3px solid #D23B32;box-shadow:0 2px 10px rgba(210,59,50,.18)}.cvg-r .cvgh{background:#D23B32;color:#fff}.cvg-r .cvrow{border-left:6px solid #D23B32}
+.cvg-y{border:2px dashed #E0A800}.cvg-y .cvgh{background:#FFF4CC;color:#5C4600}.cvg-y .cvrow{border-left:6px solid #E0A800}
+.cvwarn{grid-column:1/-1;color:#B3261E;font-weight:700;font-size:.85rem}
+.cvdiv{display:flex;align-items:center;gap:10px;color:var(--muted);font-weight:800;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin:6px 0}.cvdiv:before,.cvdiv:after{content:"";flex:1;border-top:2px solid var(--line)}
 .cvrow{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 12px;border-bottom:1px dashed var(--line)}.cvrow:last-child{border-bottom:0}
 .cvrow.accept{background:color-mix(in srgb,#2E9E5B 10%,transparent)}.cvrow.decline{background:color-mix(in srgb,var(--muted) 10%,transparent)}.cvrow.decline .cvl b{text-decoration:line-through;color:var(--muted)}
 .cvp{font-weight:800;align-self:center}.cvbtns{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -842,7 +848,7 @@ function delBtn(id,label){const armed=S.armed===id;return `<button type="button"
 
 /* ---------------- views ---------------- */
 function render(){
-  const app=document.getElementById("app");
+  const app=document.getElementById("app");{const w=document.querySelector(".cvwrap");if(w)S.cvScroll=w.scrollTop}
   const sy=window.scrollY;const keepScroll=render.keep;render.keep=false;
   app.innerHTML=S.mode==="auth"?authView():S.mode==="portal"?portalView():S.mode==="error"?`<div class="authwrap"><div class="authcard"><h2>Can't connect</h2><p>${esc(S.err)}</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`:S.cur&&job()?jobView():homeView();
   if(S.compose&&S.mode==="db")app.insertAdjacentHTML("beforeend",composeModal());
@@ -2417,15 +2423,16 @@ function walkCard(j){const c=j.completion;const cf=c&&c.confirm;const und=c?c.it
     <div class="row"><button class="btn" data-cvopen="1" ${c&&c.items.length?"":"disabled"}>${cf?"Open customer view again":"Open customer view"}</button></div>
     ${cf&&cf.sig?`<details class="small"><summary>Signature</summary><img src="${cf.sig}" alt="Customer signature" style="max-width:280px;background:#fff;border:1px solid var(--line);border-radius:8px"></details>`:""}</div>`}
 function custViewHtml(j){const c=j.completion;if(!c)return "";const b=bizInfo();const t=cvTotals(j);const done=S.cvDone;
-  const grp=(k,title)=>{const its=c.items.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!its.length)return "";
-    return `<div class="cvgrp"><div class="cvgh">${tlDot(k)} ${title}<span class="spacer"></span><button class="linkbtn" data-cvall="${k}|accept">Accept all</button></div>${its.map(([i,ix])=>`<div class="cvrow ${i.cust}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
-      <div class="cvbtns"><button type="button" class="cvb acc" data-cvpick="${ix}|accept" aria-pressed="${i.cust==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-cvpick="${ix}|decline" aria-pressed="${i.cust==="decline"}">✕ Decline</button></div></div>`).join("")}</div>`};
+  const grp=(k,title)=>{const its=c.items.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!its.length)return "";const tot=its.reduce((a,[i])=>a+num(i.total),0);
+    const blurb=k==="r"?"Needed now to stop damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
+    return `<div class="cvgrp cvg-${k}"><div class="cvgh"><div style="flex:1;min-width:0"><div class="cvgt">${k==="r"?"⚠ ":""}${title}</div><div class="cvgb">${blurb}</div></div><div class="cvgs"><div class="num">${money(tot)}</div><button class="cvallbtn" data-cvall="${k}|accept">Accept all</button></div></div>${its.map(([i,ix])=>`<div class="cvrow ${i.cust}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
+      <div class="cvbtns"><button type="button" class="cvb acc" data-cvpick="${ix}|accept" aria-pressed="${i.cust==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-cvpick="${ix}|decline" aria-pressed="${i.cust==="decline"}">✕ Decline</button></div>${k==="r"&&i.cust==="decline"?`<div class="cvwarn">⚠ Declining this leaves a problem that can cause damage, water waste or a code issue.</div>`:""}</div>`).join("")}</div>`};
   const left=c.items.filter(i=>!i.cust).length;
   return `<div class="cvwrap" role="dialog" aria-modal="true" aria-label="Customer view"><div class="cvinner">
     <div class="row cvtop"><div style="flex:1"><div class="eyebrow">${esc(b.name||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(j.info.customer||"")} · ${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div></div><button class="btn quiet sm" data-cvexit="1">Technician: exit</button></div>
     ${done?`<div class="card" style="text-align:center"><h2>Thank you, ${esc((c.confirm||{}).name||"")}!</h2><p>Your choices are saved: ${t.acc.length} item${t.acc.length===1?"":"s"} approved, total ${money(t.total)}.</p><p class="small muted">Please hand the phone back to your technician.</p><button class="btn" data-cvexit="1">Hand back to technician</button></div>`:`
     <p class="small" style="margin:6px 0 10px">Tap <b>Accept</b> or <b>Decline</b> for each item. Red items stop damage or water loss; yellow items are recommended.</p>
-    ${grp("r","Fix now")}${grp("y","Recommended")}
+    ${grp("r","FIX NOW")}${c.items.some(i=>i.c==="y")&&c.items.some(i=>i.c==="r")?`<div class="cvdiv"><span>Optional</span></div>`:""}${grp("y","Recommended")}
     <div class="cvsum"><div><span>Accepted work</span><span class="num">${money(t.work)}</span></div>${t.fee?`<div><span>Diagnostic fee</span><span class="num">${money(t.fee)}</span></div>`:""}${t.credit?`<div><span>Diagnostic fee credited</span><span class="num">−${money(t.credit)}</span></div>`:""}${t.tax?`<div><span>Tax</span><span class="num">${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span class="num">${money(t.total)}</span></div>
       ${t.fee&&!t.acc.length?`<p class="small" style="margin:4px 0 0">With nothing accepted, only the ${money(t.fee)} diagnostic fee is due.</p>`:""}</div>
     <div class="cvsign"><label class="f"><span>Your full name</span><input type="text" id="cv-name" autocomplete="name" value="${esc(S.cvName||j.info.customer||"")}"></label>
@@ -2434,7 +2441,7 @@ function custViewHtml(j){const c=j.completion;if(!c)return "";const b=bizInfo();
       <button class="btn" data-cvconfirm="1">${left?`Decide ${left} more item${left===1?"":"s"} first`:"Confirm my choices"}</button></div>`}
   </div></div>`}
 /* Signature pad: drawn strokes are kept in S.cvSig so screen redraws never lose them */
-function cvAfterRender(){const cv=document.getElementById("cv-sig");const nm=document.getElementById("cv-name");if(nm&&S.cvName!=null)nm.value=S.cvName;if(!cv||!S.cvSig)return;const im=new Image();im.onload=()=>cv.getContext("2d").drawImage(im,0,0);im.src=S.cvSig}
+function cvAfterRender(){const w=document.querySelector(".cvwrap");if(w&&S.cvScroll)w.scrollTop=S.cvScroll;const cv=document.getElementById("cv-sig");const nm=document.getElementById("cv-name");if(nm&&S.cvName!=null)nm.value=S.cvName;if(!cv||!S.cvSig)return;const im=new Image();im.onload=()=>cv.getContext("2d").drawImage(im,0,0);im.src=S.cvSig}
 function cvRestore(){}
 function sigInit(){}
 (function(){let down=false,last=null,cv=null;const pt=e=>{const r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
@@ -3384,7 +3391,7 @@ app.addEventListener("click",ev=>{
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
     S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:j.info.email||"",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
   if(d.diag){j.est.trip=d.diag==="on";if(d.diag==="off"){j.est.waivedAt=Date.now();j.est.waivedBy=(S.me||{}).name||""}scheduleSave(S.cur);rr();return}
-  if(d.cvopen){syncCompletion(j);S.custView=true;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
+  if(d.cvopen){syncCompletion(j);S.custView=true;S.cvScroll=0;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
   if(d.cvexit){S.custView=false;S.cvDone=false;render();return}
   if(d.cvpick){const [ix,v]=d.cvpick.split("|");const it=j.completion.items[+ix];it.cust=it.cust===v?"":v;scheduleSave(S.cur);render.keep=true;render();return}
   if(d.cvall){const [k,v]=d.cvall.split("|");j.completion.items.forEach(i=>{if(i.c===k)i.cust=v});scheduleSave(S.cur);render.keep=true;render();return}
