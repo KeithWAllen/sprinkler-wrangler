@@ -319,6 +319,7 @@ details.lines{margin:0 0 6px 12px;border-left:2px solid var(--line);padding-left
 .totals3{display:grid;gap:10px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.totblk{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;break-inside:avoid}.totblk>div:not(.tbh){display:flex;justify-content:space-between;gap:10px}.totblk .tbh{font-weight:800;margin-bottom:4px;display:grid;gap:2px}.totblk .tbh .small{font-weight:400}.totblk .grand{font-weight:800;border-top:1px solid var(--line);padding-top:4px}.tb-r{border-left:4px solid var(--tl-r)}.tb-y{border-left:4px solid var(--tl-y)}.tb-all{border-left:4px solid var(--accent)}
 .jobno{display:inline-block;font-family:var(--mono,monospace);font-size:.8em;font-weight:700;background:var(--accent);color:var(--accent-ink,#fff);border-radius:6px;padding:1px 6px;margin-right:2px;vertical-align:1px}.custjobs{display:grid;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-size:.85rem;grid-column:1/-1}
 button.custjob{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer;padding:8px 0}button.custjob:hover{background:var(--sunk,rgba(0,0,0,.03))}
+details.pfam{border-bottom:1px dashed var(--line)}details.pfam>summary{list-style:none;cursor:pointer;padding:10px 0;display:flex;align-items:center;gap:8px}details.pfam>summary::-webkit-details-marker{display:none}details.pfam>summary .al{flex:1;display:grid;gap:2px}details.pfam>summary::after{content:"▸";color:var(--muted);font-size:1.1rem;padding:0 6px}details.pfam[open]>summary::after{content:"▾"}details.pfam .ap{font-size:.78rem;color:var(--muted);font-weight:400}details.pfam .pfsizes{padding:0 0 8px 14px;border-left:3px solid var(--line);margin-left:4px}
 details.admsec{padding:0}details.admsec>summary{list-style:none;cursor:pointer;padding:14px 16px;display:grid;gap:2px}details.admsec>summary::-webkit-details-marker{display:none}details.admsec>summary .admt{font-family:var(--display);font-size:1.25rem;font-weight:700}details.admsec>summary .admt::after{content:" ▸";color:var(--muted)}details.admsec[open]>summary .admt::after{content:" ▾"}.admbody{padding:0 16px 14px}.admbody>.card{box-shadow:none;border:0;padding:0;margin:0 0 12px}.admbody .card .card{box-shadow:none}details.nohead .admbody>.card>h2:first-child,details.nohead .admbody>.card>.cardhead>h2{display:none}
 .bellbtn{position:relative;background:none;border:1.5px solid rgba(255,255,255,.55);color:inherit;border-radius:999px;width:42px;height:42px;display:grid;place-items:center;cursor:pointer;margin-right:6px}.bellct{position:absolute;top:-4px;right:-4px;background:#d93a2f;color:#fff;border-radius:999px;font-size:11px;font-weight:800;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border:2px solid var(--accent)}.notifs{min-width:290px;max-width:min(360px,92vw)}.notif{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .presp{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:10px 12px;margin-top:8px}.presp.ok{border-left-color:var(--tl-g)}
@@ -421,9 +422,22 @@ const OTHER_ACTS={
   drip:[["drip_repair","Repair dripline"],["drip_replace","Replace dripline (ft)"],["drip_new","Run new dripline (ft)"],["drip_ind","Add indicator"],["drip_flush","Add flush valve"],["drip_retro","Retrofit zone to drip"]],
   cap:[["cap","Heads to cap"]]
 };
+/* Sized parts (Bradley): anything with "valve" in its name, and backflow preventers, are priced per size.
+   Each size is its own price key, <family>_<size code>, grouped under one expandable row on the Price sheet.
+   A price saved under the old single key (e.g. "prv_replace") carries over to every size until that size gets its own. */
+const VSIZES=[["05",'1/2"'],["075",'3/4"'],["1",'1"'],["125",'1 1/4"'],["15",'1 1/2"'],["2",'2"']];
+const VSIZE_MULT={"05":.85,"075":.9,"1":1,"125":1.2,"15":1.35,"2":1.6};
+function sizeCode(v){const t=String(v||"").toLowerCase().replace(/inch(es)?|in\b|["”″'\s-]/g,"");
+  return {"1/2":"05",".5":"05","0.5":"05","3/4":"075",".75":"075","0.75":"075","1":"1","11/4":"125","1.25":"125","11/2":"15","1.5":"15","2":"2"}[t]||""}
+function sizeLabel(c){const x=VSIZES.find(v=>v[0]===c);return x?x[1]:""}
+const SIZED_FAMS={};
+const BF_TYPES=[["pvb","PVB"],["dcva","DCVA"],["rpz","RPZ"]];
 /* Texas sample rates — compiled from DFW/Texas published repair ranges; edit on the Price sheet */
 const PRICE_DEFAULTS=(()=>{
   const P={};const add=(k,g,l,u,p,m)=>P[k]={g,l,u,p,m:!!m};
+  /* fam(family, group, name, unit, 1" price or a price per size, material?, old single key, sizes offered) */
+  const fam=(f,g,base,u,pr,m,legacy,codes)=>{codes=codes||VSIZES.map(v=>v[0]);SIZED_FAMS[f]={g,base,u,codes};
+    codes.forEach((c,i)=>P[`${f}_${c}`]={g,l:`${base}, ${sizeLabel(c)}`,u,p:Array.isArray(pr)?pr[i]:Math.round(pr*VSIZE_MULT[c]/5)*5,m:!!m,fam:f,sz:c,legacy:typeof legacy==="function"?legacy(c):legacy})};
   add("trip","Service","Diagnostic fee (service call)","each",85);
   add("map_pkg","Add-ons","Property map package (as-built irrigation map)","each",150);
   add("labor_hour","Service","Additional labor","hour",80);
@@ -452,10 +466,9 @@ const PRICE_DEFAULTS=(()=>{
   add("drip_ind","Drip","Drip indicator","each",20,1);
   add("drip_flush","Drip","Drip flush valve","each",35,1);
   add("drip_retro","Drip","Drip retrofit kit (per zone)","zone",295,1);
-  add("valve_1","Valves","Replace 1\" zone valve","each",165,1);
-  add("valve_15","Valves","Replace 1.5\" zone valve","each",210,1);
-  add("valve_2","Valves","Replace 2\" zone valve","each",260,1);
-  add("valve_rebuild","Valves","Rebuild valve (diaphragm)","each",95,1);
+  fam("zv_replace","Valves","Replace zone valve","each",[145,155,165,190,210,260],1,c=>c==="2"?"valve_2":c==="125"||c==="15"?"valve_15":"valve_1");
+  fam("zv_rebuild","Valves","Rebuild zone valve (diaphragm)","each",95,1,"valve_rebuild");
+  fam("zv_scrub","Valves","Replace with scrubber valve","each",[195,245,295],1,"",["1","15","2"]);
   add("valve_sol","Valves","Replace solenoid","each",75,1);
   add("valve_locate","Valves","Locate buried valve","each",95);
   add("lat_repair","Pipe","Lateral line break repair","each",125,1);
@@ -464,21 +477,22 @@ const PRICE_DEFAULTS=(()=>{
   add("add_head","Pipe","Add head","each",65,1);
   add("add_ft","Pipe","Trench & pipe to new head","ft",8,1);
   add("main_repair","Mainline","Mainline leak repair","each",325,1);
-  add("bf_repair","Mainline","Backflow preventer repair","each",190,1);
-  add("bf_replace","Mainline","Replace backflow preventer","each",395,1);
+  BF_TYPES.forEach(([t,T],i)=>{fam(`bf_repair_${t}`,"Mainline",`Repair ${T} backflow preventer`,"each",[190,230,275][i],1,"bf_repair");
+    fam(`bf_replace_${t}`,"Mainline",`Replace ${T} backflow preventer`,"each",[395,495,650][i],1,"bf_replace")});
   add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
   add("bf_test","Mainline","Backflow test (certified tester)","each",95,0);
   add("bf_permit","Mainline","City permit & inspection (backflow install)","each",75,0);
   add("bf_install","Mainline","Install backflow preventer (none present)","each",450,1);
-  add("prv_repair","Mainline","PRV repair","each",110,1);
-  add("prv_replace","Mainline","Replace PRV","each",325,1);
-  add("iso_repair","Mainline","Isolation valve repair","each",75,1);
-  add("iso_replace","Mainline","Replace isolation valve","each",165,1);
-  add("mv_repair","Mainline","Master valve repair","each",95,1);
-  add("mv_replace","Mainline","Replace master valve","each",245,1);
-  add("mv_relocate","Mainline","Relocate master valve downstream of backflow (code)","each",225,1);
-  add("mv_install","Mainline","Install master valve","each",295,1);
-  add("iso_install","Mainline","Install isolation valve","each",185,1);
+  fam("prv_repair","Mainline","Repair pressure reducing valve (PRV)","each",110,1,"prv_repair");
+  fam("prv_replace","Mainline","Replace pressure reducing valve (PRV)","each",325,1,"prv_replace");
+  fam("prv_install","Mainline","Install pressure reducing valve (PRV)","each",375,1);
+  fam("iso_repair","Mainline","Repair isolation valve","each",75,1,"iso_repair");
+  fam("iso_replace","Mainline","Replace isolation valve","each",165,1,"iso_replace");
+  fam("iso_install","Mainline","Install isolation valve","each",185,1,"iso_install");
+  fam("mv_repair","Mainline","Repair master valve","each",95,1,"mv_repair");
+  fam("mv_replace","Mainline","Replace master valve","each",245,1,"mv_replace");
+  fam("mv_relocate","Mainline","Relocate master valve downstream of backflow (code)","each",225,1,"mv_relocate");
+  fam("mv_install","Mainline","Install master valve","each",295,1,"mv_install");
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
   add("ctl_program","Controller","Reprogram controller schedule","each",45,0);
@@ -552,7 +566,15 @@ function getP(o,p){return p.split(".").reduce((a,k)=>a==null?undefined:a[k],o)}
 function setP(o,p,v){const ks=p.split(".");let a=o;for(let i=0;i<ks.length-1;i++){const k=ks[i];if(a[k]==null)a[k]=/^\d+$/.test(ks[i+1])?[]:{};a=a[k]}a[ks[ks.length-1]]=v}
 function money(n){return "$"+(Math.round(n*100)/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n}
-function basePrice(k){const d=PRICE_DEFAULTS[k];if(!d)return 0;const o=S.pricing[k];return o==null||o===""?d.p:num(o)}
+function basePrice(k){const d=PRICE_DEFAULTS[k];if(!d)return 0;let o=S.pricing[k];if((o==null||o==="")&&d.legacy)o=S.pricing[d.legacy];return o==null||o===""?d.p:num(o)}
+function famOf(k){return (PRICE_DEFAULTS[k]||{}).fam||""}
+/* Price key for a sized part. A size the family doesn't offer uses the nearest one; no size uses 1". */
+function sizedKey(f,size){const F=SIZED_FAMS[f];const want=sizeCode(size);let c=want;
+  if(!c||!F.codes.includes(c)){const wi=want?VSIZES.findIndex(v=>v[0]===want):2;c=F.codes.slice().sort((a,b)=>{const ai=VSIZES.findIndex(v=>v[0]===a),bi=VSIZES.findIndex(v=>v[0]===b);return Math.abs(ai-wi)-Math.abs(bi-wi)||bi-ai})[0]}
+  return {k:`${f}_${c}`,code:c,given:want,exact:!!want&&want===c}}
+/* Backflow type → price family. SVB and atmospheric are priced like a PVB. */
+function bfFam(a,type){const t=String(type||"").toUpperCase();const x=BF_TYPES.find(b=>b[1]===t);return `bf_${a}_${x?x[0]:"pvb"}`}
+function bfTypeShown(type){return String(type||"").trim()}
 function commPct(){const v=S.pricing._commercial;return v==null||v===""?25:num(v)}
 function price(k,j){j=j||job();const b=basePrice(k);return j&&j.info&&j.info.propType==="commercial"?Math.round(b*(1+commPct()/100)*100)/100:b}
 function job(){return S.jobs[S.cur]}
@@ -591,7 +613,7 @@ function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.i
 function comp(){return {present:"",pos:"",size:"",type:"",condition:"",action:"none"}}
 /* Backflow test is due when there's no tag/record, or the last test is over 12 months old */
 function bfTestDue(m){const bf=m.bf||{};if(bf.present!=="yes")return false;if(bf.testRec==="unknown")return true;if(bf.testRec==="tag"&&bf.lastTest){return addMonths(new Date(bf.lastTest+"T12:00"),12)<new Date()}return false}
-function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},notes:""}}
+function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},custom:[],notes:""}}
 function newController(n){return {id:uid("c"),name:"Controller "+String.fromCharCode(64+(n||1)),brand:"",model:"",location:"",wiring:"conventional",modular:"no",modules:[],rain:"",zones:5,power:"yes",powerIssue:"",programs:[{id:uid("p"),name:"A",starts:"",days:[],seasonal:100,runtimes:{}}],ohms:{},overcurrent:"",ocZones:"",badDecoders:"",act:{},notes:""}}
 function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
   return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
@@ -742,12 +764,14 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
-  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{}});
+  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{};m.custom=m.custom||[]});
   if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
-  j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
+  j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};{const c=sizeCode(z.valve.size);if(c)z.valve.size=sizeLabel(c)}z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
   return j}
 function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
+/* No PRV / isolation / master valve found: isolation and master default to "Install one"; a PRV is only added when the tech picks it. */
+function compInstall(k,c){return k==="prv"?c.noneAction==="install":c.noneAction!=="none"}
 function hasLeak(m){return (m.meters||[]).some(x=>x.flow==="yes"&&x.side==="irrigation")}
 /* Ohm bands (Bradley): under 24 short · 24–60 normal · 61–90 high → valve rebuild · over 90 floating common · OL/infinite open.
    Team can correct the cut-offs; stored with the price sheet settings. */
@@ -776,20 +800,25 @@ function buildEstimate(j){
   /* identical lines (same zone/section, item and price) merge into one line with the combined quantity,
      e.g. spray nozzles entered per head size, so every line on the estimate is unique */
   const push=x=>{const o=L.find(y=>y.sec===x.sec&&y.key===x.key&&y.label===x.label&&y.price===x.price);if(o){o.qty+=x.qty;o.total=o.price*o.qty}else L.push(x)};
-  const add=(sec,key,qty,note)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);push({sec,key,label:d.l+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
+  const add=(sec,key,qty,note,lbl)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);push({sec,key,label:(lbl||d.l)+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
+  /* sized part: with no size entered the line shows just the part name (priced as 1") until the tech picks one */
+  const addS=(sec,f,size,qty,note,base)=>{const r=sizedKey(f,size);const F=SIZED_FAMS[f];add(sec,r.k,qty,note,`${base||F.base}${r.given?", "+sizeLabel(r.code):""}`)};
+  const addBf=(sec,a,bf)=>{const f=bfFam(a,bf.type);const t=bfTypeShown(bf.type);const known=BF_TYPES.some(x=>x[1]===t.toUpperCase());
+    addS(sec,f,bf.size,1,"",known?"":`${a==="repair"?"Repair":"Replace"} ${t?t+" ":""}backflow preventer`)};
   const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
   if(j.est.trip!==false)add("Service","trip",1);
   (j.mainline||[]).forEach(m=>{
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair")add(sec,"bf_repair",1);if(a==="replace")add(sec,"bf_replace",1);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
-      if(c.present==="no"&&(k==="iso"||k==="mv")){if(c.noneAction!=="none")add(sec,p+"_install",1);return}
+      if(c.present==="no"){if(compInstall(k,c))addS(sec,p+"_install",c.newSize,1);return}
       if(c.present!=="yes")return;
-      if(k==="mv"&&c.pos==="upstream")add(sec,"mv_relocate",1);
+      if(k==="mv"&&c.pos==="upstream")addS(sec,"mv_relocate",c.size,1);
       if(k==="prv"&&c.pos==="upstream")return;
-      if(c.action==="repair")add(sec,p+"_repair",1);if(c.action==="replace")add(sec,p+"_replace",1)});
+      if(c.action==="repair")addS(sec,p+"_repair",c.size,1);if(c.action==="replace")addS(sec,p+"_replace",c.size,1)});
+    (m.custom||[]).forEach(x=>addC(sec,x.desc,x.qty||1,x.price));
   });
   (j.controllers||[]).forEach(c=>{
     const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
@@ -807,8 +836,8 @@ function buildEstimate(j){
       const k=headPriceKey(t,s,a);const d=PRICE_DEFAULTS[k];if(d&&(a==="raise"||a==="lower"))add(sec,k,q,`${s}" ${t==="mp"?"MP":t}`);else add(sec,k,q)}}
     for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))for(const [k] of OTHER_ACTS[t])add(sec,k,z.acts[k]);
     const v=z.valve||{};
-    if(v.action==="replace")add(sec,v.size==="2\""?"valve_2":v.size==="1.5\""?"valve_15":"valve_1",1);
-    if(v.action==="rebuild")add(sec,"valve_rebuild",1);if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
+    if(v.action==="replace")addS(sec,"zv_replace",v.size,1);
+    if(v.action==="rebuild")addS(sec,"zv_rebuild",v.size,1);if(v.action==="scrub")addS(sec,"zv_scrub",v.size,1);if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
     (z.laterals||[]).forEach(b=>{add(sec,"lat_repair",1,b.size);const ft=num(b.ft)-3;if(ft>0)add(sec,"lat_ft",ft);if(b.tree==="yes")add(sec,"lat_tree",1)});
     (z.adds||[]).forEach(h=>{add(sec,"add_head",1,`${h.size}" ${h.type==="mp"?"MP":h.type}`);add(sec,"add_ft",h.ft)});
     (z.custom||[]).forEach(c=>addC(sec,c.desc,c.qty,c.price));
@@ -1064,6 +1093,16 @@ function docketView(){
   <div class="card"><div class="cardhead gridhead"><h2>Load docket</h2><span class="muted small colcount">${rows.length} item${rows.length===1?"":"s"}${rows.length?(n=>` · ${n} piece${n===1?"":"s"}`)(rows.reduce((t,r)=>t+(r.unit==="each"||r.unit==="zone"?r.qty:0),0)):""}</span></div><p class="small muted" style="margin:0 0 6px">What to load on the truck for this day's jobs.</p>
   ${rows.length?`<div class="tbl"><table class="dgridt"><colgroup><col style="width:58%"><col style="width:22%"><col style="width:20%"></colgroup><thead><tr><th>Part / material</th><th>Qty</th><th>For</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td>${r.qty}${showU(r.unit)?" "+esc(r.unit):""}</td><td class="small muted">${esc([...r.jobs].join(", "))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Parts show up here once the day's jobs have repairs marked.</p>`}</div>`;
 }
+/* One price row. Sized parts show just the size, inside their part's expandable row. */
+function priceRow(k,d,lbl){const eff=basePrice(k);const changed=eff!==d.p;
+  return `<div class="act"><div class="al">${esc(lbl||d.l)}<div class="ap">${lbl?"":`per ${esc(d.u)} · `}${changed?`sample ${money(d.p)} · `:""}commercial ${money(eff*(1+commPct()/100))}</div></div>
+    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${esc(S.pricing[k]!=null&&S.pricing[k]!==""?S.pricing[k]:eff)}" aria-label="${esc(d.l)} price"></label></div>`}
+function priceRows(list){const out=[];const seen=new Set();
+  list.forEach(([k,d])=>{if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam))return;seen.add(d.fam);
+    const F=SIZED_FAMS[d.fam];const ks=F.codes.map(c=>`${d.fam}_${c}`);const ps=ks.map(basePrice);const lo=Math.min(...ps),hi=Math.max(...ps);
+    out.push(`<details class="pfam" data-pfam="${d.fam}" ${(S.famOpen||{})[d.fam]?"open":""}><summary><span class="al">${esc(F.base)}<span class="ap">per ${esc(F.u)} · ${F.codes.length} sizes · ${lo===hi?money(lo):money(lo)+"–"+money(hi)}</span></span></summary>
+      <div class="pfsizes">${ks.map((k2,i)=>priceRow(k2,PRICE_DEFAULTS[k2],sizeLabel(F.codes[i]))).join("")}</div></details>`)});
+  return out.join("")}
 function pricesView(){
   if(!canSettings())return `<div class="card"><p class="muted">Admin settings are only available to admins.</p></div>`;
   const groups={};for(const [k,d] of Object.entries(PRICE_DEFAULTS))(groups[d.g]=groups[d.g]||[]).push([k,d]);
@@ -1071,9 +1110,7 @@ function pricesView(){
   return `<p class="small muted" style="margin:0 0 4px">Company-wide settings. Only admins see this page. Tap a section to open it.</p>
   ${secd("biz","Business &amp; license","Name, address and irrigator license printed on estimates and invoices",`<div class="card"><h2>Business & license</h2><p class="small muted" style="margin:0">Printed on every estimate and invoice, as Texas requires, with the TCEQ notice.</p>${bizFields()}</div>`,"nohead")}
   ${secd("prices","Prices","Every repair rate (residential)",`  <div class="note info">Rates below are residential. Starting rates are Texas sample prices drawn from published DFW repair ranges (service calls ~$65–100, solenoids $55–95, valve replacement $125–200, lateral breaks $85–175, mainline breaks $200–450, backflow replacement $225–450). Set your own and every estimate updates.</div>
-  ${GROUP_ORDER.filter(g=>groups[g]).map(g=>`<div class="card"><h2>${esc(g)}</h2><div class="acts">${groups[g].map(([k,d])=>{const v=S.pricing[k];const changed=v!=null&&v!==""&&num(v)!==d.p;
-    return `<div class="act"><div class="al">${esc(d.l)}<div class="ap">per ${esc(d.u)}${changed?` · sample ${money(d.p)}`:""} · commercial ${money(basePrice(k)*(1+commPct()/100))}</div></div>
-    <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${v!=null&&v!==""?esc(v):d.p}" aria-label="${esc(d.l)} price"></label></div>`}).join("")}</div></div>`).join("")}
+  ${GROUP_ORDER.filter(g=>groups[g]).map(g=>`<div class="card"><h2>${esc(g)}</h2><div class="acts">${priceRows(groups[g])}</div></div>`).join("")}
   ${isAdmin()?`<div class="card"><div class="row"><div class="spacer muted small">Undo every change on this sheet.</div>${delBtn("resetprices","Reset to sample rates")}</div></div>`:""}`)}
   ${secd("tax","Tax &amp; markup","Sales tax rate and commercial markup",`  <div class="card"><h2>Sales tax</h2><div class="act"><div class="al">Sales tax rate (commercial jobs only)<div class="ap">Residential jobs are flat rate with no sales tax. Commercial jobs are taxed at this rate. Jobs already started keep the rate they started with.</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-_tax" data-price="_tax" ${isAdmin()?"":"disabled"} value="${esc(taxRate())}" aria-label="Sales tax percent"></label><span class="mono">%</span></div></div>
@@ -1499,18 +1536,24 @@ function meTap(g){
 }
 
 /* ---- mainline ---- */
-const PIPE_SIZES=["3/4\"","1\"","1 1/4\"","1 1/2\"","2\""];
+const PIPE_SIZES=VSIZES.map(v=>v[1]);
+/* Reminder under a sized repair: the size sets the price. */
+function sizeHint(f,size,what){const F=SIZED_FAMS[f];const r=sizedKey(f,size);
+  if(!r.given)return `<p class="note warn small" style="margin:0">Pick the ${what||"size"}: it sets the price. Priced as ${sizeLabel(r.code)} until you do.</p>`;
+  if(!r.exact){const L=F.codes.map(sizeLabel);return `<p class="note small" style="margin:0">${sizeLabel(r.given)} isn't on the price sheet for this. It comes in ${L.slice(0,-1).join(", ")} and ${L[L.length-1]}; priced as ${sizeLabel(r.code)}.</p>`};return ""}
 function sizeSel(label,path){const v=getP(job(),path)||"";const opts=[["","Choose…"]].concat(PIPE_SIZES);if(v&&!PIPE_SIZES.includes(v))opts.push([v,v+" (as entered)"]);return sel(label,path,opts)}
 function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv=k==="mv",isPrv=k==="prv",isIso=k==="iso";
   const up=c.present==="yes"&&c.pos==="upstream";
   const brandV=brandName(c.brand,c.brandOther);
   return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
-  ${c.present==="no"&&(isIso||isMv)?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>`:""}
+  ${c.present==="no"?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":isPrv?"A pressure reducing valve keeps water pressure in a safe range, which stops misting, blowouts and broken heads and fittings.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>
+  ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize")}</div>${sizeHint(k+"_install",c.newSize)}`:""}`:""}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
   ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Upstream of the backflow (house side):</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
-  ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}`:""}</div>`;
+  ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
+  ${(c.action==="repair"||c.action==="replace")&&!(isPrv&&up)||isMv&&up?sizeHint(k+"_"+(isMv&&up?"relocate":c.action),c.size):""}`:""}</div>`;
 }
 function mainlineTab(){const j=job();
   return j.mainline.map((m,mi)=>{const b=`mainline.${mi}`;const leak=hasLeak(m);
@@ -1540,10 +1583,13 @@ function mainlineTab(){const j=job();
     ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Urgent.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
+    ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
+  <div class="combo"><h4>Custom items</h4><p class="small muted" style="margin:0">For mainline work that isn't on the price sheet, like a valve on copper or galvanized pipe instead of PVC.</p>${(m.custom||[]).map((c,ci)=>`<div class="grid3" style="align-items:end">${fld("Description",`${b}.custom.${ci}.desc`,"text",'placeholder="e.g. Install 1\" master valve on copper"')}${fld("Qty",`${b}.custom.${ci}.qty`,"number")}${fld("Price each",`${b}.custom.${ci}.price`,"number")}<div>${delBtn("mcus:"+mi+":"+ci,"Remove")}</div></div>`).join("")}
+    <div><button class="btn ghost sm" data-add="${b}.custom" data-tpl="custom">+ Add custom item</button></div></div>
   ${fld("Notes",b+".notes","textarea")}
   ${j.mainline.length>1?`<div>${delBtn("main:"+mi,"Remove this mainline")}</div>`:""}</div>`}).join("")+`<div><button class="btn ghost" data-addmain="1">+ Add another mainline</button></div>`;
 }
@@ -1822,8 +1868,9 @@ function zonesTab(){const j=job();
   ${sized.length?multi("Head sizes",b+".sizes",SIZES.map(s=>[s,s+'"'])):""}
   ${sized.length&&!z.sizes.length?`<p class="small muted">Pick the head sizes to see repair options.</p>`:""}
   ${combos}
-  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sel("Size",b+".valve.size",["","3/4\"","1\"","1.5\"","2\""])}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
-    ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["locate","Locate valve"]])}
+  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size")}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
+    ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["scrub","Scrubber valve"],["locate","Locate valve"]])}
+    ${{replace:"zv_replace",rebuild:"zv_rebuild",scrub:"zv_scrub"}[v.action]?sizeHint({replace:"zv_replace",rebuild:"zv_rebuild",scrub:"zv_scrub"}[v.action],v.size,"valve size"):""}
     ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
   <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
     <p class="small muted">A repair covers the first 3 ft; longer runs add pipe by the foot.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
@@ -1871,7 +1918,7 @@ function findings(j,tech){
     if(bf.present==="no")it.push(`<span class="flag">No backflow preventer found.</span> Texas (TCEQ) requires backflow prevention on irrigation connected to drinking water.${bf.noneAction==="note"?" Technician noted protection may be installed elsewhere.":` Under ${BF_RULE}, an approved backflow preventer must be installed before any repair that opens the mainline (mainline leaks, zone valves, master valve or pressure regulator). Repairs to heads, nozzles, lateral lines and the controller can still be done.`}`);else if(bf.size||bf.type||bf.condition||bf.brand){let s=`Backflow preventer${bf.size?" "+esc(bf.size):""}${bf.type?" "+esc(bf.type):""}${brandName(bf.brand,bf.brandOther)?" · "+esc(brandName(bf.brand,bf.brandOther)):""}${bf.model?" "+esc(bf.model):""}${bf.serial?" (serial "+esc(bf.serial)+")":""}${bf.condition?", condition "+esc(bf.condition.toLowerCase()):""}`;if(bf.insulated==="yes")s+=", insulated";it.push(s)}
     if(bf.present!=="no"&&bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
     if(bfTestDue(m))it.push(`<span class="flag">Backflow test due:</span> ${bf.testRec==="unknown"?"no test tag or record was found":"last tested "+esc(new Date(bf.lastTest+"T12:00").toLocaleDateString("en-US"))+", more than 12 months ago"}.`);
-    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&(k==="iso"||k==="mv"))it.push(`No ${l.toLowerCase()} installed.${c.noneAction!=="none"?" Installing one is recommended.":""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`);
+    [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&(k==="iso"||k==="mv"||compInstall(k,c)))it.push(`No ${l.toLowerCase()} installed.${compInstall(k,c)?` Installing ${c.newSize?"a "+esc(c.newSize)+" one":"one"} is recommended.`:""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`);
       if(c.present==="yes"&&k==="mv"&&c.pos==="upstream")it.push(`<span class="flag">Code violation:</span> the master valve is upstream of the backflow preventer. It must be downstream.`);
       if(c.present==="yes"&&k==="prv"&&c.pos==="upstream"&&c.action==="plumber")it.push("Recommended: have a licensed plumber service the pressure reducing valve (it is on the house side of the backflow).")});
     if(m.notes)it.push(esc(m.notes));
@@ -2004,8 +2051,8 @@ function suggestUpsells(j){
   if(spray.length)add("Water-efficient nozzles","Whole property",`Convert spray nozzles to MP rotators (${spray.length} zone${spray.length===1?"":"s"})`,"Slower, more even watering that cuts runoff on clay soil and uses less water.","cnoz_mp",spray.length*6);
   j.zones.filter(z=>z.types.includes("spray")&&z.sun==="partial").forEach(z=>add("Drip conversion",`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,`Convert zone ${z.num} beds to drip`,"Waters plant roots directly, ends overspray on walls and walks.","drip_retro"));
   j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.insulate!=="yes"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
-    if(m.prv.present==="no")add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.","prv_replace");
-    if(m.mv.present==="no"&&m.mv.noneAction==="none")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.","mv_install")});
+    if(m.prv.present==="no"&&!compInstall("prv",m.prv))add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.",sizedKey("prv_install",m.prv.newSize||m.bf.size).k);
+    if(m.mv.present==="no"&&m.mv.noneAction==="none")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.",sizedKey("mv_install",m.mv.newSize||m.bf.size).k)});
   add("Maintenance plan","Whole property","Seasonal maintenance plan","Spring start-up, mid-season check and winterization at a set yearly price.","",1);
   return S2;
 }
@@ -2315,7 +2362,8 @@ const HOLD_TABS=new Set(["controllers","zones","map","score"]);
 function bfHold(j){return !!(j.bfHold&&!j.bfHold.cleared&&(j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note"))}
 function bfMissing(j){return (j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note")}
 function keyOf(k){return String(k||"").split("|").slice(1).join("|")}
-function bfMajorKey(k){return BF_MAJOR.has(k)}
+const BF_MAJOR_FAMS=new Set(["zv_replace","zv_rebuild","zv_scrub","prv_repair","prv_replace","prv_install","mv_repair","mv_replace","mv_relocate","mv_install"]);
+function bfMajorKey(k){return BF_MAJOR.has(k)||BF_MAJOR_FAMS.has(famOf(k))}
 function bfInstallDone(j){const c=j.completion;return !!(c&&(c.items||[]).some(i=>keyOf(i.k)==="bf_install"&&i.status==="done"))}
 function bfBlocked(j,key){return bfMissing(j)&&bfMajorKey(key)&&!bfInstallDone(j)}
 function estOptions(j){const e=buildEstimate(j);const rate=jobTax(j)/100;const g={r:0,y:0,s:0};e.lines.forEach(l=>{const c=lineColor(j,l);g[c||"s"]+=l.total});const cr=diagCredits(j)&&e.lines.some(l=>l.key!=="trip"&&l.total>0)?diagAmt(j):0;
@@ -2726,9 +2774,10 @@ function startJobFrom(c,pid){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);s
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Urgent","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
 const RED_KEYS=new Set(["bf_permit","mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
+const RED_FAMS=/^(zv_replace|zv_rebuild|zv_scrub|mv_relocate|bf_repair_|bf_replace_)/;
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
-  if(l.key&&(RED_KEYS.has(l.key)||l.key.startsWith("rhead_")))return "r";return "y"}
+  if(l.key&&(RED_KEYS.has(l.key)||RED_FAMS.test(famOf(l.key))||l.key.startsWith("rhead_")))return "r";return "y"}
 function tlDot(c,title){return c?`<span class="tl tl-${c}" title="${esc(title||TL[c][0])}" aria-label="${esc(TL[c][0])}"></span>`:""}
 const worst=(a,b)=>{const o={r:3,y:2,g:1,"":0,n:0};return (o[a]||0)>=(o[b]||0)?a:b};
 /* section color from the recorded data plus its estimate lines */
@@ -2844,7 +2893,7 @@ function bfConfirmModal(){return `<div class="phmodal" role="dialog" aria-modal=
   <p class="small">If none is present, Texas requires one before any work that opens the mainline (${BF_RULE}). The inspection will be put <b>on hold</b> and you'll go to the <b>Status</b> tab to talk the customer through what's needed.</p>
   <div class="row"><button class="btn" data-bfyes="1">Yes, none present</button><button class="btn ghost" data-bfno="1">Cancel, keep looking</button></div></div></div>`}
 function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0,j.mainline.findIndex(m=>m.bf.present==="no"));const m=j.mainline[mi];const b=bizInfo();
-  const needIso=!(m.iso&&m.iso.present==="yes");const e=buildEstimate(j);const pk=["bf_install","bf_test","bf_permit","iso_install"];const lines=e.lines.filter(l=>pk.includes(l.key));const tot=lines.reduce((a,l)=>a+l.total,0);
+  const needIso=!(m.iso&&m.iso.present==="yes");const e=buildEstimate(j);const pk=["bf_install","bf_test","bf_permit","iso_install"];const lines=e.lines.filter(l=>pk.includes(l.key)||pk.includes(famOf(l.key)));const tot=lines.reduce((a,l)=>a+l.total,0);
   const typ=m.bf.newType||"";const step=(k,label,why)=>`<div class="act"><div class="al">${st[k]?"✓ ":""}${label}<div class="ap">${why}</div></div><button class="chip" data-bfstep="${k}|${st[k]?0:1}" aria-pressed="${!!st[k]}">${st[k]?"Done":"Mark done"}</button></div>`;
   if(h.declined)return `<div class="card"><div class="cardhead"><h2>Backflow required</h2><span class="pill neutral">Customer declined</span></div>
     <div class="note small">Recorded ${esc(fmtDT(h.declined.at))}: the customer was told a backflow preventer is required by ${BF_RULE} before mainline or valve repairs, and chose not to install one now. The report notes this. Only the diagnostic fee is billed.</div>
@@ -3659,7 +3708,7 @@ function portalView(){
 /* ---------------- events ---------------- */
 const app=document.getElementById("app");
 function rr(){render.keep=true;render()}
-app.addEventListener("toggle",ev=>{const t=ev.target;if(t.dataset&&t.dataset.admsec){S.admOpen=S.admOpen||{};S.admOpen[t.dataset.admsec]=t.open}},true);
+app.addEventListener("toggle",ev=>{const t=ev.target;if(t.dataset&&t.dataset.admsec){S.admOpen=S.admOpen||{};S.admOpen[t.dataset.admsec]=t.open}if(t.dataset&&t.dataset.pfam){S.famOpen=S.famOpen||{};S.famOpen[t.dataset.pfam]=t.open}},true);
 app.addEventListener("keydown",ev=>{const t=ev.target;if(ev.key==="Enter"&&t.dataset&&t.dataset.ctlrecin!=null){ev.preventDefault();const b=document.querySelector('[data-ctlrecadd="'+t.dataset.ctlrecin+'"]');if(b)b.click()}});
 app.addEventListener("input",ev=>{
   const t=ev.target;
@@ -3981,7 +4030,7 @@ function doRemove(key){
     S.custOpen=null;S.cur=null;S.home="customers";render();toast("Customer deleted");return}
   if(k==="job"){const jj=S.jobs[a];if(!jj||!canDeleteJob(jj))return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
-  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
+  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),mcus:()=>j.mainline[a].custom.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
     zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
     mapclear:()=>{j.map.items=[];j.map.lines=[];toast("Map cleared")},
