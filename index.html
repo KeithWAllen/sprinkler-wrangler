@@ -2100,7 +2100,12 @@ function upsellPipeline(){
 }
 
 /* ---- invoice ---- */
-function invNo(){const d=new Date();return "INV-"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
+/* Invoice / estimate numbers are tied to the job (Keith): INV-<job date>-<customer #>-<NN>, e.g. job A-110926-1096-00 → INV-110926-1096-01.
+   NN counts up so a number is never reused (a second invoice for the same job is -02). Jobs with no customer number yet: INV-110926-01, -02… */
+function jobCore(j){return jobTitle(j).replace(/^A-/,"").replace(/-\d{2,}$/,"")}
+function docNo(prefix,j){const used=new Set();Object.values(S.jobs).forEach(x=>{if(!x)return;if(x.inv&&x.inv.no)used.add(x.inv.no);if(x.estDoc&&x.estDoc.no)used.add(x.estDoc.no)});
+  const base=prefix+"-"+jobCore(j);let n=1;while(used.has(base+"-"+String(n).padStart(2,"0")))n++;return base+"-"+String(n).padStart(2,"0")}
+function invNo(j){return docNo("INV",j)}
 function invoiceHtml(j){
   return (S.training?TRAIN_STAMP:"")+invoiceHtmlReal(j);
 }
@@ -2155,7 +2160,7 @@ function invManage(j){const inv=j.inv;const st=invState(j);const tot=invTotal(j)
 /* ---------------- Customer estimate (replaces Zoho estimates) ----------------
    Lives on the Estimate tab: numbered EST-…, Draft → Sent → Approved / Declined (the job's Approval answer).
    Audit jobs also carry the same options inside the Report for online approval. */
-function estNo(){return invNo().replace(/^INV-/,"EST-")}
+function estNo(j){return docNo("EST",j)}
 function estJob(j){return Object.assign({},j,{inv:{kind:"estimate",no:(j.estDoc||{}).no,at:(j.estDoc||{}).at}})}
 function estDocHtml(j){return invoiceHtml(estJob(j))}
 function estState(j){const d=j.estDoc;if(!d||!d.no)return "";if(j.outcome==="approved")return "approved";if(j.outcome==="declined")return "declined";return d.sentAt?"sent":"draft"}
@@ -4005,7 +4010,7 @@ app.addEventListener("click",ev=>{
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
-  if(d.mkinv){j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=invNo();j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
+  if(d.mkinv){j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=invNo(j);j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
   if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
   if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
     const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
@@ -4060,7 +4065,7 @@ app.addEventListener("click",ev=>{
       if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,link:url,btn:kind==="estimate"?(currentRev(jj)?"View report & estimate":"Review & approve estimate"):(S.pricing||{})._payOnline?"View & pay invoice":"View invoice",onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
       if(how==="text"){const ph=(jj.info.phone||"").replace(/[^\d+]/g,"");markSent(jj,kind,`Link texted to ${jj.info.phone||"customer"}`,id);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(m.sms)}`;return}
       copyText(url,"Link copied. Paste it into a text or email.");markSent(jj,kind,"Link copied to send",id);rr()})();return}
-  if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
+  if(d.mkest){j.estDoc={no:estNo(j),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
   if(d.estmark){j.estDoc.sentAt=Date.now();estLog(j,"Marked as sent");scheduleSave(S.cur);rr();return}
   if(d.estanswer){j.outcome=d.estanswer;estLog(j,"Customer "+(d.estanswer==="approved"?"approved":"declined")+" the estimate");scheduleSave(S.cur);rr();toast(d.estanswer==="approved"?"Approved. The job moves to Work.":"Marked declined.");return}
   if(d.estcopy){const txt=invoiceText(estJob(j));try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
