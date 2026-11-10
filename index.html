@@ -2116,7 +2116,7 @@ function invoiceHtmlReal(j){
     <div><div class="eyebrow">Service address</div><div class="small">${esc([j.info.address,j.info.city].filter(Boolean).join(", "))}</div><div class="small">${j.info.propType==="commercial"?"Commercial":"Residential"} property</div></div></section>`)(billOn(j.info.billTo)?j.info.billTo:null)}
   <section>${inv.kind==="invoice"?estTable(e):estTableTL(j,e,false)}</section>
   ${inv.kind==="invoice"?invPaySection(j):""}
-  ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Ask us to add it.</div></div></section>`:""}
+  ${inv.kind!=="invoice"&&(j.map.items.length||j.map.lines.length)&&!mapIncluded(j)?`<section><div class="addon"><b>Optional add-on: Property map package · ${money(price("map_pkg",j))}</b><div class="small">A detailed map of your irrigation system (valves, heads and pipe routes) made on this visit. Add it by accepting it on your estimate, or ask us.</div></div></section>`:""}
   ${j.est.terms?`<section><p class="small">${esc(j.est.terms)}</p></section>`:""}
   ${j.info.termsAgreed?`<section><p class="small muted">Customer accepted the Terms of Service (version ${esc(j.info.termsVer||"1")}) on ${esc(new Date(j.info.termsAt).toLocaleDateString("en-US"))}.</p></section>`:""}
   <section><p class="small muted">${TCEQ_NOTICE}</p></section>`;
@@ -2182,7 +2182,12 @@ const EST_LINK_DAYS=30,INV_LINK_DAYS=365;
 function shareUrl(t){return location.href.split("#")[0].split("?")[0]+"#s="+t}
 function newToken(){const a=new Uint8Array(24);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
 function shareItems(j){const c=Object.assign({},j);syncCompletion(c);const bf=bfMissing(j);
-  return ((c.completion||{}).items||[]).map(i=>({k:i.k,label:i.label,sec:i.sec,c:i.c,total:r2(num(i.total)),held:!!(bf&&bfMajorKey(keyOf(i.k))),bf:keyOf(i.k)==="bf_install"}))}
+  const its=((c.completion||{}).items||[]).map(i=>({k:i.k,label:i.label,sec:i.sec,c:i.c,total:r2(num(i.total)),held:!!(bf&&bfMajorKey(keyOf(i.k))),bf:keyOf(i.k)==="bf_install"}));
+  /* Property map package: the customer can add it on the estimate page when a map was made and it isn't already sold or included. */
+  if(mapOffer(j))its.push({k:MAP_ITEM,label:PRICE_DEFAULTS.map_pkg.l,sec:"Add-ons",c:"y",total:r2(price("map_pkg",j)),held:false,bf:false});
+  return its}
+const MAP_ITEM="addon|map_pkg";
+function mapOffer(j){return !!((j.map.items||[]).length||(j.map.lines||[]).length)&&!mapIncluded(j)}
 function estFp(j){const cur=currentRev(j);return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j),cur?cur.n:null]))}
 /* The estimate link carries the audit report on top (Keith: one output, report first, estimate below).
    Audited jobs need a current report revision before the estimate can be sent. */
@@ -2236,12 +2241,14 @@ async function importShareResponses(){if(!sb||!S.me||S.me.role!=="tech"||!S.load
   try{const {data,error}=await sb.from("share_responses").select("*").eq("imported",false);if(error||!data||!data.length)return;
     for(const x of data){const j=S.jobs[x.job_id];if(!j)continue;syncCompletion(j);const c=j.completion;if(!c)continue;const pick={};(x.items||[]).forEach(p=>{if(Array.isArray(p))pick[p[0]]=p[1]});
       c.items.forEach(i=>{if(pick[i.k]==="accept"||pick[i.k]==="decline"){i.cust=pick[i.k];if(i.cust==="decline")i.status="declined";else if(i.status==="declined")i.status=""}});
-      const acc=c.items.filter(i=>i.cust==="accept").length;const at=Date.parse(x.created_at)||Date.now();
-      c.confirm={name:x.name,at,via:"online (secure link)",acc,dec:c.items.length-acc,total:r2(+x.total||0),sig:x.signature,items:c.items.map(i=>[i.k,i.cust]),ua:x.user_agent||"",ip:x.ip||"",token:x.token};
-      j.outcome=acc?"approved":"declined";c.log=c.log||[];c.log.push({at,t:`${x.name} answered online: ${acc} accepted, ${c.confirm.dec} declined (${money(c.confirm.total)})`});
+      /* Map package bought online: the map goes in the report, so the job asks for a new report revision (which then bills it). */
+      const mapAcc=pick[MAP_ITEM]==="accept"&&!mapIncluded(j);if(mapAcc)j.mapSold="sold";
+      const acc=c.items.filter(i=>i.cust==="accept").length+(mapAcc?1:0);const at=Date.parse(x.created_at)||Date.now();
+      c.confirm={name:x.name,at,via:"online (secure link)",acc,dec:c.items.length+(pick[MAP_ITEM]?1:0)-acc,map:mapAcc,total:r2(+x.total||0),sig:x.signature,items:c.items.map(i=>[i.k,i.cust]),ua:x.user_agent||"",ip:x.ip||"",token:x.token};
+      j.outcome=acc?"approved":"declined";c.log=c.log||[];c.log.push({at,t:`${x.name} answered online: ${acc} accepted, ${c.confirm.dec} declined (${money(c.confirm.total)})${mapAcc?". Added the property map package: issue a new report revision with the map":""}`});
       if(j.estDoc){if(!j.estDoc.sentAt)j.estDoc.sentAt=at;estLog(j,`${x.name} ${acc?"approved":"declined"} online and signed`)}
       if(S.shareInfo&&S.shareInfo[x.token])S.shareInfo[x.token].status="answered";
-      scheduleSave(x.job_id);toast(`${x.name} ${acc?"approved":"declined"} estimate ${(j.estDoc||{}).no||""} online`);
+      scheduleSave(x.job_id);toast(`${x.name} ${acc?"approved":"declined"} estimate ${(j.estDoc||{}).no||""} online${mapAcc?" and added the property map":""}`);
       await sb.from("share_responses").update({imported:true}).eq("id",x.id)}
     render()}catch(e){console.warn("share",e)}}
 /* ---- The public page the customer opens (no sign-in) ---- */
