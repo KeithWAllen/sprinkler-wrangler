@@ -2182,7 +2182,10 @@ function shareUrl(t){return location.href.split("#")[0].split("?")[0]+"#s="+t}
 function newToken(){const a=new Uint8Array(24);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
 function shareItems(j){const c=Object.assign({},j);syncCompletion(c);const bf=bfMissing(j);
   return ((c.completion||{}).items||[]).map(i=>({k:i.k,label:i.label,sec:i.sec,c:i.c,total:r2(num(i.total)),held:!!(bf&&bfMajorKey(keyOf(i.k))),bf:keyOf(i.k)==="bf_install"}))}
-function estFp(j){return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j)]))}
+function estFp(j){const cur=currentRev(j);return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j),cur?cur.n:null]))}
+/* The estimate link carries the inspection report on top (Keith: one output, report first, estimate below).
+   Audited jobs need a current report revision before the estimate can be sent. */
+function estNeedsRev(j){return (j.revs||[]).length>0&&!currentRev(j)}
 function shareMeta(j){const b=bizInfo();return {biz:b.name||"",phone:b.phone||"",email:b.email||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),fee:r2(diagAmt(j)),rate:jobTax(j)/100}}
 function docLink(j,kind){return kind==="estimate"?(j.estDoc||{}).link:(j.inv||{}).link}
 /* Why a link can't be reused: "" = still good */
@@ -2191,7 +2194,10 @@ function linkProblem(j,kind){const l=docLink(j,kind);if(!l)return "none";const i
   if(kind==="estimate"&&l.fp!==estFp(j))return "changed";return ""}
 async function makeLink(j,kind,id){if(!sb||S.training||S.mode!=="db"){toast(S.training?"Customer links are off in training mode":"Customer links need the online app");return null}
   const est=kind==="estimate";const token=newToken();
-  const row={token,status:"open",job_id:id,kind,doc_no:est?j.estDoc.no:j.inv.no,html:est?estDocHtml(j):invoiceHtml(j),items:est?shareItems(j):[],meta:shareMeta(j),fp:est?estFp(j):null,expires_at:new Date(Date.now()+(est?EST_LINK_DAYS:INV_LINK_DAYS)*864e5).toISOString()};
+  if(est&&estNeedsRev(j)){toast("Issue a new report revision first. The report goes out with the estimate.");return null}
+  const meta=shareMeta(j);const cur=est?currentRev(j):null;
+  if(cur){try{meta.report=await inlinePhotos(reportHtml(j,cur));meta.reportRev=revNo(cur.n)}catch(e){toast("Couldn't add the report photos: "+((e&&e.message)||e));return null}}
+  const row={token,status:"open",job_id:id,kind,doc_no:est?j.estDoc.no:j.inv.no,html:est?estDocHtml(j):invoiceHtml(j),items:est?shareItems(j):[],meta,fp:est?estFp(j):null,expires_at:new Date(Date.now()+(est?EST_LINK_DAYS:INV_LINK_DAYS)*864e5).toISOString()};
   try{await sb.from("share_links").update({status:"replaced"}).eq("job_id",id).eq("kind",kind).eq("status","open");
     const {error}=await sb.from("share_links").insert(row);if(error)throw error}
   catch(e){const msg=String((e&&e.message)||e);toast(/share_links|relation|schema cache/i.test(msg)?"Run database update 13-share-links.sql in Supabase first":"Couldn't create the link: "+msg);return null}
@@ -2203,9 +2209,9 @@ function loadShareInfo(token){if(!sb||S.mode!=="db")return;S.shareFetch=S.shareF
     const old=JSON.stringify((S.shareInfo||{})[token]||null);S.shareInfo=Object.assign({},S.shareInfo,{[token]:data});
     if(JSON.stringify(data)!==old&&!S.compose&&!S.custView){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))rr()}}).catch(()=>{})}
 function linkMsg(j,kind,url){const b=bizInfo();const bt=billOn(j.info.billTo)?j.info.billTo:null;const first=((bt&&bt.name)||j.info.customer||"").split(" ")[0]||"there";const sig=`\n\nThank you,\n${b.name||""}\n${b.phone||""}`;
-  if(kind==="estimate")return {subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,
-    body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} is ready:\n\n${url}\n\nOpen the link to see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
-    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler estimate ${j.estDoc.no} is ready to review and approve: ${url}`};
+  if(kind==="estimate"){const rp=!!currentRev(j);return {subj:`${b.name||"Estimate"}: ${rp?"inspection report and ":""}estimate ${j.estDoc.no}`,
+    body:`Hi ${first},\n\nThank you for the opportunity. Your ${rp?"sprinkler inspection report and ":""}estimate ${j.estDoc.no} for the work at ${j.info.address} ${rp?"are":"is"} ready:\n\n${url}\n\n${rp?"The report shows what we found, with photos. Below it, ":"Open the link to "}see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
+    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler ${rp?"inspection report and ":""}estimate ${j.estDoc.no} ${rp?"are":"is"} ready to review and approve: ${url}`}}
   const bal=invBalance(j);const pay=(S.pricing||{})._payOnline;const due=(j.inv.terms||defTerms())==="completion"?"due upon completion":"due by "+fmtD(invDue(j));
   return {subj:`${b.name||"Invoice"}: invoice ${j.inv.no}`,body:`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, ${due}.\n\nView${pay?" and pay":""} it here:\n${url}${sig}`,
     sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your invoice ${j.inv.no} (${money(bal)}) is ready${pay?" to view and pay":""}: ${url}`}}
@@ -2214,8 +2220,9 @@ function copyText(txt,msg){try{navigator.clipboard.writeText(txt).then(()=>toast
 function sendBox(j,kind){const l=docLink(j,kind);const prob=linkProblem(j,kind);const inf=l?(S.shareInfo||{})[l.token]:null;if(l)loadShareInfo(l.token);
   const ph=(j.info.phone||"").replace(/[^\d+]/g,"");const est=kind==="estimate";const pay=(S.pricing||{})._payOnline;
   const seen=inf&&inf.status==="answered"?`Answered ${esc(fmtDT(inf.answered_at))}`:inf&&inf.view_count?`Opened ${inf.view_count} time${inf.view_count===1?"":"s"} (first ${esc(fmtDT(inf.viewed_at))})`:"Not opened yet";
+  if(est&&estNeedsRev(j))return `<div class="combo sendbox"><h4>Send to the customer</h4><div class="note warn small" style="margin:0">The job changed after report Rev ${revNo(j.revs[j.revs.length-1].n)}. The report goes out with the estimate, so issue a new revision first. <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div></div>`;
   return `<div class="combo sendbox"><h4>Send to the customer</h4>
-    <p class="small muted" style="margin:0">${est?"They get a secure link (no account or password) where they accept or decline each item and sign with a finger.":`They get a secure link (no account or password) to view${pay?" and pay":""} the invoice.`}</p>
+    <p class="small muted" style="margin:0">${est?`They get a secure link (no account or password)${currentRev(j)?` with the inspection report (Rev ${revNo(currentRev(j).n)}) on top and the estimate below,`:""} where they accept or decline each item and sign with a finger.`:`They get a secure link (no account or password) to view${pay?" and pay":""} the invoice.`}</p>
     ${l&&!prob?`<p class="small" style="margin:0">🔗 Link made ${esc(fmtDT(l.at))} · <b>${seen}</b></p>`:""}
     ${l&&prob==="changed"?`<div class="note warn small" style="margin:0">The estimate changed after the last link was made. Sending again makes a new link; the old one now tells the customer to ask for the new one.</div>`:""}
     ${l&&prob==="expired"?`<div class="note warn small" style="margin:0">The last link expired. Sending again makes a new one.</div>`:""}
@@ -2251,21 +2258,23 @@ function shareView(){const sh=S.sh||{};const d=sh.d;const m=(d&&d.meta)||{};
   if(d.status==="replaced")return msg(`This ${what} was updated`,`${esc(m.biz||"We")} made changes after this link was sent. Please use the newest link, or ask for a new one.${contact}`);
   return wrap(d.kind==="invoice"?shareInvoice(d):shareEstimate(d,contact))}
 function shareEstimate(d,contact){const m=d.meta||{};const its=d.items||[];const p=S.sh.picks||{};const t=shTotals(d);
+  const rpt=m.report?`<div class="card"><div class="eyebrow">Inspection report${m.reportRev?" · Rev "+esc(m.reportRev):""}</div><h2 style="margin:0 0 8px">What we found</h2><article class="sheet">${m.report}</article></div>
+    <div class="cvdiv"><span>Your estimate</span></div>`:"";
   const docx=`<details class="card shdoc"><summary><b>Full estimate ${esc(d.doc_no||"")}</b> (printable)</summary><div class="row" style="margin:8px 0"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div><article class="sheet">${d.html||""}</article></details>`;
   const head=`<div class="eyebrow">Estimate ${esc(d.doc_no||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(m.customer||"")}${m.address?" · "+esc(m.address):""}</div>`;
   if(d.answer){const a=d.answer;const pk={};(a.items||[]).forEach(x=>{if(Array.isArray(x))pk[x[0]]=x[1]});const n=its.filter(i=>pk[i.k]==="accept").length;
-    return `<div class="card">${head}</div><div class="card" style="text-align:center"><h2>${S.sh.just?"Thank you":"Answered"}, ${esc(a.name)}!</h2><p>Your choices were saved on ${esc(fmtDT(a.at))}: ${n} item${n===1?"":"s"} approved, total ${money(+a.total||0)}.</p><p class="small muted">${esc(m.biz||"We")} will contact you to schedule the work.${contact} To change anything, please contact us.</p></div>
+    return `${rpt}<div class="card">${head}</div><div class="card" style="text-align:center"><h2>${S.sh.just?"Thank you":"Answered"}, ${esc(a.name)}!</h2><p>Your choices were saved on ${esc(fmtDT(a.at))}: ${n} item${n===1?"":"s"} approved, total ${money(+a.total||0)}.</p><p class="small muted">${esc(m.biz||"We")} will contact you to schedule the work.${contact} To change anything, please contact us.</p></div>
       <div class="card"><h3 style="margin-top:0">Your choices</h3>${its.map(i=>`<div class="row" style="flex-wrap:nowrap"><span class="spacer small">${pk[i.k]==="accept"?"✓":"✕"} ${esc(i.label)}</span><span class="num small">${pk[i.k]==="accept"?money(i.total):"Declined"}</span></div>`).join("")}</div>${docx}`}
   /* Fee-only estimate (no repair items): nothing to accept or sign. */
-  if(!its.length)return `<div class="card">${head}<p style="margin:8px 0 0">This estimate is just the ${money(num(m.fee))} diagnostic fee for the visit. There's nothing to approve or sign.${contact}</p></div>${docx}`;
-  if(d.status==="expired")return `<div class="card">${head}<div class="note warn small">This estimate expired on ${esc(fmtD(String(d.expires_at).slice(0,10)))}. Prices may have changed. Please ask for an updated estimate.${contact}</div></div>${docx}`;
+  if(!its.length)return `${rpt}<div class="card">${head}<p style="margin:8px 0 0">This estimate is just the ${money(num(m.fee))} diagnostic fee for the visit. There's nothing to approve or sign.${contact}</p></div>${docx}`;
+  if(d.status==="expired")return `${rpt}<div class="card">${head}<div class="note warn small">This estimate expired on ${esc(fmtD(String(d.expires_at).slice(0,10)))}. Prices may have changed. Please ask for an updated estimate.${contact}</div></div>${docx}`;
   const grp=(k,title)=>{const rows=its.map((i,ix)=>[i,ix]).filter(([i])=>i.c===k);if(!rows.length)return "";const tot=rows.reduce((a,[i])=>a+num(i.total),0);
     const blurb=k==="r"?"Should be taken care of soon to prevent damage, water loss or a code problem.":"Improvements we suggest. Optional, and can be scheduled later.";
     return `<div class="cvgrp cvg-${k}"><div class="cvgh"><div style="flex:1;min-width:0"><div class="cvgt">${k==="r"?"⚠ ":""}${title}</div><div class="cvgb">${blurb}</div></div><div class="cvgs"><div class="num">${money(tot)}</div><button class="cvallbtn" data-shall="${k}">Accept all</button></div></div>${rows.map(([i,ix])=>`<div class="cvrow ${p[ix]||""}"><div class="cvl"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div><div class="cvp num">${money(num(i.total))}</div>
       ${i.held?`<div class="cvheld">⛔ Requires the backflow preventer to be installed first (state rule).</div>`:""}
       <div class="cvbtns"><button type="button" class="cvb acc" data-shpick="${ix}|accept" aria-pressed="${p[ix]==="accept"}">✓ Accept</button><button type="button" class="cvb dec" data-shpick="${ix}|decline" aria-pressed="${p[ix]==="decline"}">✕ Decline</button></div>${k==="r"&&p[ix]==="decline"?`<div class="cvwarn">⚠ Declining this leaves a problem that can cause damage, water waste or a code issue.</div>`:""}</div>`).join("")}</div>`};
   const left=its.filter((i,ix)=>!p[ix]).length;
-  return `<div class="card">${head}<p class="small" style="margin:8px 0 0">Tap <b>Accept</b> or <b>Decline</b> for each item, then sign at the bottom. Red items are urgent; yellow items are recommended.${d.expires_at?` Prices are good until ${esc(fmtD(String(d.expires_at).slice(0,10)))}.`:""}</p></div>
+  return `${rpt}<div class="card">${head}<p class="small" style="margin:8px 0 0">${m.report?"Read the report above, then tap":"Tap"} <b>Accept</b> or <b>Decline</b> for each item, then sign at the bottom. Red items are urgent; yellow items are recommended.${d.expires_at?` Prices are good until ${esc(fmtD(String(d.expires_at).slice(0,10)))}.`:""}</p></div>
     ${grp("r","URGENT")}${its.some(i=>i.c==="y")&&its.some(i=>i.c==="r")?`<div class="cvdiv"><span>Optional</span></div>`:""}${grp("y","Recommended")}
     <div class="cvsum"><div><span>Accepted work</span><span class="num">${money(t.work)}</span></div>${t.fee?`<div><span>Diagnostic fee</span><span class="num">${money(t.fee)}</span></div>`:""}${t.tax?`<div><span>Tax</span><span class="num">${money(t.tax)}</span></div>`:""}<div class="grand"><span>Total</span><span class="num">${money(t.total)}</span></div>
       ${t.fee&&!t.acc.length?`<p class="small" style="margin:4px 0 0">With nothing accepted, only the ${money(t.fee)} diagnostic fee is due.</p>`:""}</div>
@@ -2283,7 +2292,7 @@ function shareInvoice(d){const inv=d.invoice||{};const html=inv.html||d.html||""
     <div class="row"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div></div>
     <article class="sheet card">${html}</article>`}
 async function shareClick(d){const sh=S.sh;const x=sh.d;if(!x)return;
-  if(d.shprint){printDoc(x.kind==="invoice"?((x.invoice||{}).html||x.html||""):(x.html||""));return}
+  if(d.shprint){printDoc(x.kind==="invoice"?((x.invoice||{}).html||x.html||""):(((x.meta||{}).report?x.meta.report+'<div style="page-break-before:always"></div>':"")+(x.html||"")));return}
   if(d.cvclear){const cv=document.getElementById("cv-sig");if(cv)cv.getContext("2d").clearRect(0,0,cv.width,cv.height);S.cvSig=null;return}
   if(d.shpick){const [ix,v]=d.shpick.split("|");sh.picks[ix]=sh.picks[ix]===v?"":v;rr();return}
   if(d.shall){(x.items||[]).forEach((i,ix)=>{if(i.c===d.shall)sh.picks[ix]="accept"});rr();return}
@@ -4018,7 +4027,7 @@ app.addEventListener("click",ev=>{
   if(d.appttext){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");if(!ph)return;j.info.apptTexted=Date.now();scheduleSave(S.cur);const msg=apptMsg(j);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(msg)}`;return}
   if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
     (async()=>{const url=await ensureLink(jj,kind,id);if(!url)return;const m=linkMsg(jj,kind,url);
-      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,link:url,btn:kind==="estimate"?"Review & approve estimate":(S.pricing||{})._payOnline?"View & pay invoice":"View invoice",onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
+      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,link:url,btn:kind==="estimate"?(currentRev(jj)?"View report & estimate":"Review & approve estimate"):(S.pricing||{})._payOnline?"View & pay invoice":"View invoice",onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
       if(how==="text"){const ph=(jj.info.phone||"").replace(/[^\d+]/g,"");markSent(jj,kind,`Link texted to ${jj.info.phone||"customer"}`,id);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(m.sms)}`;return}
       copyText(url,"Link copied. Paste it into a text or email.");markSent(jj,kind,"Link copied to send",id);rr()})();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
