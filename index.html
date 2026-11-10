@@ -2519,7 +2519,7 @@ function emailFrom(){return (S.pricing||{})._emailFrom||"the company Gmail"}
 function composeModal(){const m=S.compose;if(!m)return "";const enc=encodeURIComponent;
   const gmail=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;const mailto=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`;
   return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Email"><div class="phcard compbox"><div class="row" style="flex-wrap:nowrap"><h3 style="margin:0;flex:1">${esc(m.title||"Email customer")}</h3><button class="btn quiet sm" data-compclose="1">Close</button></div>
-    <label class="f"><span>To</span><input type="email" id="cmp-to" value="${esc(m.to)}" data-cmp="to"></label>
+    <label class="f"><span>To <span class="muted" style="font-weight:400">(several people: separate with commas)</span></span><input type="text" inputmode="email" autocapitalize="off" id="cmp-to" value="${esc(m.to)}" data-cmp="to"></label>
     <label class="f"><span>Subject</span><input type="text" id="cmp-subj" value="${esc(m.subj)}" data-cmp="subj"></label>
     <label class="f"><span>Message</span><textarea id="cmp-body" rows="9" data-cmp="body">${esc(m.body)}</textarea></label>
     ${m.err?`<div class="note warn small" role="alert" style="margin:0"><b>Not sent:</b> ${esc(m.err)}</div>`:""}
@@ -4001,13 +4001,20 @@ app.addEventListener("click",ev=>{
   if(d.bfdecline){j.bfHold.declined={at:Date.now(),by:(S.me||{}).name||""};j.outcome="declined";scheduleSave(S.cur);rr();toast("Recorded: customer informed and declined. Only the diagnostic fee is billed.");return}
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
   if(d.cmpsend&&S.compose){const m=S.compose;if(m.busy)return;
-    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(m.to||"").trim())){toast("Enter the customer's email address");return}
+    /* Several people: separate addresses with commas. Each gets their own copy (one send per address). */
+    const tos=[...new Set(String(m.to||"").split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean))];
+    const bad=tos.filter(x=>!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(x));
+    if(!tos.length){m.err="Enter the customer's email address.";render();return}
+    if(bad.length){m.err=`This address doesn't look right: ${bad.join(", ")}`;render();return}
+    if(tos.length>5){m.err="Send to 5 addresses or fewer at a time.";render();return}
     m.busy=true;m.err="";render();
-    (async()=>{let err="";try{const r=await sb.functions.invoke("send-email",{body:{to:String(m.to).trim(),subject:m.subj||"",text:m.body||"",link:m.link||"",button:m.btn||"",from_name:bizInfo().name||""}});
-        if(r.error)err=await fnErr(r.error);else if(!r.data||!r.data.ok)err=(r.data&&r.data.error)||"Unknown error"}catch(e){err=String((e&&e.message)||e)}
-      m.busy=false;if(S.compose!==m)return;render();
-      if(err){m.err=err;render();toast("Not sent: "+err);return}
-      const done=document.querySelector("[data-cmpdone]");if(done)done.click();else{S.compose=null;render()}toast("Email sent to "+m.to)})();return}
+    (async()=>{const sent=[],failed=[];
+      for(const to of tos){let err="";try{const r=await sb.functions.invoke("send-email",{body:{to,subject:m.subj||"",text:m.body||"",link:m.link||"",button:m.btn||"",from_name:bizInfo().name||""}});
+          if(r.error)err=await fnErr(r.error);else if(!r.data||!r.data.ok)err=(r.data&&r.data.error)||"Unknown error"}catch(e){err=String((e&&e.message)||e)}
+        if(err)failed.push(to+": "+err);else sent.push(to)}
+      m.busy=false;if(S.compose!==m)return;
+      if(failed.length){m.to=failed.map(f=>f.split(": ")[0]).join(", ");m.err=(sent.length?`Sent to ${sent.join(", ")}. `:"")+`Not sent to ${failed.join("; ")}`;render();return}
+      const done=document.querySelector("[data-cmpdone]");if(done)done.click();else{S.compose=null;render()}toast("Email sent to "+sent.join(", "))})();return}
   if(d.appttext){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");if(!ph)return;j.info.apptTexted=Date.now();scheduleSave(S.cur);const msg=apptMsg(j);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(msg)}`;return}
   if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
     (async()=>{const url=await ensureLink(jj,kind,id);if(!url)return;const m=linkMsg(jj,kind,url);
