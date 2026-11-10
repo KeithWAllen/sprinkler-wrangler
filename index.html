@@ -1614,7 +1614,8 @@ function mainlineTab(){const j=job();
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
-    <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
+    <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}
+    <div class="row" style="justify-content:flex-end">${delBtn("bfclear:"+mi,"Clear backflow details")}</div>`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -2942,10 +2943,11 @@ function bfOfItem(j,i){const ix=Math.max(0,(j.mainline||[]).findIndex(m=>m.name=
 function asmText(o){if(!o)return "";const br=brandName(o.brand,o.brandOther);return [o.type,o.size,br,realLine(o.line)||o.model,o.serial?"serial "+o.serial:""].filter(Boolean).join(" · ")}
 function newAsmMissing(o){o=o||{};const m=[];if(!o.type)m.push("type");if(!o.size)m.push("size");if(!brandName(o.brand,o.brandOther))m.push("brand");if(!(realLine(o.line)||o.model))m.push("model");if(!String(o.serial||"").trim())m.push("serial number");return m}
 /* Same fields as the existing backflow, for the one going in (Bradley: needed for his BPAT test report). */
-function newBfFields(b,m){const nb=b+".bf.newAsm";const o=m.bf.newAsm||{};
+function newBfFields(b,m){const nb=b+".bf.newAsm";const o=m.bf.newAsm||{};const mi=+b.split(".")[1];
   return `<div class="combo"><h4>New backflow preventer</h4>
     <p class="small muted" style="margin:0">The assembly being installed. Needed for your BPAT test report.</p>
-    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div></div>`}
+    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div>
+    <div class="row" style="justify-content:flex-end">${delBtn("newbfclear:"+mi,"Clear new backflow")}</div></div>`}
 function newAsmBlock(j,i){const {mi,m}=bfOfItem(j,i);if(!m)return "";const nb=`mainline.${mi}.bf.newAsm`;const o=m.bf.newAsm||{};const rep=/^bf_replace_/.test(keyOf(i.k));const miss=newAsmMissing(o);
   const oldTxt=asmText(m.bf);const oldNoSer=rep&&!String(m.bf.serial||"").trim();
   return `<div class="combo"><h4>${rep?"Backflow replacement record":"New backflow record"}</h4>
@@ -3992,6 +3994,8 @@ app.addEventListener("click",ev=>{
   if(!j)return;
 
   if(d.set!=null&&/^mainline\.\d+\.bf\.present$/.test(d.set)&&d.v==="no"&&getP(j,d.set)!=="no"){S.bfConfirm=d.set;render();return}
+  /* Tapping Yes again on "Backflow preventer present?" resets the backflow section (Keith). */
+  {const mm=d.set!=null&&/^mainline\.(\d+)\.bf\.present$/.exec(d.set);if(mm&&d.v==="yes"&&getP(j,d.set)==="yes"){j.mainline[+mm[1]].bf={present:"",size:"",type:"",insulated:"",condition:"",action:"none",newAsm:{}};scheduleSave(S.cur);rr();toast("Backflow details cleared");return}}
   if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
     /* Backflow not insulated → recommend an insulation cover automatically (Bradley). The tech can still tap No. */
     {const mm=/^mainline\.(\d+)\.bf\.insulated$/.exec(d.set);if(mm){const bf=j.mainline[+mm[1]].bf;
@@ -4183,7 +4187,8 @@ function doRemove(key){
     S.custOpen=null;S.cur=null;S.home="customers";render();toast("Customer deleted");return}
   if(k==="job"){const jj=S.jobs[a];if(!jj||!canDeleteJob(jj))return;S.jobMenu=false;deleteJob(a);S.cur=null;S.home="jobs";render();toast("Job deleted");return}
   if(!j)return;
-  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),mcus:()=>j.mainline[a].custom.splice(b,1),prog:()=>j.controllers[a].programs.splice(b,1),
+  const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),mcus:()=>j.mainline[a].custom.splice(b,1),
+    bfclear:()=>{j.mainline[a].bf={present:"",size:"",type:"",insulated:"",condition:"",action:"none",newAsm:{}}},newbfclear:()=>{j.mainline[a].bf.newAsm={}},prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
     zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
     mapclear:()=>{j.map.items=[];j.map.lines=[];toast("Map cleared")},
