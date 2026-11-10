@@ -2288,7 +2288,7 @@ async function shareClick(d){const sh=S.sh;const x=sh.d;if(!x)return;
   if(d.shpick){const [ix,v]=d.shpick.split("|");sh.picks[ix]=sh.picks[ix]===v?"":v;rr();return}
   if(d.shall){(x.items||[]).forEach((i,ix)=>{if(i.c===d.shall)sh.picks[ix]="accept"});rr();return}
   if(d.shpay){if(sh.busy)return;sh.busy=true;rr();let msg="";
-    try{const r=await sb.functions.invoke("create-checkout",{body:{token:SHARE.token}});if(r.data&&r.data.url){location.href=r.data.url;return}msg=(r.data&&r.data.error)||""}catch(e){}
+    try{const r=await sb.functions.invoke("create-checkout",{body:{token:SHARE.token}});if(r.data&&r.data.url){location.href=r.data.url;return}msg=(r.data&&r.data.error)||"";if(!msg&&r.error){try{const x=await r.error.context.json();msg=x.error||x.msg||x.message||""}catch(_){}console.warn("create-checkout:",r.error)}}catch(e){}
     sh.busy=false;rr();toast(msg||"Couldn't open checkout. Please try again, or contact us to pay.");return}
   if(d.shconfirm){if(sh.busy)return;const its=x.items||[];const left=its.filter((i,ix)=>!sh.picks[ix]).length;if(left){toast(`Please choose Accept or Decline for ${left} more item${left===1?"":"s"}`);return}
     const bfi=its.findIndex(i=>i.bf);if(its.some((i,ix)=>i.held&&sh.picks[ix]==="accept")&&bfi>=0&&sh.picks[bfi]!=="accept"){toast("Items marked ⛔ need the backflow preventer. Accept the backflow install, or decline those items.");return}
