@@ -1,6 +1,6 @@
 # Sprinkler Wrangler
 
-Field app for evaluating irrigation jobs in Texas: mainline, controller and zone inspections, property map, required trouble photos, customer report with revisions, and estimates/invoices with the TCEQ notice.
+Field app for evaluating irrigation jobs in Texas: mainline, controller and zone audits, property map, required trouble photos, customer report with revisions, and estimates/invoices with the TCEQ notice.
 
 ## Hosting
 Static site. Vercel deploys it straight from this repo — no build step. `index.html` is the whole app.

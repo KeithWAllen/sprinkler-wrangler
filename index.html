@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Sprinkler Wrangler">
-<meta name="description" content="Field app for evaluating irrigation jobs: inspections, property map, photos, reports and invoices.">
+<meta name="description" content="Field app for evaluating irrigation jobs: audits, property map, photos, reports and invoices.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231D6B47'/%3E%3Cpath d='M32 12s-13 15-13 24a13 13 0 0 0 26 0c0-9-13-24-13-24z' fill='%23fff'/%3E%3C/svg%3E">
 <title>Sprinkler Wrangler</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0/dist/umd/supabase.js"></script>
@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
-/* Layout: one-column field app — sticky job bar + scrolling section tabs, stacked inspection cards, thumb-sized controls */
+/* Layout: one-column field app — sticky job bar + scrolling section tabs, stacked audit cards, thumb-sized controls */
 :root{
   --tl-r:#D32F2F;--tl-y:#F2B705;--tl-g:#2E9E5B;
   --bg:#EEF2EE; --surface:#FFFFFF; --sunk:#E3E9E4; --ink:#16211A; --muted:#58665C; --line:#CDD6CF;
@@ -599,7 +599,7 @@ function taxRate(){const v=S.pricing._tax;return v!=null&&v!==""&&!isNaN(+v)?+v:
 function newJob(){
   const me=S.me&&sb?{id:S.me.id,name:S.me.name||String(S.me.email).split("@")[0],email:S.me.email}:null;
   return {id:uid("j"),createdAt:Date.now(),updatedAt:Date.now(),intake:false,createdBy:me?me.id:"",assign:me&&!isOffice()?me:null,
-    info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Inspection & repair",gate:"",notes:""},
+    info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Audit & repair",gate:"",notes:""},
     map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:taxRate(),discount:0,extra:[],terms:"Estimate valid for 30 days."}};
 }
 /* Default layout for a new job: one controller, zones 1–4 spray (4" & 6"), zone 5 drip */
@@ -766,6 +766,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.info.status=jobStatus(j);
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
+  if(j.info&&j.info.workType==="Inspection & repair")j.info.workType="Audit & repair";
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{};m.custom=m.custom||[]});
   if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
@@ -881,7 +882,7 @@ function jobStages(j){const revs=j.revs||[];const last=revs[revs.length-1];const
   const inspDone=steps.slice(0,3).every(x=>x.done)||revs.length>0;const started=jobStatus(j)!=="Scheduled";
   const S0=[
     {k:"sched",l:"Booked",done:true,sub:j.info.date?fmtD(j.info.date):"",tab:null},
-    {k:"insp",l:"Inspect",done:inspDone,warn:bfHold(j),sub:bfHold(j)?"On hold":inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
+    {k:"insp",l:"Audit",done:inspDone,warn:bfHold(j),sub:bfHold(j)?"On hold":inspDone?"Done":started?"In progress":"Not started",tab:(steps.slice(0,3).find(x=>!x.done)||{}).k||"mainline"},
     {k:"report",l:"Report",done:!!revs.length,warn:revs.length&&!cur,sub:revs.length?("Rev "+revNo(last.n)+(cur?"":" · changed")):"Not issued",tab:"report"},
     {k:"decide",l:"Approval",done:o==="approved"||o==="declined",sub:o==="approved"?"Approved":o==="declined"?((j.revs||[]).length?"Audit only":"Declined"):o==="waiting"?"Waiting":"No answer",tab:"completion"},
     {k:"work",l:"Work",done:o==="declined"||!!(o==="approved"&&j.completion&&j.completion.issuedAt),skip:o==="declined",sub:o==="declined"?"Not hired":o==="approved"?(j.completion&&j.completion.issuedAt?"Completed":"In progress"):"",tab:"completion"},
@@ -1084,7 +1085,7 @@ function jobsList(){
     ${q||tech?`<p class="small muted" style="margin:0">${filtered.length} match${filtered.length===1?"":"es"}</p>`:""}</div>
   <div class="jobs">${list.map(j=>{const d=j.info.date?new Date(j.info.date+"T12:00"):null;const e=buildEstimate(j);
     return `<button class="job" data-open="${j.id}"><div class="date">${d?`<small>${d.toLocaleDateString("en-US",{month:"short"})}</small><b>${d.getDate()}</b>`:`<small>No date</small>`}</div>
-    <div class="who"><strong>${jobNoTag(j)} ${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones inspected"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
+    <div class="who"><strong>${jobNoTag(j)} ${j.info.customer?esc(j.info.customer):'<span class="muted">Customer details needed</span>'}${j.example?' <span class="pill neutral">Example</span>':""}</strong><span>${esc([j.info.address,j.info.city].filter(Boolean).join(", ")||(j.zones.length+" zones audited"))}</span><span>${esc(j.info.window||"")}${j.assign?" · "+(sb&&S.me&&j.assign.id===S.me.id?"You":esc(j.assign.name)):j.info.tech?" · "+esc(j.info.tech):""}</span></div>
     <div class="amt">${j.info.propType==="commercial"?'<span class="pill neutral">Commercial</span>':""}${phasePill(j)}<span class="num" style="font-weight:700">${money(e.total)}</span></div></button>`}).join("")||`<p class="muted">${q?"No jobs match your search.":"No jobs here. Try All."}</p>`}</div>${moreBtn("jobs",list.length,filtered.length)}`;
 }
 function docketView(){
@@ -1126,7 +1127,7 @@ function pricesView(){
   ${secd("invpay","Invoices &amp; payments","Payment terms and online payments (Stripe)",invSettingsCard(),"nohead")}
   ${secd("ohm","Wire reading ranges","Ohm cut-offs for zone wire readings",ohmRangesCard(),"nohead")}
   ${secd("terms","Terms of Service","Wording customers agree to at sign-up",termsCard(),"nohead")}
-  ${isAdmin()?secd("backup","Data backup","Download a full copy of your business data",`<div class="card"><h2>Data backup</h2><p class="small muted" style="margin:0">Downloads one file with every customer, job (all inspection details, estimates, approvals and signatures), invoice, payment, report record, customer response and your settings and prices, read straight from the database. Save it to Google Drive. Do this weekly, and always before big changes. Photos and the printed report pages stay in Supabase and aren't included.</p><div><button class="btn" data-backup="1">Download data backup</button></div>${S.pricing._lastBackup?`<p class="small muted" style="margin:0">Last backup: ${esc(fmtDT(+S.pricing._lastBackup))}</p>`:""}</div>`,"nohead"):""}`;
+  ${isAdmin()?secd("backup","Data backup","Download a full copy of your business data",`<div class="card"><h2>Data backup</h2><p class="small muted" style="margin:0">Downloads one file with every customer, job (all audit details, estimates, approvals and signatures), invoice, payment, report record, customer response and your settings and prices, read straight from the database. Save it to Google Drive. Do this weekly, and always before big changes. Photos and the printed report pages stay in Supabase and aren't included.</p><div><button class="btn" data-backup="1">Download data backup</button></div>${S.pricing._lastBackup?`<p class="small muted" style="margin:0">Last backup: ${esc(fmtDT(+S.pricing._lastBackup))}</p>`:""}</div>`,"nohead"):""}`;
 }
 function jobView(){
   const j=job();const e=buildEstimate(j);
@@ -1165,7 +1166,7 @@ function custBar(j){const i=j.info;const miss=missingCustomer(j);const tel=Strin
     ${billOn(i.billTo)?`<div class="small">Bill to: <b>${esc(billLine(i.billTo))}</b></div>`:""}
     ${i.notes?`<div class="small"><b>Problem reported:</b> ${esc(i.notes)}</div>`:""}
     ${j.assign?`<div class="small muted">${sb&&S.me&&j.assign.id===S.me.id?"Assigned to you":"Assigned to "+esc(j.assign.name)}</div>`:""}
-    ${!(j.revs||[]).length&&i.date&&i.date>today()?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Scheduled for ${esc(new Date(i.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}))}</b>, today is ${esc(new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}))}. Today's work is recorded as today's inspection.</div>`:""}
+    ${!(j.revs||[]).length&&i.date&&i.date>today()?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Scheduled for ${esc(new Date(i.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}))}</b>, today is ${esc(new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}))}. Today's work is recorded as today's audit.</div>`:""}
     ${miss.length?`<div class="small" style="color:var(--warn-ink,#8a5a00)"><b>Needed for the report:</b> ${esc(miss.join(", "))}</div>`:""}</div>
     <button class="btn ${open?"":"ghost"} sm" data-showdetails="1" aria-expanded="${open}">${open?"Close":"Details"}</button></div>
     ${open?`<div class="custdetails">${dispatchTab()}</div>`:""}</div>`}
@@ -1206,9 +1207,9 @@ function apptTextRow(j){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");const 
   return `<div><button class="btn ghost sm" data-appttext="1" ${ph?"":"disabled title=\"Add a phone number first\""}>${t?"Text confirmation again":"Text appointment confirmation"}</button><p class="small muted" style="margin:6px 0 0">${t?`<b>Texted ${esc(fmtDT(t))}.</b> `:""}Asks them to reply YES. Once they reply, iPhones let them open estimate and invoice links you text later.</p></div>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
-  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld((j.revs||[]).length?"Inspection date":"Scheduled date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
+  <div class="card"><h2>Dispatch</h2><div class="grid2">${fld((j.revs||[]).length?"Audit date":"Scheduled date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
   ${apptTextRow(j)}
-  <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
+  <div class="grid2">${sel("Job type","info.workType",["Audit & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
   <div class="f"><span>Status</span><div>${pillFor(jobStatus(j))} <span class="small muted">Set automatically from the job's progress and Outcome.</span></div></div>
   ${fld("Problem reported / dispatch notes","info.notes","textarea")}</div>
@@ -1582,7 +1583,7 @@ function mainlineTab(){const j=job();
   ${leak?`<div class="combo" style="border-color:var(--bad)"><h4>Mainline leak</h4>
     ${seg("Leak visible?",b+".leak.visible",YN)}
     ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
-    ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve inspection instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
+    ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
   <div class="combo ${m.bf.present==="no"?"bad":""}"><h4>Backflow preventer</h4>
     ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
     ${m.bf.present==="no"?`${(()=>{const blocked=buildEstimate(j).lines.filter(l=>bfMajorKey(l.key));return `<div class="note bad small bfrule"><b>⛔ No backflow preventer: mainline and valve work is on hold.</b> ${BF_RULE} requires an approved backflow preventer to be installed <b>before</b> any major maintenance, alteration, repair or service on a system connected to drinking water. Major work means anything that opens the mainline before the zone valves: mainline leaks, replacing or rebuilding zone valves, solenoids, master valve or PRV work.
@@ -1991,12 +1992,12 @@ function reportHtmlReal(j,rev){
   const ups=SHOW_UPSELLS?(j.upsells||[]).filter(u=>u.status!=="declined"&&(u.desc||u.cat)):[];
   const biz=bizInfo();
   const addr=esc([j.info.address,j.info.city].filter(Boolean).join(", "));
-  return `${docHead("Irrigation Inspection Report",`${j.info.propType==="commercial"?"Commercial":"Residential"}${biz.name?" · "+esc(biz.name):""}`,[
+  return `${docHead("Irrigation Audit Report",`${j.info.propType==="commercial"?"Commercial":"Residential"}${biz.name?" · "+esc(biz.name):""}`,[
     ["Prepared for",`<b>${esc(j.info.customer||"Customer")}</b><div>${addr}</div>`],
     ["Job",`<b>${esc(jobTitle(j))}</b>${rev?`<div>${rev.draft?`<span class="flag">Rev ${revNo(rev.n)} draft</span>`:"Rev "+revNo(rev.n)}${rev.at?" · Issued "+esc(fmtDT(rev.at)):""}</div>`:""}`],
-    [rev?"Inspection date":"Date",esc(d)||"—"],
+    [rev?"Audit date":"Date",esc(d)||"—"],
     ["Technician",esc(j.info.tech||"—")]])}
-  <section><h2>Summary</h2><p>We inspected ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
+  <section><h2>Summary</h2><p>We audited ${j.mainline.length} mainline${j.mainline.length===1?"":"s"}, ${j.controllers.length} controller${j.controllers.length===1?"":"s"} and ${j.zones.length} zone${j.zones.length===1?"":"s"}. ${work.length?`We found issues needing repair in <b>${secsWithWork.size}</b> area${secsWithWork.size===1?"":"s"}${flagged?`, ${flagged} documented with photos`:""}, and recommend <b>${work.length}</b> repair${work.length===1?"":"s"}.`:"Everything we checked is working. No repairs are needed at this time."}${ups.length?` We also noted ${ups.length} optional upgrade${ups.length===1?"":"s"}.`:""}${j.zones.some(z=>z.works)?` <b>${j.zones.filter(z=>z.works==="yes").length} of ${j.zones.length} zones</b> are working properly.`:""}</p>
   ${j.info.notes?`<p class="muted small">Reason for visit: ${esc(j.info.notes)}</p>`:""}<p class="small muted">Pricing for the recommended work is in the Estimate section below.</p>${scorecard(j)}</section>
   ${hasMap&&!mapIncluded(j)?mapTeaser():""}
   ${hasMap&&mapIncluded(j)?`<section><h2>Property map</h2><div style="border:1px solid var(--line);border-radius:6px;overflow:hidden">${mapSvg(j,false,S.mapHide)}</div>
@@ -2005,7 +2006,7 @@ function reportHtmlReal(j,rev){
     return `<div class="isec isec-${sc||"n"}"><div class="row"><h3 class="spacer">${sc&&sc!=="n"?tlDot(sc)+" ":""}${esc(h)}</h3>${sc&&sc!=="n"?`<span class="pill tlp-${sc}">${TL[sc][0]}</span>`:st}</div>
       <div class="isgrid"><div><div class="eyebrow">What we found</div>${it.length?`<ul>${it.map(x=>`<li>${x}</li>`).join("")}</ul>`:'<p class="muted small">Nothing noted.</p>'}</div>
       <div><div class="eyebrow">Recommended solution</div>${sol.length?`<ul class="sol soltl">${sol.map(l=>`<li>${tlDot(lineColor(j,l))} ${esc(l.label)}${l.qty!==1||showU(l.unit)?` <span class="muted">× ${l.qty}${showU(l.unit)?" "+esc(l.unit):""}</span>`:""}</li>`).join("")}</ul>`:(sc==="r"||sc==="y")?'<p class="muted small">Nothing priced yet. See what we found.</p>':'<p class="muted small">No work needed.</p>'}</div></div>
-      ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Inspection details will appear here.</p>'}
+      ${reportPhotos(j,ph||[])}</div>`}).join(""):'<p class="muted">Audit details will appear here.</p>'}
     ${other.length?`<div class="isec"><h3>Other recommended work</h3><ul class="sol">${other.map(l=>`<li>${esc(l.label)} <span class="muted">× ${l.qty}</span></li>`).join("")}</ul></div>`:""}</section>
   ${techSection(j)}
   ${(()=>{const e=buildEstimate(j);return e.lines.length?`<section class="repest"><h2>Estimate</h2><p class="small muted" style="margin-top:0">Prices for the work above. Urgent items are needed to stop damage or water loss; Recommended items can be scheduled later.</p>${estTableTL(j,e,false)}${j.est.terms?`<p class="small">${esc(j.est.terms)}</p>`:""}</section>`:""})()}
@@ -2020,8 +2021,8 @@ function reportHtmlReal(j,rev){
 function plain(x){return x.replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">")}
 function reportText(j,rev){
   const e=buildEstimate(j);const L=[];const biz=bizInfo();
-  L.push("IRRIGATION INSPECTION REPORT"+(rev?"  ·  REV "+revNo(rev.n):""));if(biz.name)L.push(biz.name);if(rev&&rev.at)L.push("Issued: "+fmtDT(rev.at));
-  L.push(j.info.customer||"");L.push([j.info.address,j.info.city].filter(Boolean).join(", "));L.push("Inspection date: "+(j.info.date||"")+(j.info.tech?"  ·  Technician: "+j.info.tech:""));L.push("");
+  L.push("IRRIGATION AUDIT REPORT"+(rev?"  ·  REV "+revNo(rev.n):""));if(biz.name)L.push(biz.name);if(rev&&rev.at)L.push("Issued: "+fmtDT(rev.at));
+  L.push(j.info.customer||"");L.push([j.info.address,j.info.city].filter(Boolean).join(", "));L.push("Audit date: "+(j.info.date||"")+(j.info.tech?"  ·  Technician: "+j.info.tech:""));L.push("");
   L.push("ISSUES AND SOLUTIONS");
   findings(j,!!j.est.showTech).forEach(([h,it,ph])=>{const sol=e.lines.filter(l=>l.sec===h);L.push("");L.push(h.toUpperCase()+(sol.length?"  — needs repair":"  — OK"));
     it.forEach(x=>L.push("  Found: "+plain(x)));sol.forEach(l=>L.push("  Fix:   "+l.label+(l.qty!==1?" × "+l.qty:"")));if((ph||[]).some(t=>(getP(j,t.path+"_ph")||[]).length))L.push("  (Photos included in the full report)")});
@@ -2076,7 +2077,7 @@ function upsellsTab(){const j=job();j.upsells=j.upsells||[];const sug=suggestUps
   return `<div class="card"><div class="cardhead"><h2>Upgrades</h2><span class="pill neutral">${j.upsells.length} logged</span></div>
     <p class="small muted" style="margin:0">Upgrades are optional work beyond the repairs. They show on the report as options. Mark one <b>Accepted</b> and it moves onto the invoice.</p>
     <div class="row"><span class="num"><b>${money(tot)}</b> <span class="muted small">open opportunity</span></span><span class="num"><b>${money(acc)}</b> <span class="muted small">accepted</span></span><span class="spacer"></span><button class="btn sm" data-upnew="1">+ Log an upgrade</button></div></div>
-  ${sug.length?`<div class="card sunk"><h3>Suggested from this inspection</h3><div class="acts">${sug.map((g,i)=>`<div class="act"><div class="al">${esc(g.desc)}<div class="ap">${esc(g.sec)}${g.price!==""?" · about "+money(num(g.price)*g.qty):""}</div></div><button class="btn ghost sm" data-upadd="${i}">Add</button></div>`).join("")}</div></div>`:""}
+  ${sug.length?`<div class="card sunk"><h3>Suggested from this audit</h3><div class="acts">${sug.map((g,i)=>`<div class="act"><div class="al">${esc(g.desc)}<div class="ap">${esc(g.sec)}${g.price!==""?" · about "+money(num(g.price)*g.qty):""}</div></div><button class="btn ghost sm" data-upadd="${i}">Add</button></div>`).join("")}</div></div>`:""}
   ${j.upsells.map((u,i)=>{const b=`upsells.${i}`;const val=num(u.price)*Math.max(1,num(u.qty)||1);return `<div class="card"><div class="cardhead"><h3>${esc(u.desc||u.cat)}</h3>${u.status==="accepted"?'<span class="pill ok">On invoice</span>':u.status==="declined"?'<span class="pill neutral">Declined</span>':`<span class="pill warn">${money(val)}</span>`}</div>
     <div class="grid2">${sel("Category",b+".cat",UP_CATS)}${sel("Where",b+".sec",upSections(j))}</div>
     ${fld("Description (shown to customer)",b+".desc","text",'data-rr="1"')}
@@ -2160,7 +2161,7 @@ const EST_ST={draft:["Draft","neutral"],sent:["Sent, waiting for answer","warn"]
 function estLog(j,t){j.estDoc.log=j.estDoc.log||[];j.estDoc.log.push({at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),t})}
 function estDocCard(j){if(!bizReady())return `<div class="card"><p class="small muted" style="margin:0">Loading business details…</p></div>`;const d=j.estDoc;const e=buildEstimate(j);const bm=bizMissing();
   if(!d||!d.no)return `<div class="card"><div class="cardhead"><h2>Customer estimate</h2><span class="pill neutral">Not created</span></div>
-    <p class="small muted" style="margin:0">Turn the prices below into a numbered estimate you can email or print (what you used Zoho for). Works for quick quotes with no inspection too: just add the items below.${(j.revs||[]).length?" For this audit, the customer can also approve the same options in the report.":""}</p>
+    <p class="small muted" style="margin:0">Turn the prices below into a numbered estimate you can email or print (what you used Zoho for). Works for quick quotes with no audit too: just add the items below.${(j.revs||[]).length?" For this audit, the customer can also approve the same options in the report.":""}</p>
     ${bm.length?`<p class="small"><b>Needed first (Texas):</b> ${esc(bm.join(", "))}, set in Admin settings → Business & license.</p>`:`<div><button class="btn" data-mkest="1" ${e.lines.length?"":"disabled"}>Create estimate (${money(e.total)})</button></div>`}</div>`;
   const st=estState(j);const x=EST_ST[st];
   return `<div class="card"><div class="cardhead"><h2>Estimate ${esc(d.no)}</h2><span class="pill ${x[1]}">${x[0]}</span></div>
@@ -2183,7 +2184,7 @@ function newToken(){const a=new Uint8Array(24);crypto.getRandomValues(a);return 
 function shareItems(j){const c=Object.assign({},j);syncCompletion(c);const bf=bfMissing(j);
   return ((c.completion||{}).items||[]).map(i=>({k:i.k,label:i.label,sec:i.sec,c:i.c,total:r2(num(i.total)),held:!!(bf&&bfMajorKey(keyOf(i.k))),bf:keyOf(i.k)==="bf_install"}))}
 function estFp(j){const cur=currentRev(j);return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j),cur?cur.n:null]))}
-/* The estimate link carries the inspection report on top (Keith: one output, report first, estimate below).
+/* The estimate link carries the audit report on top (Keith: one output, report first, estimate below).
    Audited jobs need a current report revision before the estimate can be sent. */
 function estNeedsRev(j){return (j.revs||[]).length>0&&!currentRev(j)}
 function shareMeta(j){const b=bizInfo();return {biz:b.name||"",phone:b.phone||"",email:b.email||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),fee:r2(diagAmt(j)),rate:jobTax(j)/100}}
@@ -2209,9 +2210,9 @@ function loadShareInfo(token){if(!sb||S.mode!=="db")return;S.shareFetch=S.shareF
     const old=JSON.stringify((S.shareInfo||{})[token]||null);S.shareInfo=Object.assign({},S.shareInfo,{[token]:data});
     if(JSON.stringify(data)!==old&&!S.compose&&!S.custView){const ae=document.activeElement;if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))rr()}}).catch(()=>{})}
 function linkMsg(j,kind,url){const b=bizInfo();const bt=billOn(j.info.billTo)?j.info.billTo:null;const first=((bt&&bt.name)||j.info.customer||"").split(" ")[0]||"there";const sig=`\n\nThank you,\n${b.name||""}\n${b.phone||""}`;
-  if(kind==="estimate"){const rp=!!currentRev(j);return {subj:`${b.name||"Estimate"}: ${rp?"inspection report and ":""}estimate ${j.estDoc.no}`,
-    body:`Hi ${first},\n\nThank you for the opportunity. Your ${rp?"sprinkler inspection report and ":""}estimate ${j.estDoc.no} for the work at ${j.info.address} ${rp?"are":"is"} ready:\n\n${url}\n\n${rp?"The report shows what we found, with photos. Below it, ":"Open the link to "}see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
-    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler ${rp?"inspection report and ":""}estimate ${j.estDoc.no} ${rp?"are":"is"} ready to review and approve: ${url}`}}
+  if(kind==="estimate"){const rp=!!currentRev(j);return {subj:`${b.name||"Estimate"}: ${rp?"audit report and ":""}estimate ${j.estDoc.no}`,
+    body:`Hi ${first},\n\nThank you for the opportunity. Your ${rp?"sprinkler audit report and ":""}estimate ${j.estDoc.no} for the work at ${j.info.address} ${rp?"are":"is"} ready:\n\n${url}\n\n${rp?"The report shows what we found, with photos. Below it, ":"Open the link to "}see each item, choose what you'd like done, and approve it with your signature. No account or password is needed.\n\nQuestions? Call or text ${b.phone||"us"}.${sig}`,
+    sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your sprinkler ${rp?"audit report and ":""}estimate ${j.estDoc.no} ${rp?"are":"is"} ready to review and approve: ${url}`}}
   const bal=invBalance(j);const pay=(S.pricing||{})._payOnline;const due=(j.inv.terms||defTerms())==="completion"?"due upon completion":"due by "+fmtD(invDue(j));
   return {subj:`${b.name||"Invoice"}: invoice ${j.inv.no}`,body:`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, ${due}.\n\nView${pay?" and pay":""} it here:\n${url}${sig}`,
     sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your invoice ${j.inv.no} (${money(bal)}) is ready${pay?" to view and pay":""}: ${url}`}}
@@ -2222,7 +2223,7 @@ function sendBox(j,kind){const l=docLink(j,kind);const prob=linkProblem(j,kind);
   const seen=inf&&inf.status==="answered"?`Answered ${esc(fmtDT(inf.answered_at))}`:inf&&inf.view_count?`Opened ${inf.view_count} time${inf.view_count===1?"":"s"} (first ${esc(fmtDT(inf.viewed_at))})`:"Not opened yet";
   if(est&&estNeedsRev(j))return `<div class="combo sendbox"><h4>Send to the customer</h4><div class="note warn small" style="margin:0">The job changed after report Rev ${revNo(j.revs[j.revs.length-1].n)}. The report goes out with the estimate, so issue a new revision first. <button class="btn sm" data-tab="report" style="margin-left:6px">Go to Report</button></div></div>`;
   return `<div class="combo sendbox"><h4>Send to the customer</h4>
-    <p class="small muted" style="margin:0">${est?`They get a secure link (no account or password)${currentRev(j)?` with the inspection report (Rev ${revNo(currentRev(j).n)}) on top and the estimate below,`:""} where they accept or decline each item and sign with a finger.`:`They get a secure link (no account or password) to view${pay?" and pay":""} the invoice.`}</p>
+    <p class="small muted" style="margin:0">${est?`They get a secure link (no account or password)${currentRev(j)?` with the audit report (Rev ${revNo(currentRev(j).n)}) on top and the estimate below,`:""} where they accept or decline each item and sign with a finger.`:`They get a secure link (no account or password) to view${pay?" and pay":""} the invoice.`}</p>
     ${l&&!prob?`<p class="small" style="margin:0">🔗 Link made ${esc(fmtDT(l.at))} · <b>${seen}</b></p>`:""}
     ${l&&prob==="changed"?`<div class="note warn small" style="margin:0">The estimate changed after the last link was made. Sending again makes a new link; the old one now tells the customer to ask for the new one.</div>`:""}
     ${l&&prob==="expired"?`<div class="note warn small" style="margin:0">The last link expired. Sending again makes a new one.</div>`:""}
@@ -2258,7 +2259,7 @@ function shareView(){const sh=S.sh||{};const d=sh.d;const m=(d&&d.meta)||{};
   if(d.status==="replaced")return msg(`This ${what} was updated`,`${esc(m.biz||"We")} made changes after this link was sent. Please use the newest link, or ask for a new one.${contact}`);
   return wrap(d.kind==="invoice"?shareInvoice(d):shareEstimate(d,contact))}
 function shareEstimate(d,contact){const m=d.meta||{};const its=d.items||[];const p=S.sh.picks||{};const t=shTotals(d);
-  const rpt=m.report?`<div class="card"><div class="eyebrow">Inspection report${m.reportRev?" · Rev "+esc(m.reportRev):""}</div><h2 style="margin:0 0 8px">What we found</h2><article class="sheet">${m.report}</article></div>
+  const rpt=m.report?`<div class="card"><div class="eyebrow">Audit report${m.reportRev?" · Rev "+esc(m.reportRev):""}</div><h2 style="margin:0 0 8px">What we found</h2><article class="sheet">${m.report}</article></div>
     <div class="cvdiv"><span>Your estimate</span></div>`:"";
   const docx=`<details class="card shdoc"><summary><b>Full estimate ${esc(d.doc_no||"")}</b> (printable)</summary><div class="row" style="margin:8px 0"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div><article class="sheet">${d.html||""}</article></details>`;
   const head=`<div class="eyebrow">Estimate ${esc(d.doc_no||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(m.customer||"")}${m.address?" · "+esc(m.address):""}</div>`;
@@ -2335,7 +2336,7 @@ function reportTab(){const j=job();loadBg(j.id);
   const miss=missingCustomer(j);
   if(miss.length)return `<div class="card"><div class="cardhead"><h2>Customer details needed</h2><span class="pill warn">${miss.length} missing</span></div>
     <p id="missmsg">Add the customer's details to produce the report. Still needed: <b>${miss.map(esc).join(", ")}</b>.</p>${customerFields()}<div><button class="btn" id="mkreport" data-mkreport="1" disabled>Produce report</button></div></div>
-    <div class="card sunk"><h3>Ready to go</h3><p class="small muted">${j.mainline.length} mainline, ${j.controllers.length} controller${j.controllers.length===1?"":"s"}, ${j.zones.length} zone${j.zones.length===1?"":"s"} inspected · estimate ${money(buildEstimate(j).total)}</p></div>`;
+    <div class="card sunk"><h3>Ready to go</h3><p class="small muted">${j.mainline.length} mainline, ${j.controllers.length} controller${j.controllers.length===1?"":"s"}, ${j.zones.length} zone${j.zones.length===1?"":"s"} audited · estimate ${money(buildEstimate(j).total)}</p></div>`;
   const revs=j.revs||[];const last=revs[revs.length-1];const cur=currentRev(j);const nextN=last?last.n+1:0;
   let status;
   if(cur)status=`<div class="note info"><b>Rev ${revNo(cur.n)}</b> issued ${esc(fmtDT(cur.at))}${cur.by?" by "+esc(cur.by):""}. This is the version to send.</div>`;
@@ -2344,7 +2345,7 @@ function reportTab(){const j=job();loadBg(j.id);
   const issueBox=cur?"":`<div class="combo"><h4>Issue Rev ${revNo(nextN)}</h4>
     ${last?(()=>{const log=changeLog(j,last);return `<div class="f"><span>Changes since Rev ${revNo(last.n)} (recorded automatically)</span><ul class="small changelog">${log.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>${fld("Note for the record (optional)","est.revNote","text",'placeholder="e.g. Customer asked to add zone 6 drip repair"')}`})():""}
     ${(()=>{const t=today();const d=j.info.date;const insp=!d||d>t?t:d;const fmt=x=>new Date(x+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-      return `<p class="small" style="margin:0"><b>Inspection date on this report:</b> ${fmt(insp)}${d&&d>t?` <span class="muted">(scheduled for ${fmt(d)}; today's date is used because the work was done today)</span>`:insp<t?` <span class="muted">(not today; open Details to correct it if needed)</span>`:""}</p>`})()}
+      return `<p class="small" style="margin:0"><b>Audit date on this report:</b> ${fmt(insp)}${d&&d>t?` <span class="muted">(scheduled for ${fmt(d)}; today's date is used because the work was done today)</span>`:insp<t?` <span class="muted">(not today; open Details to correct it if needed)</span>`:""}</p>`})()}
     <div class="row"><button class="btn" data-issue="1">Issue Rev ${revNo(nextN)}</button><span class="small muted">Locks this version and records who issued it.</span></div></div>`;
   const hist=revs.length?`<div class="card"><h3>Revision history</h3><div class="tbl"><table><thead><tr><th>Rev</th><th>Issued</th><th>By</th><th>Change</th><th></th></tr></thead><tbody>
     ${revs.slice().reverse().map(r=>`<tr><td class="mono">${revNo(r.n)}</td><td class="small">${esc(fmtDT(r.at))}</td><td class="small">${esc(r.by||"—")}</td><td class="small">${esc(r.note||(r.n===0?"First issue":"—"))}</td><td class="r"><button class="btn quiet sm" data-viewrev="${r.n}">View</button></td></tr>`).join("")}</tbody></table></div></div>`:"";
@@ -2402,7 +2403,7 @@ function revSnap(j){const i=j.info||{};const strip=x=>String(x).replace(/<[^>]+>
 function changeLog(j,last){if(!last)return [];const now=revSnap(j);const out=[];const fmtD=d=>d?new Date(d+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
   const old=last.snap;
   if(old){if(old.who[0]!==now.who[0])out.push(`Customer name: ${old.who[0]||"—"} → ${now.who[0]}`);if(old.who[1]!==now.who[1])out.push(`Address: ${old.who[1]||"—"} → ${now.who[1]}`);
-    if(old.date!==now.date)out.push(`Inspection date: ${fmtD(old.date)} → ${fmtD(now.date)}`);
+    if(old.date!==now.date)out.push(`Audit date: ${fmtD(old.date)} → ${fmtD(now.date)}`);
     if(!!old.tech!==now.tech)out.push(now.tech?"Technical readings added":"Technical readings removed");}
   else if(now.tech)out.push("Technical readings added");
   const ol=old?old.l:((last.audit||{}).lines||[]).map(x=>({k:x.sec+"|"+x.label,label:x.label,sec:x.sec,qty:x.qty,price:x.qty?x.total/x.qty:x.total}));
@@ -2422,7 +2423,7 @@ async function issueRev(j){
   if(missingCustomer(j).length)return;
   const revs=j.revs=j.revs||[];const last=revs[revs.length-1];
   if(last&&currentRev(j))return;
-  /* The audit happened today: a booked date still in the future is the schedule, not the inspection date */
+  /* The audit happened today: a booked date still in the future is the schedule, not the audit date */
   {const t=today();if(j.info.date&&j.info.date>t){j.info.scheduledDate=j.info.date;j.info.date=t}}
   const extra=String(j.est.revNote||"").trim();const log=last?changeLog(j,last):[];
   const note=last?[log.join("; "),extra].filter(Boolean).join(" — Note: "):"";
@@ -2459,7 +2460,7 @@ function standaloneReport(j,html){
 }
 
 /* ---------------- Terms of Service + agreement ---------------- */
-const TERMS_DEFAULT=`1. Services. [Business] inspects ("audits"), repairs and maintains landscape irrigation systems. An audit records the condition of your system on the day of the visit.
+const TERMS_DEFAULT=`1. Services. [Business] audits, repairs and maintains landscape irrigation systems. An audit records the condition of your system on the day of the visit.
 
 2. Reports and estimates. Audit reports and estimates are prepared for you, the property owner. Estimates are valid for 30 days unless stated otherwise. Recommended work is optional; you choose what to have done.
 
@@ -2570,7 +2571,7 @@ function custLive(){const c=S.custEdit;if(!c)return;{const el=document.getElemen
 function ownerAccounts(){return (S.team&&S.team.people||[]).filter(p=>p.role==="owner")}
 function ownerFor(rec){const e=String((rec||{}).email||"").trim().toLowerCase();return e?ownerAccounts().find(p=>p.email===e):null}
 function approveMail(p,rec){const b=bizInfo();const subj=`Your ${b.name||"Sprinkler Wrangler"} account is active`;
-  const body=`Hi ${(p.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${p.email} to see your inspection reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`;
+  const body=`Hi ${(p.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${p.email} to see your audit reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`;
   return `mailto:${encodeURIComponent(p.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`}
 function accountRequests(){if(!sb||!isOffice())return "";if(!S.team){loadTeam();return ""}
   const waiting=ownerAccounts().filter(p=>!p.approved);if(!waiting.length)return "";
@@ -2924,7 +2925,7 @@ function cvTotals(j){const c=j.completion||{items:[]};const acc=c.items.filter(i
 function bfConfirmModal(){return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Confirm no backflow preventer"><div class="phcard">
   <div class="eyebrow">Confirm before continuing</div><h2>No backflow preventer?</h2>
   <p>Check the whole property first: at the meter, near the house, beside the controller, and in valve boxes. It can be a brass assembly above ground, or a double check in a box.</p>
-  <p class="small">If none is present, Texas requires one before any work that opens the mainline (${BF_RULE}). The inspection will be put <b>on hold</b> and you'll go to the <b>Status</b> tab to talk the customer through what's needed.</p>
+  <p class="small">If none is present, Texas requires one before any work that opens the mainline (${BF_RULE}). The audit will be put <b>on hold</b> and you'll go to the <b>Status</b> tab to talk the customer through what's needed.</p>
   <div class="row"><button class="btn" data-bfyes="1">Yes, none present</button><button class="btn ghost" data-bfno="1">Cancel, keep looking</button></div></div></div>`}
 function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0,j.mainline.findIndex(m=>m.bf.present==="no"));const m=j.mainline[mi];const b=bizInfo();
   const needIso=!(m.iso&&m.iso.present==="yes");const e=buildEstimate(j);const pk=["bf_install","bf_test","bf_permit","iso_install"];const lines=e.lines.filter(l=>pk.includes(l.key)||pk.includes(famOf(l.key)));const tot=lines.reduce((a,l)=>a+l.total,0);
@@ -3493,7 +3494,7 @@ function authView(){
     <button class="linkbtn" data-auth="signin">Back to sign in</button>`;
   if(a.step==="waiting")body=(S.me||{}).account==="tech"
     ?`<h2>Account created</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>. Your technician account isn't active yet. You'll be notified when it's approved; then sign in again and your jobs will be here.</p><button class="btn quiet" data-signout="1">Sign out</button>`
-    :`<h2>Thanks for signing up</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>.</p><p>Your account isn't active yet. We'll notify you by email at this address as soon as it is. Then you'll be able to sign in and see your inspection reports, estimates and invoices.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
+    :`<h2>Thanks for signing up</h2><p>You're signed in as <b>${esc((S.me||{}).email||"")}</b>.</p><p>Your account isn't active yet. We'll notify you by email at this address as soon as it is. Then you'll be able to sign in and see your audit reports, estimates and invoices.</p><button class="btn quiet" data-signout="1">Sign out</button>`;
   if(a.step==="newpass")body=`<h2>Choose a new password</h2>${msg}
     <form data-authform="newpass" class="authf"><label class="f"><span>New password (at least 8 characters)</span><input id="au-newpass" type="password" autocomplete="new-password" minlength="8" required></label>
     <button class="btn" ${busy}>Save new password</button></form>`;
@@ -3728,7 +3729,7 @@ async function payNow(jobId){if(!sb)return;S.paying=jobId;toast("Opening secure 
     location.href=data.url}catch(e){toast("Online payment isn't available right now.")}finally{S.paying=null}}
 function portalView(){
   const p=S.portal;const me=S.me;
-  const head=`<div class="top"><header class="bar"><div class="wrap">${p.view?`<button class="iconbtn" data-pback="1">‹ Back</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${p.view?(p.view.kind==="report"?"Inspection report":"Invoice"):"Your properties"}</h1></div>${p.view?"":`<button class="iconbtn" data-signout="1">Sign out</button>`}</div></header></div>`;
+  const head=`<div class="top"><header class="bar"><div class="wrap">${p.view?`<button class="iconbtn" data-pback="1">‹ Back</button>`:""}<div style="flex:1;min-width:0"><div class="sub">Sprinkler Wrangler</div><h1>${p.view?(p.view.kind==="report"?"Audit report":"Invoice"):"Your properties"}</h1></div>${p.view?"":`<button class="iconbtn" data-signout="1">Sign out</button>`}</div></header></div>`;
   if(p.view){const g=(p.list||[]).find(x=>x.job===(p.view.kind==="report"?(x.reports.find(r=>r.id===p.view.id)||{}).job_id:p.view.id));
     const revs=g&&p.view.kind==="report"?g.reports:[];
     return head+`<div class="wrap"><main>
@@ -3738,10 +3739,10 @@ function portalView(){
       <article class="sheet">${p.view.html||'<p class="muted">Loading…</p>'}</article></main></div>`}
   let body;
   if(!p.list)body=`<div class="card"><p class="muted">Loading your reports…</p></div>`;
-  else if(!p.list.length)body=`<div class="card empty"><h2>No reports yet</h2><p class="muted" style="max-width:40ch">Your inspection reports and invoices appear here after your technician issues them to <b>${esc(me.email)}</b>.</p></div>`;
+  else if(!p.list.length)body=`<div class="card empty"><h2>No reports yet</h2><p class="muted" style="max-width:40ch">Your audit reports and invoices appear here after your technician issues them to <b>${esc(me.email)}</b>.</p></div>`;
   else body=p.list.map(g=>{const r=g.reports[0];const inv=g.inv;
     return `<div class="card"><div class="cardhead"><h2>${esc(g.address||g.name||"Your property")}</h2>${inv?(inv.kind==="invoice"?(inv.status==="paid"?'<span class="pill ok">Paid</span>':["void","closed","baddebt"].includes(inv.status)?'<span class="pill neutral">Closed</span>':inv.status==="pastdue"?'<span class="pill bad">Past due</span>':'<span class="pill warn">Invoice due</span>'):'<span class="pill neutral">Estimate</span>'):""}</div>
-      ${r?`<div class="act"><div class="al">Inspection report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
+      ${r?`<div class="act"><div class="al">Audit report · Rev ${revNo(r.rev)}<div class="ap">Issued ${esc(new Date(r.issued_at).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}))}${r.issued_by?" by "+esc(r.issued_by):""}</div></div><button class="btn ghost sm" data-popen="report|${esc(r.id)}">View</button></div>`:""}
       ${r?portalOptions(g,r):""}
       ${inv?`<div class="act"><div class="al">${inv.kind==="invoice"?"Invoice":"Estimate"} ${esc(inv.no||"")}<div class="ap num">${inv.kind==="invoice"&&inv.balance!=null&&inv.status!=="paid"?`Balance due ${money(+inv.balance)} of ${money(+inv.total||0)}`:money(+inv.total||0)}</div></div><button class="btn ghost sm" data-popen="invoice|${esc(g.job)}">View</button>${portalPayable(inv)?`<button class="btn sm" data-paynow="${esc(g.job)}">Pay now</button>`:""}</div>`:""}</div>`}).join("");
   return head+`<div class="wrap"><main>${portalCustCard()}${body}</main></div>`;
@@ -3847,7 +3848,7 @@ app.addEventListener("click",ev=>{
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
   if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const pp=p||{email:em};const rec=S.custs[cid];const b=bizInfo();
-    S.compose={title:"Tell the customer their account is active",to:pp.email,subj:`Your ${b.name||"Sprinkler Wrangler"} account is active`,body:`Hi ${(pp.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${pp.email} to see your inspection reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`,onSent:null};render()});return}
+    S.compose={title:"Tell the customer their account is active",to:pp.email,subj:`Your ${b.name||"Sprinkler Wrangler"} account is active`,body:`Hi ${(pp.name||(rec&&rec.customer)||"").split(" ")[0]||"there"},\n\nYour customer account is now active. Sign in at ${location.origin} with ${pp.email} to see your audit reports, estimates and invoices.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}${b.phone?"\n"+b.phone:""}`,onSent:null};render()});return}
   if(d.revoke){setAccess(d.revoke,false).then(ok=>ok&&toast("Portal access switched off"));return}
   if(d.custcancel){S.custEdit=null;render();return}
   if(d.dupopen){S.custEdit=null;S.custPick=false;S.home="customers";S.custOpen=d.cust;render();window.scrollTo(0,0);return}
