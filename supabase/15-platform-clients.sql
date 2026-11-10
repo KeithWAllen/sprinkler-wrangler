@@ -17,9 +17,9 @@ alter table public.platform_admins enable row level security;
 drop policy if exists "see self" on public.platform_admins;
 create policy "see self" on public.platform_admins for select using (user_id = auth.uid());
 
--- Keith's account (and the chief admin, who is Keith) becomes the platform owner.
+-- Keith's account becomes the platform owner. (Only his email: company chiefs such as Bradley are not platform owners.)
 insert into public.platform_admins (user_id)
-select id from public.profiles where lower(email) = 'slrmasterkwa@gmail.com' or is_chief
+select id from public.profiles where lower(email) = 'slrmasterkwa@gmail.com'
 on conflict do nothing;
 
 create or replace function public.is_platform() returns boolean
