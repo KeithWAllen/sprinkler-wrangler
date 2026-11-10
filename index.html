@@ -773,6 +773,7 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.map=Object.assign({items:[],lines:[]},j.map||{});j.mainline=Array.isArray(j.mainline)?j.mainline:[];j.controllers=Array.isArray(j.controllers)?j.controllers:[];j.zones=Array.isArray(j.zones)?j.zones:[];
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   if(j.info&&j.info.workType==="Inspection & repair")j.info.workType="Audit & repair";
+  (j.mainline||[]).forEach(m=>{if(m.bf)m.bf.newAsm=m.bf.newAsm||{}});
   j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{};m.custom=m.custom||[]});
   if(j.controllers.length)j.setupDone=true;
   j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
@@ -1603,12 +1604,13 @@ function mainlineTab(){const j=job();
       ${blocked.length?`<div style="margin-top:4px"><b>On hold on this job until the backflow is installed:</b> ${blocked.map(l=>esc(l.label)+" ("+esc(l.sec)+")").join("; ")}.</div>`:""}
       <div style="margin-top:4px">The backflow install is marked Urgent on the report, and the rule is printed for the customer.</div></div>`})()}
     ${seg("Recommend",b+".bf.noneAction",[["install","Install one"],["note","Note only (protection is elsewhere)"]])}`:m.bf.present!=="yes"?`<p class="small muted" style="margin:0">Answer first. The backflow details appear once you pick Yes.</p>`:`
-    <div class="grid3">${sizeSel("Size",b+".bf.size")}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${realLine(m.bf.line)?"":fld("Model",b+".bf.model")}${fld("Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
+    <div class="grid3">${sizeSel("Size",b+".bf.size")}${sel("Type",b+".bf.type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",b+".bf.brand","backflow")}${lineSel("Product line",b+".bf.line","backflow",brandName(m.bf.brand,m.bf.brandOther))}${realLine(m.bf.line)?"":fld("Model",b+".bf.model")}${fld(m.bf.action==="replace"?"Serial number":"Serial number (optional)",b+".bf.serial")}${sel("Condition",b+".bf.condition",["","Good","Fair","Poor","Failed"])}</div>
     ${seg("Backflow test record",b+".bf.testRec",[["tag","Tag or record found"],["unknown","Unknown / no tag"]])}
     ${m.bf.testRec==="tag"?`<div class="grid3">${fld("Last backflow test date",b+".bf.lastTest","date",'data-rr="1"')}</div>`:""}
     ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Urgent.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
+    ${m.bf.action==="replace"?`<p class="small muted" style="margin:0">For the BPAT test report, record this one's model and serial number above. The new backflow's details are entered on the Status tab when it's installed.</p>`:""}
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
@@ -2933,6 +2935,25 @@ function syncCompletion(j){const rv=latestAudit(j);
   return {rv,changed:changed&&old.rev!==undefined&&old.rev!==rn}}
 function compCounts(items){const n={r:0,y:0,fixed:0,rLeft:0,yLeft:0,declined:0};items.forEach(i=>{n[i.c]++;if(i.status==="done")n.fixed++;else{if(i.c==="r")n.rLeft++;else n.yLeft++}if(i.status==="declined")n.declined++});return n}
 function compPrint(j){return hashStr(JSON.stringify((j.completion.items||[]).map(i=>[i.k,i.status,i.note,i.pic_ph||[]])))}
+/* ---- Backflow replaced / installed: record what was there and what went in (BPAT test report, TCEQ-20700:
+   manufacturer, model, serial, size, type, and "Replacement: old model/serial"). Entered on the Status tab when the work is done. ---- */
+const BF_ASM_KEYS=k=>/^bf_replace_/.test(k)||k==="bf_install";
+function bfOfItem(j,i){const ix=Math.max(0,(j.mainline||[]).findIndex(m=>m.name===i.sec));return {mi:ix,m:(j.mainline||[])[ix]}}
+function asmText(o){if(!o)return "";const br=brandName(o.brand,o.brandOther);return [o.type,o.size,br,realLine(o.line)||o.model,o.serial?"serial "+o.serial:""].filter(Boolean).join(" · ")}
+function newAsmMissing(o){o=o||{};const m=[];if(!o.type)m.push("type");if(!o.size)m.push("size");if(!brandName(o.brand,o.brandOther))m.push("brand");if(!(realLine(o.line)||o.model))m.push("model");if(!String(o.serial||"").trim())m.push("serial number");return m}
+function newAsmBlock(j,i){const {mi,m}=bfOfItem(j,i);if(!m)return "";const nb=`mainline.${mi}.bf.newAsm`;const o=m.bf.newAsm||{};const rep=/^bf_replace_/.test(keyOf(i.k));const miss=newAsmMissing(o);
+  const oldTxt=asmText(m.bf);const oldNoSer=rep&&!String(m.bf.serial||"").trim();
+  return `<div class="combo"><h4>${rep?"Backflow replacement record":"New backflow record"}</h4>
+    <p class="small muted" style="margin:0">Needed for your BPAT test report (TCEQ-20700)${rep?": the new assembly, plus the old model and serial number":""}.</p>
+    ${rep?`<div class="small"><b>Removed:</b> ${oldTxt?esc(oldTxt):"<span class=\"muted\">not recorded</span>"} <button class="linkbtn" data-tab="mainline">Edit on Mainline</button></div>${oldNoSer?`<div class="note warn small" style="margin:0">The old serial number isn't recorded. Add it on the Mainline tab, or write "unreadable".</div>`:""}`:""}
+    <div><b class="small">Installed:</b></div>
+    <div class="grid3">${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div>
+    ${miss.length?`<p class="note warn small" style="margin:0">To mark this Done, add the new backflow's ${esc(miss.join(", "))}.</p>`:""}</div>`}
+function bfRecordSection(j){const rows=[];(j.mainline||[]).forEach(m=>{const o=m.bf&&m.bf.newAsm;if(!o||!asmText(o))return;
+    const done=((j.completion||{}).items||[]).filter(i=>BF_ASM_KEYS(keyOf(i.k))&&i.status==="done"&&(bfOfItem(j,i).m===m));if(!done.length)return;
+    const rep=done.some(i=>/^bf_replace_/.test(keyOf(i.k)));
+    rows.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${rep?"Replacement":"New"}</td><td>${rep?esc(asmText(m.bf)||"—"):"—"}</td><td>${esc(asmText(o)||"—")}</td><td>${esc(o.date?fmtD(o.date):"")}</td></tr>`)});
+  return rows.length?`<section><h2>Backflow assembly record</h2><div class="tbl"><table><thead><tr><th>Line</th><th>Reason</th><th>Removed</th><th>Installed</th><th>Date</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></section>`:""}
 function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.n===c.rev)||{};const n=compCounts(c.items);const biz=bizInfo();
   const d=t=>t?new Date(t).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
   const nowCell=i=>i.status==="done"?`${tlDot("g")} <b>Fixed</b>`:i.status==="declined"?`${tlDot(i.c)} Declined by customer`:`${tlDot(i.c)} Not done yet`;
@@ -2947,6 +2968,7 @@ function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.
     <div class="bacol"><div class="eyebrow">What was (audit)</div><div class="row">${tlDot("r")} <b>${n.r}</b> urgent ${tlDot("y")} <b>${n.y}</b> recommended</div></div>
     <div class="baarrow" aria-hidden="true">→</div>
     <div class="bacol"><div class="eyebrow">What is now</div><div class="row">${tlDot("g")} <b>${n.fixed}</b> fixed ${tlDot("r")} <b>${n.rLeft}</b> urgent ${tlDot("y")} <b>${n.yLeft}</b> recommended</div></div></div></section>
+  ${bfRecordSection(j)}
   <section><h2>Item by item</h2><div class="tbl"><table><thead><tr><th>Item</th><th>Was</th><th>Now</th></tr></thead><tbody>
     ${items.map(i=>`<tr><td>${esc(i.label)}<div class="small muted">${esc(i.sec)}${i.note?" · "+esc(i.note):""}</div></td><td>${tlDot(i.c)} ${TL[i.c][0]}</td><td>${nowCell(i)}</td></tr>`).join("")}</tbody></table></div></section>
   ${n.declined?`<section><p class="small"><b>Declined items:</b> the customer chose not to have ${n.declined===1?"this item":"these items"} done at this time. ${n.declined===1?"It was":"They were"} explained on the audit report (Rev ${revNo(c.rev)}, ${esc(d(rv.at))}).</p></section>`:""}
@@ -3040,7 +3062,8 @@ function completionTab(){const j=job();if(bfHold(j))return bfHoldPage(j);const s
     <p class="small muted" style="margin:0">Mark each item once the work is finished. The invoice bills only items marked Done.${c.confirm?" Items the customer declined are already marked.":""}</p>
     <div class="row">${tlDot("r")} ${n.r} urgent · ${tlDot("y")} ${n.y} recommended <span class="spacer"></span><b>${answered} of ${c.items.length} marked</b></div></div>
   ${c.items.length?rows.map(([i,ix])=>`<div class="card compi"><div class="row" style="align-items:flex-start">${tlDot(i.c)}<div style="flex:1;min-width:0"><b>${esc(i.label)}</b><div class="small muted">${esc(i.sec)}</div></div></div>
-      ${bfBlocked(j,keyOf(i.k))&&i.status!=="declined"?`<div class="note bad small">⛔ On hold: ${BF_RULE} requires the backflow preventer to be installed before this work. Mark the backflow install Done first.</div>${seg("Status",`completion.items.${ix}.status`,COMP_ST.filter(x=>x[0]!=="done"),{declined:"bad"})}`:seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
+      ${BF_ASM_KEYS(keyOf(i.k))&&i.status!=="declined"?newAsmBlock(j,i):""}
+      ${bfBlocked(j,keyOf(i.k))&&i.status!=="declined"?`<div class="note bad small">⛔ On hold: ${BF_RULE} requires the backflow preventer to be installed before this work. Mark the backflow install Done first.</div>${seg("Status",`completion.items.${ix}.status`,COMP_ST.filter(x=>x[0]!=="done"),{declined:"bad"})}`:BF_ASM_KEYS(keyOf(i.k))&&i.status!=="done"&&newAsmMissing((bfOfItem(j,i).m||{bf:{}}).bf.newAsm).length?seg("Status",`completion.items.${ix}.status`,COMP_ST.filter(x=>x[0]!=="done"),{declined:"bad"}):seg("Status",`completion.items.${ix}.status`,COMP_ST,{declined:"bad"})}
       ${i.status?fld("Note (optional)",`completion.items.${ix}.note`):""}
       ${i.status==="done"?`<div class="q"><span class="ql">After photo (optional)</span>${photoStrip(`completion.items.${ix}.pic`).replace("Photo required","Add photo").replace('class="phadd req"','class="phadd"')}</div>`:""}</div>`).join("")
     :`<div class="card"><p class="muted">The audit had no red or yellow items to complete.</p></div>`}
