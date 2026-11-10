@@ -492,7 +492,7 @@ const PRICE_DEFAULTS=(()=>{
   fam("iso_install","Mainline","Install isolation valve","each",185,1,"iso_install");
   fam("mv_repair","Mainline","Repair master valve","each",95,1,"mv_repair");
   fam("mv_replace","Mainline","Replace master valve","each",245,1,"mv_replace");
-  fam("mv_relocate","Mainline","Relocate master valve downstream of backflow (code)","each",225,1,"mv_relocate");
+  fam("mv_relocate","Mainline","Relocate master valve to the irrigation side of the backflow (code)","each",225,1,"mv_relocate");
   fam("mv_install","Mainline","Install master valve","each",295,1,"mv_install");
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
@@ -1576,9 +1576,9 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
   ${c.present==="no"?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":isPrv?"A pressure reducing valve keeps water pressure in a safe range, which stops misting, blowouts and broken heads and fittings.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>
   ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize")}</div>`:""}`:""}
-  ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
-  ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
-  ${isPrv&&up?`<div class="note warn small"><b>Upstream of the backflow (house side):</b> work here needs a licensed plumber.</div>`:""}
+  ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Plumbing side"],["downstream","Irrigation side"]]):""}
+  ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be on the irrigation side of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
+  ${isPrv&&up?`<div class="note warn small"><b>Plumbing side of the backflow:</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",isPrv?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
 `:""}</div>`;
@@ -1951,7 +1951,7 @@ function findings(j,tech){
     if(bf.present!=="no"&&bf.insulated==="no")it.push("Backflow preventer is not insulated (freeze risk)");
     if(bfTestDue(m))it.push(`<span class="flag">Backflow test due:</span> ${bf.testRec==="unknown"?"no test tag or record was found":"last tested "+esc(new Date(bf.lastTest+"T12:00").toLocaleDateString("en-US"))+", more than 12 months ago"}.`);
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes")it.push(`${l}${c.pos?` (${c.pos} of backflow)`:""}${c.size?", "+esc(c.size):""}${c.condition?", condition "+esc(c.condition.toLowerCase()):""}`);else if(c.present==="no"&&(k==="iso"||k==="mv"||compInstall(k,c)))it.push(`No ${l.toLowerCase()} installed.${compInstall(k,c)?` Installing ${c.newSize?"a "+esc(c.newSize)+" one":"one"} is recommended.`:""}`);else if(c.present==="no"&&tech)it.push(`No ${l.toLowerCase()}`);
-      if(c.present==="yes"&&k==="mv"&&c.pos==="upstream")it.push(`<span class="flag">Code violation:</span> the master valve is upstream of the backflow preventer. It must be downstream.`);
+      if(c.present==="yes"&&k==="mv"&&c.pos==="upstream")it.push(`<span class="flag">Code violation:</span> the master valve is on the plumbing side of the backflow preventer. It must be on the irrigation side.`);
       if(c.present==="yes"&&k==="prv"&&c.pos==="upstream"&&c.action==="plumber")it.push("Recommended: have a licensed plumber service the pressure reducing valve (it is on the house side of the backflow).")});
     if(m.notes)it.push(esc(m.notes));
     if(it.length)out.push([m.name||"Mainline",it]);
@@ -3011,7 +3011,7 @@ function bfHoldPage(j){const h=j.bfHold;const st=h.steps||{};const mi=Math.max(0
       <div class="q"><span class="ql">Type of backflow preventer</span><div class="chips">${[["DCVA","Double check (DCVA)"],["PVB","Pressure vacuum breaker (PVB)"],["RPZ","Reduced pressure (RPZ)"]].map(([v,l])=>`<button class="chip" data-bftype="${v}" data-bfm="${mi}" aria-pressed="${typ===v}">${l}</button>`).join("")}</div></div>
       <ul class="talk small"><li><b>RPZ is required</b> if chemicals or fertilizer are injected into the system, if the property has a septic system (on-site sewage facility), or if there's another health hazard (30 TAC §344.51).</li><li><b>PVB</b> must sit at least 12 inches above the highest sprinkler head or pipe downstream, with no backpressure.</li><li><b>Double check (DCVA)</b> is allowed when there's no health hazard and the city doesn't prohibit it.</li></ul>
       ${seg("Is there an isolation valve (shut-off for the sprinklers only)?",`mainline.${mi}.iso.present`,[["yes","Yes"],["no","No"]])}
-      ${m.iso&&m.iso.present==="no"?`<p class="small" style="margin:0">An isolation valve is required when work is done at the meter or upstream of the backflow (30 TAC §344.64(c)), so its install is included in the estimate below.</p>`:""}
+      ${m.iso&&m.iso.present==="no"?`<p class="small" style="margin:0">An isolation valve is required when work is done at the meter or on the plumbing side of the backflow (30 TAC §344.64(c)), so its install is included in the estimate below.</p>`:""}
       <div class="q"><span class="ql">City permit & inspection</span><div class="chips"><button class="chip" data-bfpermit="required" data-bfm="${mi}" aria-pressed="${m.bf.permit==="required"}">Required here</button><button class="chip" data-bfpermit="none" data-bfm="${mi}" aria-pressed="${m.bf.permit==="none"}">Not required in this city</button></div></div>
       <p class="small muted" style="margin:0">Most Texas cities and water utilities require a permit and inspection for a new backflow preventer. Check with the city or water utility for this address.</p>
       <p class="small" style="margin:0"><b>Testing:</b> a licensed backflow tester must test it when it's installed, and the results go to the water utility within 10 business days (30 TAC §344.52(c)).</p></div>
