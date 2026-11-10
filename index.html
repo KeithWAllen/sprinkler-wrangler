@@ -1575,13 +1575,13 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   const brandV=brandName(c.brand,c.brandOther);
   return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
   ${c.present==="no"?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":isPrv?"A pressure reducing valve keeps water pressure in a safe range, which stops misting, blowouts and broken heads and fittings.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>
-  ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize")}</div>${sizeHint(k+"_install",c.newSize)}`:""}`:""}
+  ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize")}</div>`:""}`:""}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]):""}
   ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be downstream of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Upstream of the backflow (house side):</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",isPrv?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
-  ${(c.action==="repair"||c.action==="replace")&&!(isPrv&&up)||isMv&&up?sizeHint(k+"_"+(isMv&&up?"relocate":c.action),c.size):""}`:""}</div>`;
+`:""}</div>`;
 }
 function mainlineTab(){const j=job();
   return j.mainline.map((m,mi)=>{const b=`mainline.${mi}`;const leak=hasLeak(m);
@@ -1903,7 +1903,6 @@ function zonesTab(){const j=job();
   ${combos}
   <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size")}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
     ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["scrub","Scrubber valve"],["locate","Locate valve"]])}
-    ${{replace:"zv_replace",rebuild:"zv_rebuild",scrub:"zv_scrub"}[v.action]?sizeHint({replace:"zv_replace",rebuild:"zv_rebuild",scrub:"zv_scrub"}[v.action],v.size,"valve size"):""}
     ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
   <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
     <p class="small muted">A repair covers the first 3 ft; longer runs add pipe by the foot.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
