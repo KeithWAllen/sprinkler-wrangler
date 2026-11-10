@@ -2944,21 +2944,21 @@ function newAsmMissing(o){o=o||{};const m=[];if(!o.type)m.push("type");if(!o.siz
 /* Same fields as the existing backflow, for the one going in (Bradley: needed for his BPAT test report). */
 function newBfFields(b,m){const nb=b+".bf.newAsm";const o=m.bf.newAsm||{};
   return `<div class="combo"><h4>New backflow preventer</h4>
-    <p class="small muted" style="margin:0">The assembly being installed. Fill in what you know now and finish it when it's in; it's needed for your BPAT test report.</p>
-    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div></div>`}
+    <p class="small muted" style="margin:0">The assembly being installed. Needed for your BPAT test report.</p>
+    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div></div>`}
 function newAsmBlock(j,i){const {mi,m}=bfOfItem(j,i);if(!m)return "";const nb=`mainline.${mi}.bf.newAsm`;const o=m.bf.newAsm||{};const rep=/^bf_replace_/.test(keyOf(i.k));const miss=newAsmMissing(o);
   const oldTxt=asmText(m.bf);const oldNoSer=rep&&!String(m.bf.serial||"").trim();
   return `<div class="combo"><h4>${rep?"Backflow replacement record":"New backflow record"}</h4>
     <p class="small muted" style="margin:0">Needed for your BPAT test report (TCEQ-20700)${rep?": the new assembly, plus the old model and serial number":""}.</p>
     ${rep?`<div class="small"><b>Removed:</b> ${oldTxt?esc(oldTxt):"<span class=\"muted\">not recorded</span>"} <button class="linkbtn" data-tab="mainline">Edit on Mainline</button></div>${oldNoSer?`<div class="note warn small" style="margin:0">The old serial number isn't recorded. Add it on the Mainline tab, or write "unreadable".</div>`:""}`:""}
-    <div class="small"><b>Installed:</b> ${asmText(o)?esc(asmText(o))+(o.date?" · "+esc(fmtD(o.date)):""):"<span class=\"muted\">not entered yet</span>"} <button class="linkbtn" data-tab="mainline">${rep?"Edit on Mainline":"Edit"}</button></div>
-    ${!rep?`<div class="grid3">${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div>`:""}
+    <div class="small"><b>Installed:</b> ${asmText(o)?esc(asmText(o)):"<span class=\"muted\">not entered yet</span>"} <button class="linkbtn" data-tab="mainline">${rep?"Edit on Mainline":"Edit"}</button></div>
+    ${!rep?`<div class="grid3">${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div>`:""}
     ${miss.length?`<p class="note warn small" style="margin:0">To mark this Done, add the new backflow's ${esc(miss.join(", "))}${rep?" on the Mainline tab, under New backflow preventer":""}.</p>`:""}</div>`}
 function bfRecordSection(j){const rows=[];(j.mainline||[]).forEach(m=>{const o=m.bf&&m.bf.newAsm;if(!o||!asmText(o))return;
     const done=((j.completion||{}).items||[]).filter(i=>BF_ASM_KEYS(keyOf(i.k))&&i.status==="done"&&(bfOfItem(j,i).m===m));if(!done.length)return;
     const rep=done.some(i=>/^bf_replace_/.test(keyOf(i.k)));
-    rows.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${rep?"Replacement":"New"}</td><td>${rep?esc(asmText(m.bf)||"—"):"—"}</td><td>${esc(asmText(o)||"—")}</td><td>${esc(o.date?fmtD(o.date):"")}</td></tr>`)});
-  return rows.length?`<section><h2>Backflow assembly record</h2><div class="tbl"><table><thead><tr><th>Line</th><th>Reason</th><th>Removed</th><th>Installed</th><th>Date</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></section>`:""}
+    rows.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${rep?"Replacement":"New"}</td><td>${rep?esc(asmText(m.bf)||"—"):"—"}</td><td>${esc(asmText(o)||"—")}</td></tr>`)});
+  return rows.length?`<section><h2>Backflow assembly record</h2><div class="tbl"><table><thead><tr><th>Line</th><th>Reason</th><th>Removed</th><th>Installed</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></section>`:""}
 function completionHtml(j){const c=j.completion;const rv=(j.revs||[]).find(r=>r.n===c.rev)||{};const n=compCounts(c.items);const biz=bizInfo();
   const d=t=>t?new Date(t).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"";
   const nowCell=i=>i.status==="done"?`${tlDot("g")} <b>Fixed</b>`:i.status==="declined"?`${tlDot(i.c)} Declined by customer`:`${tlDot(i.c)} Not done yet`;
