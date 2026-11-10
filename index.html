@@ -1611,7 +1611,6 @@ function mainlineTab(){const j=job();
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${m.bf.action==="replace"?newBfFields(b,m):""}
-    ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
     <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
