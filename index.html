@@ -615,11 +615,14 @@ function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.i
 function comp(){return {present:"",pos:"",size:"",type:"",condition:"",action:"none"}}
 /* Backflow test is due when there's no tag/record, or the last test is over 12 months old */
 function bfTestDue(m){const bf=m.bf||{};if(bf.present!=="yes")return false;if(bf.testRec==="unknown")return true;if(bf.testRec==="tag"&&bf.lastTest){return addMonths(new Date(bf.lastTest+"T12:00"),12)<new Date()}return false}
-function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{num:"",reading:"",flow:"",side:""}],bf:{present:"",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},custom:[],notes:""}}
+function newMainline(n){return {id:uid("m"),name:"Mainline "+(n||1),meters:[{src:"city",num:"",reading:"",flow:"",side:""}],bf:{present:"",size:"",type:"",insulated:"",condition:"",action:"none"},prv:comp(),iso:comp(),mv:comp(),leak:{visible:"",location:"",atZoneValve:"",repairs:1},custom:[],notes:""}}
 function newController(n){return {id:uid("c"),name:"Controller "+String.fromCharCode(64+(n||1)),brand:"",model:"",location:"",wiring:"conventional",modular:"no",modules:[],rain:"",zones:5,power:"yes",powerIssue:"",programs:[{id:uid("p"),name:"A",starts:"",days:[],seasonal:100,runtimes:{}}],ohms:{},overcurrent:"",ocZones:"",badDecoders:"",act:{},notes:""}}
 function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
   return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
-const TPL={meter:()=>({num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
+/* Water source for each meter (Bradley): city water meter is the usual one. */
+const WATER_SRC=[["city","City water meter (primary)"],["well","Pump / well"],["reclaimed","Reclaimed water"]];
+function srcName(w){return {city:"City water meter",well:"Pump / well",reclaimed:"Reclaimed water meter"}[(w&&w.src)||"city"]}
+const TPL={meter:()=>({src:"city",num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
 
 /* ---------------- storage ---------------- */
 const IDB=(()=>{let dbp=null;
@@ -1580,7 +1583,9 @@ function mainlineTab(){const j=job();
   return `<div class="card"><div class="cardhead"><h2>${esc(m.name)}</h2>${leak?'<span class="pill bad">Leak</span>':""}</div>
   ${fld("Name",b+".name")}
   <div class="combo"><h4>Water meters</h4>${m.meters.map((w,wi)=>{const wb=`${b}.meters.${wi}`;return `<div style="display:grid;gap:8px;padding-block:6px;border-bottom:1px dashed var(--line)">
-    <div class="grid2">${fld("Meter number",wb+".num","text",'class="mono"')}${fld("Meter reading",wb+".reading","text",'inputmode="decimal"')}</div>
+    ${sel("Water source",wb+".src",WATER_SRC)}
+    <div class="grid2">${fld(w.src==="well"?"Meter number (if any)":"Meter number",wb+".num","text",'class="mono"')}${fld(w.src==="well"?"Meter reading (if any)":"Meter reading",wb+".reading","text",'inputmode="decimal"')}</div>
+    ${w.src==="reclaimed"?`<p class="note small" style="margin:0">Reclaimed water: keep it separate from drinking water. Check for purple pipe, valve boxes and signs.</p>`:""}
     ${seg("Flow visible with system off?",wb+".flow",YN,{yes:"bad"})}
     ${w.flow==="yes"?seg("Where is the flow?",wb+".side",[["plumbing","Plumbing side"],["irrigation","Irrigation side"]]):""}
     ${w.flow==="yes"&&w.side==="plumbing"?`<p class="note small">Flow is on the house plumbing side. Note it for the customer; it's outside the irrigation repair.</p>`:""}
@@ -1931,7 +1936,7 @@ function estimateTab(){const j=job();const e=buildEstimate(j);
 function findings(j,tech){
   const out=[];
   (j.mainline||[]).forEach(m=>{const it=[];
-    (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow)return;let s=`Water meter${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
+    (m.meters||[]).forEach(w=>{if(!w.num&&!w.reading&&!w.flow&&!(w.src&&w.src!=="city"))return;let s=`${srcName(w)}${w.num?" #"+w.num:""}${w.reading?", reading "+w.reading:""}`;
       if(w.flow==="yes")s+=w.side==="irrigation"?`: <span class="flag">water flowing with the system off — leak on the irrigation side</span>`:w.side==="plumbing"?": flow on the house plumbing side (not part of irrigation)":": flow detected";else if(w.flow==="no")s+=": no flow with the system off";it.push(s)});
     if(hasLeak(m)){if(m.leak.visible==="yes")it.push(`Leak found${m.leak.location?" at "+esc(m.leak.location):""}${m.leak.atZoneValve==="yes"?" (at a zone valve, see zone repairs)":""}.`);else it.push("Leak not visible at the surface; locating is included in the repair.")}
     const bf=m.bf;if(bf.present==="no"&&j.bfHold&&j.bfHold.declined)it.push(`<span class="flag">Customer declined backflow installation</span> on ${esc(new Date(j.bfHold.declined.at).toLocaleDateString("en-US"))} after being informed that ${BF_RULE} requires it before repairs that open the mainline. Those repairs were not performed.`);
@@ -1980,8 +1985,8 @@ function reportHtml(j,rev){
 /* Shared document header: centered title, then a balanced 2 x 2 block (one font throughout) */
 /* Technical readings section (when switched on for the job) */
 function techSection(j){if(!j.est.showTech)return "";const BL={short:"Short",ok:"Normal",high:"High",float:"Floating",open:"Open"};const parts=[];
-  const meters=[];(j.mainline||[]).forEach(m=>(m.meters||[]).forEach((w,i)=>{if(w.num||w.reading||w.flow)meters.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${esc(w.num||"—")}</td><td>${esc(w.reading||"—")}</td><td>${w.flow==="yes"?"Moving":w.flow==="no"?"Not moving":"—"}</td></tr>`)}));
-  if(meters.length)parts.push(`<h3>Water meters (system off)</h3><div class="tbl"><table><thead><tr><th>Line</th><th>Meter #</th><th>Reading</th><th>Flow</th></tr></thead><tbody>${meters.join("")}</tbody></table></div>`);
+  const meters=[];(j.mainline||[]).forEach(m=>(m.meters||[]).forEach((w,i)=>{if(w.num||w.reading||w.flow)meters.push(`<tr><td>${esc(m.name||"Mainline")}</td><td>${esc(srcName(w))}</td><td>${esc(w.num||"—")}</td><td>${esc(w.reading||"—")}</td><td>${w.flow==="yes"?"Moving":w.flow==="no"?"Not moving":"—"}</td></tr>`)}));
+  if(meters.length)parts.push(`<h3>Water meters (system off)</h3><div class="tbl"><table><thead><tr><th>Line</th><th>Source</th><th>Meter #</th><th>Reading</th><th>Flow</th></tr></thead><tbody>${meters.join("")}</tbody></table></div>`);
   (j.controllers||[]).forEach(c=>{const zn=Math.min(Math.max(num(c.zones),0),200);
     if(c.wiring==="conventional"&&zn){const rows=Array.from({length:zn},(_,i)=>{const z=i+1;const b=zoneBand(c,z);const v=(c.ohms||{})[z];return `<tr><td>Zone ${z}</td><td>${b?esc(BL[b]||b):"Not read"}</td><td>${v!=null&&v!==""?esc(String(v))+(/^\d/.test(String(v))?" Ω":""):"—"}</td></tr>`}).join("");
       parts.push(`<h3>${esc(c.name||"Controller")}: zone wire readings</h3><div class="tbl"><table><thead><tr><th>Zone</th><th>Range</th><th>Exact reading</th></tr></thead><tbody>${rows}</tbody></table></div>`)}
@@ -3265,7 +3270,7 @@ const BADCOND=["Poor","Failed"];
 function troubleList(j){
   const L=[];const add=(path,label,sec)=>L.push({path,label,sec});
   (j.mainline||[]).forEach((m,mi)=>{const b=`mainline.${mi}`,sec=m.name||"Mainline";
-    (m.meters||[]).forEach((w,wi)=>{if(w.flow==="yes")add(`${b}.meters.${wi}.flow`,`Water meter${w.num?" #"+w.num:""} showing flow with the system off`,sec)});
+    (m.meters||[]).forEach((w,wi)=>{if(w.flow==="yes")add(`${b}.meters.${wi}.flow`,`${srcName(w)}${w.num?" #"+w.num:""} showing flow with the system off`,sec)});
     if(hasLeak(m)&&m.leak.visible==="yes")add(`${b}.leak.visible`,"Visible mainline leak",sec);
     if(BADCOND.includes(m.bf.condition))add(`${b}.bf.condition`,`Backflow preventer in ${m.bf.condition.toLowerCase()} condition`,sec);
     [["prv","Pressure reducing valve"],["iso","Isolation valve"],["mv","Master valve"]].forEach(([k,l])=>{const c=m[k];if(c.present==="yes"&&BADCOND.includes(c.condition))add(`${b}.${k}.condition`,`${l} in ${c.condition.toLowerCase()} condition`,sec)});
