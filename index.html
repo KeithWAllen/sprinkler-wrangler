@@ -620,7 +620,7 @@ function newController(n){return {id:uid("c"),name:"Controller "+String.fromChar
 function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl===(c&&c.id)).map(z=>+z.num);let n=1;while(used.includes(n))n++;
   return {id:uid("z"),ctl:c?c.id:"",num:String(n),soil:"",sun:"",types:[],sizes:[],acts:{},valve:{size:"",type:"",condition:"",action:"none"},laterals:[],adds:[],custom:[],notes:""}}
 /* Water source for each meter (Bradley): city water meter is the usual one. */
-const WATER_SRC=[["city","City water meter (primary)"],["well","Pump / well"],["reclaimed","Reclaimed water"]];
+const WATER_SRC=[["city","City water meter"],["well","Pump / well"],["reclaimed","Reclaimed water"]];
 function srcName(w){return {city:"City water meter",well:"Pump / well",reclaimed:"Reclaimed water meter"}[(w&&w.src)||"city"]}
 const TPL={meter:()=>({src:"city",num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
 
