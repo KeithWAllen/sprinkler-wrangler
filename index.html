@@ -980,7 +980,11 @@ async function dataBackup(){toast("Preparing backup…");const out={app:"Sprinkl
   dlFile(`Sprinkler-Wrangler-data-backup-${today()}.json`,JSON.stringify(out,null,1),"application/json");
   S.pricing._lastBackup=String(Date.now());savePricing();toast("Backup saved: "+n+(Object.keys(out.errors).length?" (some tables skipped)":""))}
 function invSettingsCard(){const adm=isAdmin();const on=!!(S.pricing||{})._payOnline;
+  if(sb&&S.mode==="db"&&!S.training&&S.invSeqPeek===undefined){S.invSeqPeek=null;Promise.resolve(sb.rpc("peek_invoice_seq")).then(r=>{S.invSeqPeek=r&&!r.error?r.data:"?";renderKeepFocus()}).catch(()=>{S.invSeqPeek="?"})}
+  const pk=S.invSeqPeek;
   return `<div class="card"><h2>Invoices & payments</h2>
+  <div class="f"><span>Next invoice number</span>${pk==="?"?`<p class="small" style="margin:0">Not set up yet: run database update <b>17-invoice-numbers.sql</b> in Supabase.</p>`:`<div class="row" style="flex-wrap:nowrap"><input type="number" inputmode="numeric" min="1" max="9999" id="inv-seq" value="${pk?esc(String(pk)):""}" placeholder="…" ${adm?"":"disabled"} style="max-width:120px">${adm?`<button class="btn ghost sm" data-invseq="1">Save</button>`:""}</div>
+    <p class="small muted" style="margin:0">Invoices end in a running count for the year, e.g. INV-110926-1096-<b>${pk?String(pk).padStart(4,"0"):"0165"}</b>. It starts again at 0001 every January 1.</p>`}</div>
   <label class="f"><span>Default payment terms</span><select data-price="_invTerms" ${adm?"":"disabled"}>${INV_TERMS.map(x=>`<option value="${x[0]}" ${defTerms()===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></label>
   <div class="q"><span class="ql">Online payments through Stripe</span><div class="chips"><button class="chip" data-payonline="1" aria-pressed="${on}" ${adm?"":"disabled"}>On</button><button class="chip" data-payonline="0" aria-pressed="${!on}" ${adm?"":"disabled"}>Off</button></div></div>
   <p class="small muted" style="margin:0">When on, customers see a <b>Pay now</b> button on unpaid invoices in their account and can pay by card or bank transfer (ACH) through your Stripe account. Payments land on the invoice automatically. Turn this on only after the Stripe setup steps are finished.</p>
@@ -2105,7 +2109,15 @@ function upsellPipeline(){
 function jobCore(j){return jobTitle(j).replace(/^A-/,"").replace(/-\d{2,}$/,"")}
 function docNo(prefix,j){const used=new Set();Object.values(S.jobs).forEach(x=>{if(!x)return;if(x.inv&&x.inv.no)used.add(x.inv.no);if(x.estDoc&&x.estDoc.no)used.add(x.estDoc.no)});
   const base=prefix+"-"+jobCore(j);let n=1;while(used.has(base+"-"+String(n).padStart(2,"0")))n++;return base+"-"+String(n).padStart(2,"0")}
-function invNo(j){return docNo("INV",j)}
+/* Invoices end in the company's running count for the year (Keith): INV-110926-1096-0165. The server hands it out
+   (database update 17), so two phones never get the same number; it starts at 0001 again every January 1. */
+async function invNo(j){const pad=n=>String(n).padStart(4,"0");const base="INV-"+jobCore(j)+"-";
+  if(sb&&S.mode==="db"&&!S.training){const {data,error}=await sb.rpc("next_invoice_seq");
+    if(error)throw new Error(/next_invoice_seq|schema cache|function/i.test(error.message||"")?"Run database update 17-invoice-numbers.sql in Supabase first":error.message);
+    S.invSeqPeek=data+1;return base+pad(data)}
+  /* Training / this-device mode: next after the highest number used this year on this device. */
+  const y=new Date().getFullYear();let max=0;Object.values(S.jobs).forEach(x=>{const n=x&&x.inv&&x.inv.no;if(n&&x.inv.at&&new Date(x.inv.at).getFullYear()===y){const m=/-(\d{4})$/.exec(n);if(m)max=Math.max(max,+m[1])}});
+  return base+pad(max+1)}
 function invoiceHtml(j){
   return (S.training?TRAIN_STAMP:"")+invoiceHtmlReal(j);
 }
@@ -3877,6 +3889,8 @@ app.addEventListener("click",ev=>{
   if(d.acctx){acctExport(d.acctx);return}
   if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.emailsend!=null){if(!isAdmin())return;S.pricing._emailSend=d.emailsend==="1";savePricing();rr();return}
+  if(d.invseq){if(!isAdmin())return;const v=parseInt((document.getElementById("inv-seq")||{}).value,10);if(!(v>=1&&v<=9999)){toast("Pick a number from 1 to 9999");return}
+    Promise.resolve(sb.rpc("set_next_invoice_seq",{p_next:v})).then(r=>{if(r&&r.error){toast(r.error.message.replace(/^.*?:\s*/,""));return}S.invSeqPeek=v;rr();toast("Next invoice will end in "+String(v).padStart(4,"0"))});return}
   if(d.payonline!=null){if(!isAdmin())return;S.pricing._payOnline=d.payonline==="1";savePricing();rr();return}
   if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab=d.opentab||"mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
@@ -4010,7 +4024,9 @@ app.addEventListener("click",ev=>{
   if(d.compcopy){const t=completionText(j);try{navigator.clipboard.writeText(t).then(()=>toast("Copied"),()=>fallbackCopy(t))}catch(e){fallbackCopy(t)}return}
   if(d.upnew){j.upsells=j.upsells||[];j.upsells.push(newUpsell());scheduleSave(S.cur);rr();return}
   if(d.upadd!=null){const g=suggestUpsells(j)[+d.upadd];if(g){j.upsells=j.upsells||[];j.upsells.push(newUpsell(g));scheduleSave(S.cur);rr();toast("Upgrade added")}return}
-  if(d.mkinv){j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=invNo(j);j.inv.at=Date.now();if(j.inv.kind==="invoice"){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}scheduleSave(S.cur);rr();return}
+  if(d.mkinv){if(S.mkinvBusy||(j.inv&&j.inv.kind==="invoice"&&j.inv.no))return;S.mkinvBusy=true;const id=S.cur;
+    (async()=>{let no;try{no=await invNo(j)}catch(e){S.mkinvBusy=false;toast("Couldn't number the invoice: "+((e&&e.message)||e));return}
+      S.mkinvBusy=false;j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=no;j.inv.at=Date.now();j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`);scheduleSave(id);rr()})();return}
   if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
   if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
     const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
