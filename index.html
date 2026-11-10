@@ -479,7 +479,8 @@ const PRICE_DEFAULTS=(()=>{
   add("main_repair","Mainline","Mainline leak repair","each",325,1);
   BF_TYPES.forEach(([t,T],i)=>{fam(`bf_repair_${t}`,"Mainline",`Repair ${T} backflow preventer`,"each",[190,230,275][i],1,"bf_repair");
     fam(`bf_replace_${t}`,"Mainline",`Replace ${T} backflow preventer`,"each",[395,495,650][i],1,"bf_replace")});
-  add("bf_insulate","Mainline","Backflow insulation cover","each",45,1);
+  add("bf_insulate","Mainline","Backflow bag insulation","each",45,1);
+  add("bf_ins_pipe","Mainline","Backflow pipe insulation","each",35,1);
   add("bf_test","Mainline","Backflow test (certified tester)","each",95,0);
   add("bf_permit","Mainline","City permit & inspection (backflow install)","each",75,0);
   add("bf_install","Mainline","Install backflow preventer (none present)","each",450,1);
@@ -819,7 +820,7 @@ function buildEstimate(j){
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"))add(sec,"bf_insulate",1)}
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"&&m.bf.insulate!=="no"))add(sec,"bf_insulate",1);if(m.bf.insPipe==="yes")add(sec,"bf_ins_pipe",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
       if(c.present==="no"){if(compInstall(k,c))addS(sec,p+"_install",c.newSize,1);return}
       if(c.present!=="yes")return;
@@ -1609,8 +1610,9 @@ function mainlineTab(){const j=job();
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
-    ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
-    ${m.bf.insulated==="no"&&m.bf.insulate==="yes"?`<p class="small muted" style="margin:0">Not insulated, so an insulation cover is added to the estimate as Recommended.</p>`:""}`}</div>
+    ${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
+    ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
+    ${m.bf.insulate==="yes"||m.bf.insPipe==="yes"?`<p class="small muted" style="margin:0">${m.bf.insulated==="no"?"Not insulated, so both are recommended. ":""}Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -2076,7 +2078,7 @@ function suggestUpsells(j){
   const spray=j.zones.filter(z=>z.types.includes("spray"));
   if(spray.length)add("Water-efficient nozzles","Whole property",`Convert spray nozzles to MP rotators (${spray.length} zone${spray.length===1?"":"s"})`,"Slower, more even watering that cuts runoff on clay soil and uses less water.","cnoz_mp",spray.length*6);
   j.zones.filter(z=>z.types.includes("spray")&&z.sun==="partial").forEach(z=>add("Drip conversion",`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,`Convert zone ${z.num} beds to drip`,"Waters plant roots directly, ends overspray on walls and walks.","drip_retro"));
-  j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.insulate!=="yes"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
+  j.mainline.forEach(m=>{if(m.bf.present!=="no"&&m.bf.insulated==="no"&&m.bf.action!=="insulate"&&m.bf.insulate!=="yes"&&m.bf.insPipe!=="yes"&&m.bf.action!=="replace")add("Backflow protection",m.name,"Insulated backflow cover","Protects the backflow from freeze damage.","bf_insulate");
     if(m.prv.present==="no"&&!compInstall("prv",m.prv))add("Pressure regulation",m.name,"Add a pressure reducing valve","High pressure causes misting and broken parts; regulating it saves water.",sizedKey("prv_install",m.prv.newSize||m.bf.size).k);
     if(m.mv.present==="no"&&m.mv.noneAction==="none")add("Master valve",m.name,"Add a master valve","Shuts off the mainline between cycles so a break can't run all day.",sizedKey("mv_install",m.mv.newSize||m.bf.size).k)});
   add("Maintenance plan","Whole property","Seasonal maintenance plan","Spring start-up, mid-season check and winterization at a set yearly price.","",1);
@@ -3965,9 +3967,10 @@ app.addEventListener("click",ev=>{
   if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
     /* Backflow not insulated → recommend an insulation cover automatically (Bradley). The tech can still tap No. */
     {const mm=/^mainline\.(\d+)\.bf\.insulated$/.exec(d.set);if(mm){const bf=j.mainline[+mm[1]].bf;
-      if(bf.insulated==="no"&&bf.insulate!=="yes"&&bf.insulate!=="no"){bf.insulate="yes";bf.insulateAuto=true}
-      else if(bf.insulated!=="no"&&bf.insulateAuto){bf.insulate="";bf.insulateAuto=false}}}
+      if(bf.insulated==="no"){if(bf.insulate!=="yes"&&bf.insulate!=="no"){bf.insulate="yes";bf.insulateAuto=true}if(bf.insPipe!=="yes"&&bf.insPipe!=="no"){bf.insPipe="yes";bf.insPipeAuto=true}}
+      else{if(bf.insulateAuto){bf.insulate="";bf.insulateAuto=false}if(bf.insPipeAuto){bf.insPipe="";bf.insPipeAuto=false}}}}
     if(/^mainline\.\d+\.bf\.insulate$/.test(d.set)){const bf=getP(j,d.set.replace(/\.insulate$/,""));if(bf)bf.insulateAuto=false}
+    if(/^mainline\.\d+\.bf\.insPipe$/.test(d.set)){const bf=getP(j,d.set.replace(/\.insPipe$/,""));if(bf)bf.insPipeAuto=false}
     if(d.set==="inv.kind"&&d.v==="invoice"&&j.inv.no&&!j.inv.issued){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}
     scheduleSave(S.cur);rr();return}
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
