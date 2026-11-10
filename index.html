@@ -185,7 +185,7 @@ tr.sec td{background:var(--sunk);font-family:var(--display);font-weight:700;font
 .banner{padding:8px 12px;border-radius:8px;font-size:.9rem;background:var(--sunk);border:1px solid var(--line)}
 .empty{text-align:center;padding:36px 16px;display:grid;gap:10px;justify-items:center}
 .empty svg{color:var(--muted)}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:.92rem;z-index:20;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:.92rem;z-index:40;max-width:calc(100% - 32px)}
 
 /* full-screen map editor */
 .mapprev{position:relative;display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -2520,6 +2520,7 @@ function composeModal(){const m=S.compose;if(!m)return "";const enc=encodeURICom
     <label class="f"><span>To</span><input type="email" id="cmp-to" value="${esc(m.to)}" data-cmp="to"></label>
     <label class="f"><span>Subject</span><input type="text" id="cmp-subj" value="${esc(m.subj)}" data-cmp="subj"></label>
     <label class="f"><span>Message</span><textarea id="cmp-body" rows="9" data-cmp="body">${esc(m.body)}</textarea></label>
+    ${m.err?`<div class="note warn small" role="alert" style="margin:0"><b>Not sent:</b> ${esc(m.err)}</div>`:""}
     ${emailReady()?`<div class="row"><button class="btn" data-cmpsend="1" ${m.busy?"disabled":""}>${m.busy?"Sending…":"Send now"}</button><span class="small muted spacer">Sends from ${esc(emailFrom())}. Replies come back to that inbox.</span></div>`:""}
     <div class="row">${emailReady()?"":`<a class="btn sm" href="${mailto}" data-cmpsent="mail">Open in ${IS_PHONE?"email app":"Mail app"}</a>`}${emailReady()?`<a class="btn ghost sm" href="${mailto}" data-cmpsent="mail">Use my email app instead</a>`:""}${IS_PHONE?"":`<a class="btn ghost sm" href="${gmail}" target="_blank" rel="noopener" data-cmpsent="gmail">Open in Gmail (web)</a>`}<button class="btn ghost sm" data-cmpcopy="1">Copy message</button></div>
     ${m.onSent?`<div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="spacer small muted">${esc(m.sentNote||"Sent it? This takes the reminder off the list.")}</span><button class="btn sm" data-cmpdone="1">Mark as sent</button></div>`:""}</div></div>`}
@@ -3999,11 +4000,11 @@ app.addEventListener("click",ev=>{
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
   if(d.cmpsend&&S.compose){const m=S.compose;if(m.busy)return;
     if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(m.to||"").trim())){toast("Enter the customer's email address");return}
-    m.busy=true;render();
+    m.busy=true;m.err="";render();
     (async()=>{let err="";try{const r=await sb.functions.invoke("send-email",{body:{to:String(m.to).trim(),subject:m.subj||"",text:m.body||"",link:m.link||"",button:m.btn||"",from_name:bizInfo().name||""}});
         if(r.error)err=await fnErr(r.error);else if(!r.data||!r.data.ok)err=(r.data&&r.data.error)||"Unknown error"}catch(e){err=String((e&&e.message)||e)}
       m.busy=false;if(S.compose!==m)return;render();
-      if(err){toast("Not sent: "+err);return}
+      if(err){m.err=err;render();toast("Not sent: "+err);return}
       const done=document.querySelector("[data-cmpdone]");if(done)done.click();else{S.compose=null;render()}toast("Email sent to "+m.to)})();return}
   if(d.appttext){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");if(!ph)return;j.info.apptTexted=Date.now();scheduleSave(S.cur);const msg=apptMsg(j);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(msg)}`;return}
   if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
