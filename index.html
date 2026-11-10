@@ -698,10 +698,12 @@ function custFromJob(j){const c=newCust();CUST_FIELDS.forEach(k=>c[k]=j.info[k]|
 function isAdmin(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 /* Chief admin (developer): only one who can delete jobs or change admins */
 function isChief(){return !S.training&&(!sb||!!(S.me&&S.me.chief))}
+/* Delete jobs and customers: the chief admin, or an assistant chief (an admin the chief gave delete rights, e.g. Bradley). */
+function canDelete(){return isChief()||(!S.training&&!!(S.me&&S.me.admin&&S.me.canDel))}
 /* Office side (admins + dispatch): customers, reminders, assigning jobs. Also works in training. */
 function canSettings(){return !S.training&&(!sb||!!(S.me&&S.me.admin))}
 function isOffice(){return !sb||!!(S.me&&S.me.admin)}
-function canDeleteJob(j){if(S.training||!sb)return true;if(isChief())return true;return !!(S.me&&j.createdBy===S.me.id&&!j.controllers.length&&!(j.revs||[]).length)}
+function canDeleteJob(j){if(S.training||!sb)return true;if(canDelete())return true;return !!(S.me&&j.createdBy===S.me.id&&!j.controllers.length&&!(j.revs||[]).length)}
 function myJob(j){if(!sb||isOffice())return true;return !j.assign||j.assign.id===S.me.id||j.createdBy===S.me.id}
 function techList(){return (S.team&&S.team.people||[]).filter(p=>p.role==="tech")}
 function assignTo(j,p){j.assign={id:p.id,name:p.name||String(p.email).split("@")[0],email:p.email};j.info.tech=j.assign.name}
@@ -2637,7 +2639,7 @@ function customerDetail(c){const l=c.jobs[0];const sysJob=c.lastAudit||l||{contr
     ${eq.length?`<div class="tbl"><table><tbody>${eq.map(r=>`<tr><td>${esc(r.part)}</td><td>${esc(r.brand||"—")}</td><td>${esc(r.model||"")}${r.serial?" · S/N "+esc(r.serial):""}</td><td>${(t=>t?esc(t[1]):"")(brandTier(r.brand))}</td></tr>`).join("")}</tbody></table></div>`:""}</div>
   <div class="card"><h3>Coming up</h3>${sched.length?`<div class="acts">${sched.map(r=>`<div class="act"><div class="al">${esc(r.label)}<div class="ap">${esc(r.why)}</div></div><span class="small">${esc(dueLabel(r.due))}</span></div>`).join("")}</div>`:'<p class="muted small">Nothing scheduled yet. Issue an audit to start the calendar.</p>'}</div>
   <div class="card"><h3>Open items</h3>${open.length?`<div class="acts">${open.map(i=>`<div class="act"><div class="al">${tlDot(i.c)} ${esc(i.label)}<div class="ap">${esc(i.sec)}${i.status==="declined"?" · declined":i.status==="notdone"?" · not done yet":""}</div></div></div>`).join("")}</div>`:'<p class="muted small">No open items.</p>'}</div>
-  ${isChief()?`<div class="card sunk"><div class="row"><div class="spacer small muted">${c.jobs.length?`Deletes this customer and their ${c.jobs.length} job${c.jobs.length===1?"":"s"} (reports and invoices included) for everyone. It can't be undone.`:"Deletes this customer for everyone. It can't be undone."}</div>${delBtn("cust:"+c.key.replace(/:/g,"~"),c.jobs.length?`Delete customer + ${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"Delete customer")}</div></div>`:""}
+  ${canDelete()?`<div class="card sunk"><div class="row"><div class="spacer small muted">${c.jobs.length?`Deletes this customer and their ${c.jobs.length} job${c.jobs.length===1?"":"s"} (reports and invoices included) for everyone. It can't be undone.`:"Deletes this customer for everyone. It can't be undone."}</div>${delBtn("cust:"+c.key.replace(/:/g,"~"),c.jobs.length?`Delete customer + ${c.jobs.length} job${c.jobs.length===1?"":"s"}`:"Delete customer")}</div></div>`:""}
   <div class="card"><h3>Jobs (${c.jobs.length})</h3><div class="acts">${c.jobs.map(j=>`<button type="button" class="act custjob" data-open="${j.id}"><div class="al">${jobNoTag(j)}<div class="small">${esc(j.info.date?new Date(j.info.date+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"No date")}</div><div class="ap">${(j.revs||[]).length?"Report Rev "+revNo(j.revs[j.revs.length-1].n):"No report yet"}${j.completion&&j.completion.issuedAt?" · completion report issued":""}</div></div>${phasePill(j)}</button>`).join("")}</div></div>`}
 /* ---- Properties: one customer can own several (main home, lake house, rentals…) ----
    The customer record's own address fields are the MAIN property; extra ones live in c.props.
@@ -3457,7 +3459,7 @@ async function afterSignIn(session){
   if(error||!p){S.mode="auth";S.auth.err="Your account isn't set up yet. Please try again in a moment, or contact your technician.";render();return}
   const metaName=((u.user_metadata||{}).name||"").trim();
   if(!p.name&&metaName){await sb.from("profiles").update({name:metaName}).eq("id",u.id);p.name=metaName}
-  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),account:(u.user_metadata||{}).account||"",approved:!!p.approved,custId:p.cust_id||""};
+  S.me={id:u.id,email:u.email,name:p.name||"",role:p.role,admin:!!p.is_admin,chief:!!(p.is_admin&&p.is_chief),canDel:!!(p.is_admin&&p.can_delete),account:(u.user_metadata||{}).account||"",approved:!!p.approved,custId:p.cust_id||""};
   try{const r=await sb.rpc("is_platform");S.me.platform=!r.error&&r.data===true}catch(e){S.me.platform=false}
   if(p.role==="tech"){S.home=S.restoredHome||(S.me.admin?"customers":"jobs");S.restoredHome=null;startDb(makeSupaDb());checkLocalImport()}
   else if(p.approved||SHOW_PORTAL){S.mode="portal";S.portal={list:null,view:null};render();loadPortal()}
@@ -3568,7 +3570,7 @@ async function signOut(){S.acctOpen=false;if(!S.training){toast("Saving…");try
   resetToSignIn();toast("Signed out")}
 /* Who's signed in: shown in the top bar on every screen */
 /* Job options menu (admins): delete the job */
-function jobMenu(j){if(!isChief())return "";
+function jobMenu(j){if(!canDelete())return "";
   return `<div class="acct"><button class="iconbtn jobmenubtn" data-jobmenu="1" aria-expanded="${!!S.jobMenu}" aria-label="Job options">⋯</button>
   ${S.jobMenu?`<div class="acctmenu" role="menu"><b>Job options</b><p class="small muted" style="margin:0">Deleting removes this job, its photos' links, reports and invoice for everyone. It can't be undone.</p>${delBtn("job:"+j.id,"Delete job")}</div>`:""}</div>`}
 /* ---- Notifications (bell) ---- */
@@ -3613,7 +3615,7 @@ function bellChip(){if(!sb||!S.me||S.mode!=="db")return "";const L=notifList();
   ${S.bellOpen?`<div class="acctmenu notifs" role="menu"><b>Notifications</b>${L.length?L.map(x=>`<div class="notif"><div style="flex:1;min-width:0"><div>${esc(x.t)}</div><div class="small muted">${esc(x.s)}</div></div>${x.b}</div>`).join(""):'<p class="small muted" style="margin:0">You\'re all caught up.</p>'}</div>`:""}</div>`}
 function acctChip(){if(!sb||!S.me)return "";const n=S.me.name||S.me.email;const ini=(n.match(/\b\w/g)||["?"]).slice(0,2).join("").toUpperCase();
   return `${bellChip()}<div class="acct"><button class="acctbtn" data-acct="1" aria-expanded="${!!S.acctOpen}" aria-label="Account: ${esc(n)}"><span class="avatar">${esc(ini)}</span><span class="acctname">${esc(n.split(/[ @]/)[0])}</span></button>
-  ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.admin?"Admin":"Technician"}</span></div>
+  ${S.acctOpen?`<div class="acctmenu" role="menu"><div><b>${esc(n)}</b><div class="small muted">${esc(S.me.email)}</div><span class="pill ${S.me.admin?"ok":"neutral"}">${S.me.chief?"Chief admin":S.me.canDel&&S.me.admin?"Assistant chief":S.me.admin?"Admin":"Technician"}</span></div>
     ${S.mode==="db"&&!S.training?`<button class="btn quiet sm" data-accnotifs="1">Notifications${(n=>n?` (${n})`:"")(notifList().length)}</button>`:""}<button class="btn quiet sm" data-accteam="1">${S.me.admin?"Team & account":"Your account"}</button>${canSettings()?`<button class="btn quiet sm" data-accsettings="1">Admin settings</button>`:""}${S.me.platform&&!S.training?`<button class="btn quiet sm" data-accclients="1">Clients (all companies)</button>`:""}${S.training?`<button class="btn sm" data-exittrain="1">Exit training</button>`:`<button class="btn ghost sm" data-entertrain="1">Training mode</button>`}<button class="btn danger sm" data-signout="1">Sign out</button></div>`:""}</div>`}
 
 /* ---------- Training mode: practice jobs on this phone only ---------- */
@@ -3692,17 +3694,20 @@ function teamView(){
   const me=S.me;const techs=S.team.people.filter(p=>p.role==="tech");const owners=S.team.people.filter(p=>p.role==="owner");
   const pending=S.team.staff.filter(e=>!S.team.people.some(p=>p.email===e));
   const adm=isAdmin();
-  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">${me.chief?"Chief admin":me.admin?"Admin":"Technician"}</span></div>
+  return `<div class="card"><div class="cardhead"><h2>Your account</h2><span class="pill ok">${me.chief?"Chief admin":me.canDel&&me.admin?"Assistant chief":me.admin?"Admin":"Technician"}</span></div>
     <div class="grid2"><label class="f"><span>Your name (shown on reports you issue)</span><input id="me-name" type="text" data-mename="1" value="${esc(me.name)}"></label><label class="f"><span>Your email</span><input type="email" value="${esc(me.email)}" disabled></label></div>
     <div><button class="btn quiet" data-signout="1">Sign out</button></div></div>
   <div class="card"><h2>Team</h2><p class="small muted" style="margin:0">Technicians do the jobs assigned to them. <b>Admins</b> (owner and dispatch) also add customers, create and assign jobs, change prices and add technicians. Only the <b>chief admin</b> can delete jobs or make someone an admin.</p>
-    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_chief&&p.is_admin?'<span class="pill ok">Chief admin</span>':p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm&&!p.is_chief&&p.id!==me.id&&(isChief()||!p.is_admin)?`<div class="row" style="gap:6px;justify-content:flex-end">${isChief()?(p.is_admin?delBtn("unadmin:"+p.email,"Remove admin"):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`):""}${delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
+    <div class="acts">${techs.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)} ${p.is_chief&&p.is_admin?'<span class="pill ok">Chief admin</span>':p.is_admin&&p.can_delete?'<span class="pill ok">Assistant chief</span>':p.is_admin?'<span class="pill ok">Admin</span>':'<span class="pill neutral">Technician</span>'}<div class="ap">${esc(p.email)}${p.id===me.id?" · you":""}</div></div>${adm&&!p.is_chief&&p.id!==me.id&&(isChief()||!p.is_admin)?`<div class="row" style="gap:6px;justify-content:flex-end">${isChief()?(p.is_admin?(p.can_delete?`<button class="btn ghost sm" data-asstchief="${esc(p.email)}|0">Remove assistant chief</button>`:`<button class="btn ghost sm" data-asstchief="${esc(p.email)}|1" title="Can delete jobs and customers">Make assistant chief</button>`)+delBtn("unadmin:"+p.email,"Remove admin"):`<button class="btn ghost sm" data-mkadmin="${esc(p.email)}">Make admin</button>`):""}${delBtn("staff:"+p.email,"Remove")}</div>`:""}</div>`).join("")}
     ${pending.map(e=>`<div class="act"><div class="al">${esc(e)}<div class="ap">Invited · hasn't signed up yet</div></div>${adm?delBtn("staff:"+e,"Remove"):""}</div>`).join("")}</div>
     ${adm?"":"<!--"}<form data-addstaff="1" class="row"><input id="staff-email" type="email" inputmode="email" placeholder="Technician's email" required style="flex:1;min-width:180px"><button class="btn sm">Add technician</button></form>
     <p class="small muted" style="margin:0">For technicians only. The technician then creates their own account on the sign-in screen with this email. If that email already has an account, it becomes a technician right away. <b>Customers aren't added here</b>: add them on the Customers tab, and they sign up as a property owner with the email on their profile.</p>${adm?"":"-->"}</div>
   ${SHOW_PORTAL?"":"<!--"}<div class="card"><h2>Property owners</h2><p class="small muted" style="margin:0">Owners see only the issued reports and invoices for jobs where their email is the customer email.</p>
     ${owners.length?`<div class="acts">${owners.map(p=>`<div class="act"><div class="al">${esc(p.name||p.email)}<div class="ap">${esc(p.email)}</div></div></div>`).join("")}</div>`:'<p class="muted" style="margin:0">No owners have signed up yet.</p>'}</div>${SHOW_PORTAL?"":"-->"}`;
 }
+async function setAsstChief(email,on){const {error}=await sb.rpc("set_assistant_chief",{p_email:email,p_on:on});
+  if(error){toast(/set_assistant_chief|schema cache|function/i.test(error.message||"")?"Run database update 16-assistant-chief.sql in Supabase first":error.message.replace(/^.*?:\s*/,""));return}
+  toast(on?"Assistant chief: can now delete jobs and customers":"Assistant chief rights removed");loadTeam()}
 async function setAdmin(email,on){const {error}=await sb.rpc("set_admin",{p_email:email,p_admin:on});if(error){toast(error.message.replace(/^.*?:\s*/,""));return}toast(on?"Admin access given":"Admin access removed");loadTeam()}
 async function setStaff(email,on){const {error}=await sb.rpc("set_staff",{p_email:email,p_staff:on});if(error){toast(error.message.replace(/^.*?:\s*/,""));return}toast(on?"Technician added":"Technician removed");loadTeam()}
 
@@ -3814,7 +3819,7 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-notseen],[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-accclients],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-asstchief],[data-notseen],[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-accclients],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
     if(d.notseen){markSeen(d.notseen);render();return}
@@ -3841,6 +3846,7 @@ app.addEventListener("click",ev=>{
     if(d.pprint){if(S.portal.view&&S.portal.view.html)printDoc(S.portal.view.html);return}
     if(d.impgo){importSelected();return}
     if(d.mkadmin){setAdmin(d.mkadmin,true);return}
+    if(d.asstchief){const [e,v]=d.asstchief.split("|");setAsstChief(e,v==="1");return}
   }
 },true);
 app.addEventListener("click",ev=>{
@@ -4097,7 +4103,7 @@ function doRemove(key){
   if(k==="staff"){setStaff(key.slice(6),false);return}
   if(k==="unadmin"){setAdmin(key.slice(8),false);return}
   if(k==="resetprices"){const keep={};Object.keys(S.pricing||{}).forEach(x=>{if(x.startsWith("_"))keep[x]=S.pricing[x]});S.pricing=keep;savePricing();toast("Prices reset to sample rates. Business details and settings kept.");return}
-  if(k==="cust"){if(!isChief())return;const ck=key.slice(5).replace(/~/g,":");const c=customers().find(x=>x.key===ck);if(!c)return;
+  if(k==="cust"){if(!canDelete())return;const ck=key.slice(5).replace(/~/g,":");const c=customers().find(x=>x.key===ck);if(!c)return;
     c.jobs.forEach(jj=>deleteJob(jj.id));
     if(c.rec){const id=c.rec.id;delete S.custs[id];if(S.mode==="local")LS.set(KP()+"custs",S.custs);else if(S.mode==="db"&&!S.ro)db.doc("customers/"+id).delete().catch(handleWriteErr)}
     S.custOpen=null;S.cur=null;S.home="customers";render();toast("Customer deleted");return}
