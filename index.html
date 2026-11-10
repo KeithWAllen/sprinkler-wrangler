@@ -836,7 +836,7 @@ function buildEstimate(j){
       if(k==="mv"&&c.pos==="upstream")addS(sec,"mv_relocate",c.size,1,"","",bn(c));
       if(k==="prv"&&c.pos==="upstream")return;
       if(c.action==="repair")addS(sec,p+"_repair",c.size,1,"","",bn(c));
-      if(c.action==="replace"){if(k==="prv"){const n=c.newAsm||{};const desc=[brandName(n.brand,n.brandOther),n.model].filter(Boolean).join(" ");addS(sec,"prv_replace",n.size||c.size,1,"",`Replace pressure reducing valve (PRV)${desc?" with "+desc:""}`,bn(n)||bn(c))}else addS(sec,p+"_replace",c.size,1,"","",bn(c))}});
+      if(c.action==="replace"){if(k==="prv"){const n=c.newAsm||{};const desc=[brandName(n.brand,n.brandOther),n.model].filter(Boolean).join(" ");addS(sec,"prv_replace",n.size||c.size,1,"",`Replace pressure reducing valve (PRV)${desc?" with "+desc:""}`,bn(n)||bn(c))}else if(k==="iso")addS(sec,"iso_install",c.size,1,"","Replace isolation valve");else addS(sec,p+"_replace",c.size,1,"","",bn(c))}});
     (m.custom||[]).forEach(x=>addC(sec,x.desc,x.qty||1,x.price));
   });
   (j.controllers||[]).forEach(c=>{
@@ -1123,8 +1123,10 @@ function docketView(){
 function priceRow(k,d,lbl){const eff=basePrice(k);const changed=eff!==d.p;
   return `<div class="act"><div class="al">${esc(lbl||d.l)}<div class="ap">${lbl?"":`per ${esc(d.u)} · `}${changed?`sample ${money(d.p)} · `:""}commercial ${money(eff*(1+commPct()/100))}</div></div>
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${esc(S.pricing[k]!=null&&S.pricing[k]!==""?S.pricing[k]:eff)}" aria-label="${esc(d.l)} price"></label></div>`}
+/* Priced from another item, so not shown on the price sheet: replacing an isolation valve uses the Install isolation valve prices (Keith). */
+const PRICE_HIDDEN_FAMS=new Set(["iso_replace","iso_repair","prv_repair"]);
 function priceRows(list){const out=[];const seen=new Set();
-  list.forEach(([k,d])=>{if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam))return;seen.add(d.fam);
+  list.forEach(([k,d])=>{if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam)||PRICE_HIDDEN_FAMS.has(d.fam))return;seen.add(d.fam);
     const F=SIZED_FAMS[d.fam];const ks=F.codes.map(c=>`${d.fam}_${c}`);const ps=ks.map(basePrice);const lo=Math.min(...ps),hi=Math.max(...ps);
     out.push(`<details class="pfam" data-pfam="${d.fam}" ${(S.famOpen||{})[d.fam]?"open":""}><summary><span class="al">${esc(F.base)}<span class="ap">per ${esc(F.u)} · ${F.codes.length} sizes · ${lo===hi?money(lo):money(lo)+"–"+money(hi)}</span></span></summary>
       <div class="pfsizes"><div class="small muted" style="padding:6px 0 0"><b>Standard price</b> (any brand without its own price)</div>${ks.map((k2,i)=>priceRow(k2,PRICE_DEFAULTS[k2],sizeLabel(F.codes[i]))).join("")}
