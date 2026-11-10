@@ -581,7 +581,7 @@ function bfTypeShown(type){return String(type||"").trim()}
 function commPct(){const v=S.pricing._commercial;return v==null||v===""?25:num(v)}
 /* Brand + size pricing (Bradley): a price typed for a brand and size (key "<item>_<size>@<Brand>") wins;
    left blank, that brand uses the item's standard price for the size. */
-function famBrandCat(f){return /^bf_(repair|replace)_/.test(f)?"backflow":/^prv_/.test(f)?"prv":/^iso_/.test(f)?"iso":/^(mv|zv)_/.test(f)?"valve":""}
+function famBrandCat(f){return /^bf_(repair|replace)_/.test(f)?"backflow":/^prv_/.test(f)?"prv":/^(mv|zv)_/.test(f)?"valve":""}
 function brandBase(k,brand){if(brand){const o=S.pricing[k+"@"+brand];if(o!=null&&o!=="")return num(o)}return basePrice(k)}
 function price(k,j,brand){j=j||job();const b=brandBase(k,brand);return j&&j.info&&j.info.propType==="commercial"?Math.round(b*(1+commPct()/100)*100)/100:b}
 function job(){return S.jobs[S.cur]}
@@ -1589,7 +1589,7 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",(isIso?[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]:[["upstream","Plumbing side"],["downstream","Irrigation side"]])):""}
   ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be on the irrigation side of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Plumbing side of the backflow:</b> work here needs a licensed plumber.</div>`:""}
-  <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
+  ${isIso?`<div class="grid3">${sizeSel("Size",base+".size")}${sel("Type",base+".type",["","Ball valve","Gate valve","Other"])}</div>`:`<div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>`}
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",(isPrv||isIso)?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
   ${isPrv&&!up&&c.action==="replace"?(()=>{const nb=base+".newAsm";const ml=getP(job(),base.replace(/\.prv$/,""))||{};
     return `<div class="combo"><h4>New PRV</h4><div class="grid3">${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","prv")}${fld("Model",nb+".model")}</div>
