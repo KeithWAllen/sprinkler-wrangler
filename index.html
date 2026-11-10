@@ -978,7 +978,10 @@ function invSettingsCard(){const adm=isAdmin();const on=!!(S.pricing||{})._payOn
   return `<div class="card"><h2>Invoices & payments</h2>
   <label class="f"><span>Default payment terms</span><select data-price="_invTerms" ${adm?"":"disabled"}>${INV_TERMS.map(x=>`<option value="${x[0]}" ${defTerms()===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></label>
   <div class="q"><span class="ql">Online payments through Stripe</span><div class="chips"><button class="chip" data-payonline="1" aria-pressed="${on}" ${adm?"":"disabled"}>On</button><button class="chip" data-payonline="0" aria-pressed="${!on}" ${adm?"":"disabled"}>Off</button></div></div>
-  <p class="small muted" style="margin:0">When on, customers see a <b>Pay now</b> button on unpaid invoices in their account and can pay by card or bank transfer (ACH) through your Stripe account. Payments land on the invoice automatically. Turn this on only after the Stripe setup steps are finished.</p></div>`}
+  <p class="small muted" style="margin:0">When on, customers see a <b>Pay now</b> button on unpaid invoices in their account and can pay by card or bank transfer (ACH) through your Stripe account. Payments land on the invoice automatically. Turn this on only after the Stripe setup steps are finished.</p>
+  <div class="q"><span class="ql">Send emails from the app</span><div class="chips"><button class="chip" data-emailsend="1" aria-pressed="${!!(S.pricing||{})._emailSend}" ${adm?"":"disabled"}>On</button><button class="chip" data-emailsend="0" aria-pressed="${!(S.pricing||{})._emailSend}" ${adm?"":"disabled"}>Off</button></div></div>
+  <label class="f"><span>Sending address</span><input type="email" data-price="_emailFrom" value="${esc((S.pricing||{})._emailFrom||"")}" placeholder="sprinklerwrangler@gmail.com" ${adm?"":"disabled"}></label>
+  <p class="small muted" style="margin:0">When on, <b>Send now</b> emails estimates, invoices and reminders straight from this Gmail, with a button the customer taps to open them. It shows in that Gmail's Sent folder and replies come back there. Turn this on only after the Gmail setup steps are finished (supabase/functions/EMAIL-SETUP.md).</p></div>`}
 function invoicesView(){const jobs=Object.values(S.jobs).filter(Boolean);const inv=jobs.filter(j=>j.inv&&j.inv.kind==="invoice"&&j.inv.no);
   const st=j=>invState(j);const openSt=["sent","partial","pastdue"];
   const outstanding=inv.filter(j=>openSt.includes(st(j))).reduce((a,j)=>a+invBalance(j),0);
@@ -1184,7 +1187,8 @@ function intakeView(j){const off=sb&&isOffice();
     :`<div class="card"><div class="eyebrow">Step 1</div><h2>Customer</h2>${customerFields()}</div>`}
   <div class="card"><div class="eyebrow">Step 2</div><h2>Visit</h2><div class="grid2">${fld("Scheduled date","info.date","date")}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}</div>
     ${off?`<div class="grid2">${assignSel(j)}${fld("Truck","info.truck")}</div>`:""}
-    ${fld("Problem reported / notes for the technician","info.notes","textarea")}</div>
+    ${fld("Problem reported / notes for the technician","info.notes","textarea")}
+    ${apptTextRow(j)}</div>
   <div class="card"><div class="eyebrow">Step 3</div><h2>What kind of property is this?</h2><p class="muted small">Commercial work is priced ${commPct()}% above residential rates.</p>
     <div class="grid2">${pt("residential","Residential","Homes, HOA single lots")}${pt("commercial","Commercial","Businesses, HOA common areas, multi-family")}</div></div>
   <div class="card"><p class="small" id="intake-miss" style="margin-top:0" ${miss.length?"":"hidden"}><b>Still needed:</b> <span>${esc(miss.join(", "))}</span></p>
@@ -1192,9 +1196,16 @@ function intakeView(j){const off=sb&&isOffice();
     ${toOther?"":`<div class="row" style="margin-top:8px"><span class="spacer small muted">Customer not available?</span><button class="linkbtn" data-intakeskip="1">Fill in details later</button></div>`}</div>
   ${canDeleteJob(j)?`<div class="card sunk"><div class="row"><div class="spacer small muted">Started this by mistake?</div>${delBtn("job:"+j.id,"Delete job")}</div></div>`:""}
   </main></div>`}
+/* Appointment confirmation text. Asking for a reply matters: once an iPhone customer replies, links texted to them later (estimates, invoices) can be tapped. */
+function apptMsg(j){const b=bizInfo();const i=j.info;const first=(i.customer||"").split(" ")[0]||"there";
+  const when=i.date?new Date(i.date+"T12:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}):"";
+  return `Hi ${first}, this is ${b.name||"your irrigation company"} confirming your sprinkler appointment${when?" on "+when:""}${i.window?", "+i.window:""}${i.address?" at "+i.address:""}. Please reply YES to confirm${b.phone?", or call "+b.phone+" to reschedule":""}. Thank you!`}
+function apptTextRow(j){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");const t=j.info.apptTexted;
+  return `<div><button class="btn ghost sm" data-appttext="1" ${ph?"":"disabled title=\"Add a phone number first\""}>${t?"Text confirmation again":"Text appointment confirmation"}</button><p class="small muted" style="margin:6px 0 0">${t?`<b>Texted ${esc(fmtDT(t))}.</b> `:""}Asks them to reply YES. Once they reply, iPhones let them open estimate and invoice links you text later.</p></div>`}
 function dispatchTab(){const j=job();const miss=missingCustomer(j);
   return `<div class="card"><div class="cardhead"><h2>Customer</h2>${miss.length?'<span class="pill warn">Needed for report</span>':'<span class="pill ok">Complete</span>'}</div>${customerFields()}</div>
   <div class="card"><h2>Dispatch</h2><div class="grid2">${fld((j.revs||[]).length?"Inspection date":"Scheduled date","info.date","date",'data-rr="1"')}${fld("Arrival window","info.window","text",'placeholder="8–10 AM"')}${sb&&isOffice()?assignSel(j):fld("Technician","info.tech")}${fld("Truck","info.truck")}</div>
+  ${apptTextRow(j)}
   <div class="grid2">${sel("Job type","info.workType",["Inspection & repair","Service call","Spring start-up","Winterization","New install","Audit / upgrade"])}${sel("Priority","info.priority",["Low","Normal","High","Emergency"])}</div>
   ${seg("Property type","info.propType",[["residential","Residential"],["commercial","Commercial"]])}
   <div class="f"><span>Status</span><div>${pillFor(jobStatus(j))} <span class="small muted">Set automatically from the job's progress and Outcome.</span></div></div>
@@ -2207,7 +2218,8 @@ function sendBox(j,kind){const l=docLink(j,kind);const prob=linkProblem(j,kind);
     ${l&&prob==="changed"?`<div class="note warn small" style="margin:0">The estimate changed after the last link was made. Sending again makes a new link; the old one now tells the customer to ask for the new one.</div>`:""}
     ${l&&prob==="expired"?`<div class="note warn small" style="margin:0">The last link expired. Sending again makes a new one.</div>`:""}
     ${l&&prob==="replaced"?`<div class="note warn small" style="margin:0">The last link was replaced. Sending again makes a new one.</div>`:""}
-    <div class="row"><button class="btn" data-shsend="email|${kind}">Email</button><button class="btn ghost" data-shsend="text|${kind}" ${ph?"":"disabled title=\"Add a phone number first\""}>Text</button><button class="btn ghost" data-shsend="copy|${kind}">Copy link</button>${CAN_PRINT?`<button class="btn quiet" data-print="${kind}">Print / Save PDF</button>`:""}${l&&!prob?`<a class="btn quiet" href="${esc(shareUrl(l.token))}" target="_blank" rel="noopener">See what they see</a>`:""}</div></div>`}
+    <div class="row"><button class="btn" data-shsend="email|${kind}">Email</button><button class="btn ghost" data-shsend="text|${kind}" ${ph?"":"disabled title=\"Add a phone number first\""}>Text</button><button class="btn ghost" data-shsend="copy|${kind}">Copy link</button>${CAN_PRINT?`<button class="btn quiet" data-print="${kind}">Print / Save PDF</button>`:""}${l&&!prob?`<a class="btn quiet" href="${esc(shareUrl(l.token))}" target="_blank" rel="noopener">See what they see</a>`:""}</div>
+    <p class="small muted" style="margin:0"><b>iPhone customers:</b> an iPhone won't let them tap a link texted from a number they haven't saved or replied to. Email works every time. Texting works once they've replied to your appointment text.</p></div>`}
 async function importShareResponses(){if(!sb||!S.me||S.me.role!=="tech"||!S.loaded||S.training)return;
   try{const {data,error}=await sb.from("share_responses").select("*").eq("imported",false);if(error||!data||!data.length)return;
     for(const x of data){const j=S.jobs[x.job_id];if(!j)continue;syncCompletion(j);const c=j.completion;if(!c)continue;const pick={};(x.items||[]).forEach(p=>{if(Array.isArray(p))pick[p[0]]=p[1]});
@@ -2493,13 +2505,21 @@ function dueLabel(d){const days=Math.round((d-new Date())/864e5);return days<0?`
 function reminderMsg(c,r){const b=bizInfo();return {to:c.email,subj:`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`,
   body:`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`}}
 /* In-app email window: Gmail, mail app or copy. Nothing is marked sent until the user says so. */
+/* Phones: the Gmail website link makes Android ask "Continue with app?" and the Gmail app drops the filled-in message,
+   so phones only get the email-app (mailto) button. Computers also get Gmail on the web. */
+const IS_PHONE=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||"");
+/* "Send now": the app emails the customer itself from the company Gmail (Edge Function send-email). Switched on in Admin settings after setup. */
+function emailReady(){return !!(sb&&S.mode==="db"&&!S.training&&(S.pricing||{})._emailSend)}
+async function fnErr(e){try{const x=await e.context.json();return x.error||e.message}catch(_){return /not found|404/i.test(String(e&&e.message))?"email sending isn't set up yet":(e&&e.message)||"couldn't reach the email service"}}
+function emailFrom(){return (S.pricing||{})._emailFrom||"the company Gmail"}
 function composeModal(){const m=S.compose;if(!m)return "";const enc=encodeURIComponent;
   const gmail=`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to)}&su=${enc(m.subj)}&body=${enc(m.body)}`;const mailto=`mailto:${enc(m.to)}?subject=${enc(m.subj)}&body=${enc(m.body)}`;
   return `<div class="phmodal" role="dialog" aria-modal="true" aria-label="Email"><div class="phcard compbox"><div class="row" style="flex-wrap:nowrap"><h3 style="margin:0;flex:1">${esc(m.title||"Email customer")}</h3><button class="btn quiet sm" data-compclose="1">Close</button></div>
     <label class="f"><span>To</span><input type="email" id="cmp-to" value="${esc(m.to)}" data-cmp="to"></label>
     <label class="f"><span>Subject</span><input type="text" id="cmp-subj" value="${esc(m.subj)}" data-cmp="subj"></label>
     <label class="f"><span>Message</span><textarea id="cmp-body" rows="9" data-cmp="body">${esc(m.body)}</textarea></label>
-    <div class="row"><a class="btn sm" href="${gmail}" target="_blank" rel="noopener" data-cmpsent="gmail">Open in Gmail</a><a class="btn ghost sm" href="${mailto}" data-cmpsent="mail">Open in Mail app</a><button class="btn ghost sm" data-cmpcopy="1">Copy message</button></div>
+    ${emailReady()?`<div class="row"><button class="btn" data-cmpsend="1" ${m.busy?"disabled":""}>${m.busy?"Sending…":"Send now"}</button><span class="small muted spacer">Sends from ${esc(emailFrom())}. Replies come back to that inbox.</span></div>`:""}
+    <div class="row">${emailReady()?"":`<a class="btn sm" href="${mailto}" data-cmpsent="mail">Open in ${IS_PHONE?"email app":"Mail app"}</a>`}${emailReady()?`<a class="btn ghost sm" href="${mailto}" data-cmpsent="mail">Use my email app instead</a>`:""}${IS_PHONE?"":`<a class="btn ghost sm" href="${gmail}" target="_blank" rel="noopener" data-cmpsent="gmail">Open in Gmail (web)</a>`}<button class="btn ghost sm" data-cmpcopy="1">Copy message</button></div>
     ${m.onSent?`<div class="row" style="border-top:1px solid var(--line);padding-top:10px"><span class="spacer small muted">${esc(m.sentNote||"Sent it? This takes the reminder off the list.")}</span><button class="btn sm" data-cmpdone="1">Mark as sent</button></div>`:""}</div></div>`}
 function reminderMail(c,r){const b=bizInfo();const subj=`${b.name||"Sprinkler Wrangler"}: ${r.label} reminder`;
   const body=`Hi ${c.name.split(" ")[0]||"there"},\n\nIt's time for your ${r.label.toLowerCase()} at ${c.address}. Reply to this email or call ${b.phone||"us"} to schedule a visit.\n\nThank you,\n${b.name||"Sprinkler Wrangler"}\n${b.addr||""}\n\nYou're receiving this because you're a customer of ${b.name||"Sprinkler Wrangler"}. Reply UNSUBSCRIBE to stop maintenance reminders.`;
@@ -3798,6 +3818,7 @@ app.addEventListener("click",ev=>{
   if(d.invfilter){S.invFilter=d.invfilter;rr();return}
   if(d.acctx){acctExport(d.acctx);return}
   if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.emailsend!=null){if(!isAdmin())return;S.pricing._emailSend=d.emailsend==="1";savePricing();rr();return}
   if(d.payonline!=null){if(!isAdmin())return;S.pricing._payOnline=d.payonline==="1";savePricing();rr();return}
   if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
@@ -3937,7 +3958,7 @@ app.addEventListener("click",ev=>{
     const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
     const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
       :`Hi ${first},\n\nA friendly reminder that invoice ${j.inv.no} for the work at ${j.info.address} has a balance of ${money(bal)}${st==="pastdue"?", which is past due":""}.${online}\n\nIf you've already paid, thank you, and please disregard this note.\n\n${b.name||""}\n${b.phone||""}`;
-    S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:billEmail(j),subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
+    S.compose={title:d.invsend?"Email invoice":"Payment reminder",to:billEmail(j),link:lk,btn:(S.pricing||{})._payOnline?"View & pay invoice":"View invoice",subj:`${b.name||"Invoice"}: invoice ${j.inv.no}${d.invsend?"":" reminder"}`,body,onSent:{inv:S.cur,kind:d.invsend?"send":"remind"},sentNote:d.invsend?"Sent it? This marks the invoice as sent.":"Sent it? This logs the reminder."};render();return}
   if(d.diag){j.est.trip=d.diag==="on";if(d.diag==="off"){j.est.waivedAt=Date.now();j.est.waivedBy=(S.me||{}).name||""}scheduleSave(S.cur);rr();return}
   if(d.cvopen){syncCompletion(j);S.custView=true;S.cvScroll=0;S.cvAgree=false;S.cvDone=false;S.cvSig=null;S.cvName=j.info.customer||"";render();return}
   if(d.cvexit){S.custView=false;S.cvDone=false;render();return}
@@ -3965,9 +3986,18 @@ app.addEventListener("click",ev=>{
     j.bfHold.cleared=Date.now();scheduleSave(S.cur);S.tab="mainline";render();window.scrollTo(0,0);toast("Backflow recorded. Fill in its details and continue the job.");return}
   if(d.bfdecline){j.bfHold.declined={at:Date.now(),by:(S.me||{}).name||""};j.outcome="declined";scheduleSave(S.cur);rr();toast("Recorded: customer informed and declined. Only the diagnostic fee is billed.");return}
   if(d.bfundecline){delete j.bfHold.declined;j.outcome="";scheduleSave(S.cur);rr();return}
+  if(d.cmpsend&&S.compose){const m=S.compose;if(m.busy)return;
+    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(m.to||"").trim())){toast("Enter the customer's email address");return}
+    m.busy=true;render();
+    (async()=>{let err="";try{const r=await sb.functions.invoke("send-email",{body:{to:String(m.to).trim(),subject:m.subj||"",text:m.body||"",link:m.link||"",button:m.btn||"",from_name:bizInfo().name||""}});
+        if(r.error)err=await fnErr(r.error);else if(!r.data||!r.data.ok)err=(r.data&&r.data.error)||"Unknown error"}catch(e){err=String((e&&e.message)||e)}
+      m.busy=false;if(S.compose!==m)return;render();
+      if(err){toast("Not sent: "+err);return}
+      const done=document.querySelector("[data-cmpdone]");if(done)done.click();else{S.compose=null;render()}toast("Email sent to "+m.to)})();return}
+  if(d.appttext){const ph=(j.info.phone||"").replace(/[^\d+]/g,"");if(!ph)return;j.info.apptTexted=Date.now();scheduleSave(S.cur);const msg=apptMsg(j);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(msg)}`;return}
   if(d.shsend){const [how,kind]=d.shsend.split("|");const id=S.cur;const jj=j;
     (async()=>{const url=await ensureLink(jj,kind,id);if(!url)return;const m=linkMsg(jj,kind,url);
-      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
+      if(how==="email"){S.compose={title:kind==="estimate"?"Email estimate":"Email invoice",to:billEmail(jj),subj:m.subj,body:m.body,link:url,btn:kind==="estimate"?"Review & approve estimate":(S.pricing||{})._payOnline?"View & pay invoice":"View invoice",onSent:kind==="estimate"?{est:id}:{inv:id,kind:jj.inv.sentAt?"remind":"send"},sentNote:"Sent it? This marks it as sent."};render();return}
       if(how==="text"){const ph=(jj.info.phone||"").replace(/[^\d+]/g,"");markSent(jj,kind,`Link texted to ${jj.info.phone||"customer"}`,id);rr();location.href=`sms:${ph}?&body=${encodeURIComponent(m.sms)}`;return}
       copyText(url,"Link copied. Paste it into a text or email.");markSent(jj,kind,"Link copied to send",id);rr()})();return}
   if(d.mkest){j.estDoc={no:estNo(),at:Date.now(),log:[]};estLog(j,`Estimate ${j.estDoc.no} created (${money(buildEstimate(j).total)})`);scheduleSave(S.cur);rr();return}
