@@ -542,6 +542,8 @@ function invDue(j){const inv=j.inv||{};if(!inv.issued)return "";const t=INV_TERM
 function invState(j){const inv=j.inv||{};if(inv.kind!=="invoice"||!inv.no)return "";if(inv.status==="void")return "void";if(inv.status==="baddebt")return "baddebt";if(inv.status==="closed")return "closed";
   if(invBalance(j)<=0.004&&(invPays(j).length||inv.status==="paid"))return "paid";if(!inv.sentAt)return "draft";const due=invDue(j);if(due&&due<today())return "pastdue";return invPaid(j)>0?"partial":"sent"}
 function invPill(j){const st=invState(j);const x=INV_ST[st];return x?`<span class="pill ${x[1]}">${x[0]}</span>`:""}
+/* Who ended an invoice without it being paid, for the admins' bell alert. Set before the status changes, so the balance is the amount left uncollected. */
+function invEnd(j){j.inv.ended={at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),amt:invBalance(j)}}
 function invLog(j,t){j.inv=j.inv||{};j.inv.log=j.inv.log||[];j.inv.log.push({at:Date.now(),by:((S.me||{}).name||(S.me||{}).email||""),t})}
 function fmtD(d){return d?new Date(d+"T12:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}
 function payLink(){return location.origin+"/"}
@@ -3566,6 +3568,14 @@ function notifList(){const L=[];if(!sb||!S.me||S.training||S.mode!=="db")return 
     if(due)L.push({t:`${due} maintenance reminder${due===1?"":"s"} due`,s:"Due within 7 days or overdue",b:`<button class="btn ghost sm" data-notgo="reminders">Open</button>`});
     const stale=Object.values(S.jobs).filter(j=>j.info.status==="Waiting"&&Date.now()-(j.updatedAt||0)>7*864e5).length;
     if(stale)L.push({t:`${stale} job${stale===1?"":"s"} waiting to hear for over a week`,s:"Follow up with the customer",b:`<button class="btn ghost sm" data-notgo="jobs">Open</button>`});
+    /* Money alerts (Keith): work done but not invoiced, invoices past due, and invoices ended without payment. */
+    const JS=Object.values(S.jobs).filter(Boolean);
+    const toInv=JS.filter(j=>{const s0=invState(j);return (jobStatus(j)==="Completed"||(j.outcome==="declined"&&diagAmt(j)>0))&&(!s0||s0==="draft")});
+    if(toInv.length)L.push({t:`${toInv.length} finished job${toInv.length===1?"":"s"} not invoiced yet`,s:toInv.slice(0,3).map(j=>j.info.customer||"Customer").join(", ")+(toInv.length>3?"…":""),b:`<button class="btn ghost sm" data-notgo="jobs:toinv">Open</button>`});
+    const pd=JS.filter(j=>invState(j)==="pastdue");
+    if(pd.length)L.push({t:`${pd.length} invoice${pd.length===1?"":"s"} past due: ${money(pd.reduce((a,j)=>a+invBalance(j),0))} owed`,s:pd.slice(0,3).map(j=>j.info.customer||"Customer").join(", ")+(pd.length>3?"…":""),b:`<button class="btn ghost sm" data-notgo="jobs:unpaid">Open</button>`});
+    const seenE=seenMap();JS.forEach(j=>{const st=invState(j);const e=(j.inv||{}).ended;if(!e||!["closed","baddebt","void"].includes(st)||!(e.amt>0.004)||(j.inv.sentAt||0)===0)return;const key=`end:${j.id}:${e.at}`;if(seenE[key])return;
+      L.push({t:`${j.info.customer||"Customer"}: invoice ${j.inv.no} ${st==="void"?"voided":st==="baddebt"?"written off":"closed"} without payment (${money(e.amt)})`,s:`By ${e.by||"someone"} · ${fmtDT(e.at)}`,b:`<button class="btn sm" data-open="${j.id}" data-opentab="invoice">Open</button><button class="btn quiet sm" data-notseen="${esc(key)}">OK</button>`})});
     const nc=Object.values(S.jobs).filter(j=>j.info&&!j.info.customer&&!j.info.address).length;
     if(nc)L.push({t:`${nc} job${nc===1?"":"s"} missing customer details`,s:"Shown on the Customers tab",b:`<button class="btn ghost sm" data-notgo="customers">Open</button>`})}
   {const seen=seenMap();const latest={};(S.responses||[]).forEach(r=>{if(!latest[r.job_id])latest[r.job_id]=r});
@@ -3779,13 +3789,14 @@ app.addEventListener("submit",ev=>{
   if(f.dataset.addstaff){ev.preventDefault();const el=document.getElementById("staff-email");const v=(el.value||"").trim();if(v)setStaff(v,true);return}
 });
 app.addEventListener("click",ev=>{
-  const ab=ev.target.closest("[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-accclients],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
+  const ab=ev.target.closest("[data-notseen],[data-paynow],[data-presp],[data-pchange],[data-bell],[data-notgo],[data-accnotifs],[data-accsettings],[data-accclients],[data-auth],[data-who],[data-signout],[data-popen],[data-pback],[data-pprint],[data-impgo],[data-mkadmin],[data-acct],[data-accteam],[data-entertrain],[data-exittrain],[data-jobmenu]");
   if(ab){const d=ab.dataset;
     if(d.bell){S.bellOpen=!S.bellOpen;S.acctOpen=false;S.jobMenu=false;render();return}
+    if(d.notseen){markSeen(d.notseen);render();return}
     if(d.accnotifs){S.acctOpen=false;S.bellOpen=true;render();return}
     if(d.accclients){S.acctOpen=false;S.cur=null;S.home="clients";S.clients=null;render();window.scrollTo(0,0);return}
-    if(d.notgo){S.bellOpen=false;S.cur=null;S.home=d.notgo;S.custEdit=null;S.custPick=false;S.filter=d.notgo==="jobs"?"open":S.filter;render();window.scrollTo(0,0);
-      setTimeout(()=>{const tgt=d.notgo==="reminders"?document.querySelector("main [data-remcompose],main [data-remdone]"):d.notgo==="customers"?document.querySelector("main .card.need, main [data-opencust]"):document.querySelector("main .jobs .job");
+    if(d.notgo){const [home,flt]=d.notgo.split(":");S.bellOpen=false;S.cur=null;S.home=home;S.custEdit=null;S.custPick=false;S.filter=home==="jobs"?(flt||"open"):S.filter;render();window.scrollTo(0,0);
+      setTimeout(()=>{const tgt=home==="reminders"?document.querySelector("main [data-remcompose],main [data-remdone]"):home==="customers"?document.querySelector("main .card.need, main [data-opencust]"):document.querySelector("main .jobs .job");
         const el=tgt&&(tgt.closest(".card")||tgt);if(el){el.scrollIntoView({behavior:"smooth",block:"center"});el.classList.add("pulse");setTimeout(()=>el.classList.remove("pulse"),1800)}},60);return}
     if(d.accsettings){S.acctOpen=false;S.cur=null;S.home="prices";render();window.scrollTo(0,0);return}
     if(d.who!==undefined){S.auth=Object.assign(S.auth,{who:d.who,err:"",msg:""});render();return}
@@ -3820,7 +3831,7 @@ app.addEventListener("click",ev=>{
   if(d.invopen||d.invready){const id=d.invopen||d.invready;const jj=S.jobs[id];if(!jj)return;if(d.invready){jj.inv=Object.assign({},jj.inv||{},{kind:"invoice"});scheduleSave(id)}S.cur=id;S.tab="invoice";S.showDetails=false;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.emailsend!=null){if(!isAdmin())return;S.pricing._emailSend=d.emailsend==="1";savePricing();rr();return}
   if(d.payonline!=null){if(!isAdmin())return;S.pricing._payOnline=d.payonline==="1";savePricing();rr();return}
-  if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab="mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
+  if(d.open){ev.preventDefault();markSeen(d.open);(S.responses||[]).filter(r=>r.job_id===d.open).forEach(r=>markSeen("resp:"+r.id));S.bellOpen=false;S.cur=d.open;S.tab=d.opentab||"mainline";S.showDetails=false;S.mapSel=null;S.drawLine=null;S.zoneOpen=null;render();window.scrollTo(0,0);return}
   if(d.new&&sb&&isOffice()){S.cur=null;S.home="customers";S.custPick=true;S.custEdit=null;S.custOpen=null;if(!S.team)loadTeam();render();window.scrollTo(0,0);return}
   if(d.newcust){S.cur=null;S.home="customers";S.custEdit=newCust();render();window.scrollTo(0,0);setTimeout(()=>{const f=document.getElementById("cf-customer");if(f)f.focus()},50);return}
   if(d.approve){S.bellOpen=false;const [em,cid]=d.approve.split("|");const p=ownerAccounts().find(x=>x.email===em);setAccess(em,true,cid).then(ok=>{if(!ok)return;toast("Account approved");const pp=p||{email:em};const rec=S.custs[cid];const b=bizInfo();
@@ -4046,9 +4057,9 @@ function doRemove(key){
   if(k==="impdiscard"){discardLocal();return}
   if(k==="prop"){const c=S.custs[a];if(!c)return;if(Object.values(S.jobs).some(x=>x.custId===a&&x.propId===b)){toast("This property has jobs, so it can't be removed");return}c.props=(c.props||[]).filter(x=>x.id!==b);saveCust(c);S.propEdit=null;S.custOpen="c:"+c.id;render();toast("Property removed");return}
   if(k==="pay"&&j&&j.inv){const x=j.inv.payments[+a];if(x&&x.source!=="stripe"){j.inv.payments.splice(+a,1);invLog(j,`Payment removed: ${money(num(x.amount))} ${x.method||""}`);scheduleSave(S.cur);rr()}return}
-  if(k==="invvoid"&&j&&j.inv){j.inv.status="void";invLog(j,"Voided");scheduleSave(S.cur);rr();return}
-  if(k==="invclose"&&j&&j.inv&&isAdmin()){invLog(j,`Closed without payment (${money(invBalance(j))} not collected)`);j.inv.status="closed";scheduleSave(S.cur);rr();return}
-  if(k==="invbad"&&j&&j.inv&&isAdmin()){invLog(j,`Written off as bad debt (${money(invBalance(j))})`);j.inv.status="baddebt";scheduleSave(S.cur);rr();return}
+  if(k==="invvoid"&&j&&j.inv){invEnd(j);j.inv.status="void";invLog(j,"Voided");scheduleSave(S.cur);rr();return}
+  if(k==="invclose"&&j&&j.inv&&isAdmin()){invLog(j,`Closed without payment (${money(invBalance(j))} not collected)`);invEnd(j);j.inv.status="closed";scheduleSave(S.cur);rr();return}
+  if(k==="invbad"&&j&&j.inv&&isAdmin()){invLog(j,`Written off as bad debt (${money(invBalance(j))})`);invEnd(j);j.inv.status="baddebt";scheduleSave(S.cur);rr();return}
   if(k==="twleg"){const c=j.controllers[+a];c.legs.splice(+b,1);c.legs.forEach(L=>{if(L.from){const [lj,kk]=L.from.split(":").map(Number);if(lj===+b)L.from="";else if(lj>+b)L.from=(lj-1)+":"+kk}});S.twSel="";scheduleSave(S.cur);rr();return}
   if(k==="trainreset"){resetTraining();return}
   if(k==="staff"){setStaff(key.slice(6),false);return}
