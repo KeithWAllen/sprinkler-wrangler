@@ -579,7 +579,11 @@ function sizedKey(f,size){const F=SIZED_FAMS[f];const want=sizeCode(size);let c=
 function bfFam(a,type){const t=String(type||"").toUpperCase();const x=BF_TYPES.find(b=>b[1]===t);return `bf_${a}_${x?x[0]:"pvb"}`}
 function bfTypeShown(type){return String(type||"").trim()}
 function commPct(){const v=S.pricing._commercial;return v==null||v===""?25:num(v)}
-function price(k,j){j=j||job();const b=basePrice(k);return j&&j.info&&j.info.propType==="commercial"?Math.round(b*(1+commPct()/100)*100)/100:b}
+/* Brand + size pricing (Bradley): a price typed for a brand and size (key "<item>_<size>@<Brand>") wins;
+   left blank, that brand uses the item's standard price for the size. */
+function famBrandCat(f){return /^bf_(repair|replace)_/.test(f)?"backflow":/^prv_/.test(f)?"prv":/^iso_/.test(f)?"iso":/^(mv|zv)_/.test(f)?"valve":""}
+function brandBase(k,brand){if(brand){const o=S.pricing[k+"@"+brand];if(o!=null&&o!=="")return num(o)}return basePrice(k)}
+function price(k,j,brand){j=j||job();const b=brandBase(k,brand);return j&&j.info&&j.info.propType==="commercial"?Math.round(b*(1+commPct()/100)*100)/100:b}
 function job(){return S.jobs[S.cur]}
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2400)}
 
@@ -810,14 +814,15 @@ function buildEstimate(j){
   /* identical lines (same zone/section, item and price) merge into one line with the combined quantity,
      e.g. spray nozzles entered per head size, so every line on the estimate is unique */
   const push=x=>{const o=L.find(y=>y.sec===x.sec&&y.key===x.key&&y.label===x.label&&y.price===x.price);if(o){o.qty+=x.qty;o.total=o.price*o.qty}else L.push(x)};
-  const add=(sec,key,qty,note,lbl)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j);push({sec,key,label:(lbl||d.l)+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
+  const add=(sec,key,qty,note,lbl,brand)=>{qty=num(qty);if(qty<=0)return;const d=PRICE_DEFAULTS[key];if(!d)return;const p=price(key,j,brand);push({sec,key,label:(lbl||d.l)+(note?" — "+note:""),qty,unit:d.u,price:p,total:p*qty,m:d.m})};
   /* sized part: with no size entered the line shows just the part name (priced as 1") until the tech picks one */
-  const addS=(sec,f,size,qty,note,base)=>{const r=sizedKey(f,size);const F=SIZED_FAMS[f];add(sec,r.k,qty,note,`${base||F.base}${r.given?", "+sizeLabel(r.code):""}`)};
+  const addS=(sec,f,size,qty,note,base,brand)=>{const r=sizedKey(f,size);const F=SIZED_FAMS[f];add(sec,r.k,qty,note,`${base||F.base}${r.given?", "+sizeLabel(r.code):""}`,brand||"")};
+  const bn=o=>o?brandName(o.brand,o.brandOther):"";
   const addBf=(sec,a,bf)=>{const f=bfFam(a,bf.type);const t=bfTypeShown(bf.type);const known=BF_TYPES.some(x=>x[1]===t.toUpperCase());
     /* Repair: the recommendation names the unit from the backflow fields, e.g. "Repair Watts 800M4 PVB backflow preventer, 1"". */
     if(a==="repair"){const desc=[brandName(bf.brand,bf.brandOther),realLine(bf.line)||bf.model].filter(Boolean).join(" ");const showT=t&&!desc.toUpperCase().includes(t.toUpperCase());
-      addS(sec,f,bf.size,1,"",`Repair ${desc?desc+" ":""}${showT?t+" ":""}backflow preventer`);return}
-    addS(sec,f,bf.size,1,"",known?"":`Replace ${t?t+" ":""}backflow preventer`)};
+      addS(sec,f,bf.size,1,"",`Repair ${desc?desc+" ":""}${showT?t+" ":""}backflow preventer`,bn(bf));return}
+    addS(sec,f,bf.size,1,"",known?"":`Replace ${t?t+" ":""}backflow preventer`,bn(bf.newAsm)||bn(bf))};
   const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
   if(j.est.trip!==false)add("Service","trip",1);
   (j.mainline||[]).forEach(m=>{
@@ -828,10 +833,10 @@ function buildEstimate(j){
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
       if(c.present==="no"){if(compInstall(k,c))addS(sec,p+"_install",c.newSize,1);return}
       if(c.present!=="yes")return;
-      if(k==="mv"&&c.pos==="upstream")addS(sec,"mv_relocate",c.size,1);
+      if(k==="mv"&&c.pos==="upstream")addS(sec,"mv_relocate",c.size,1,"","",bn(c));
       if(k==="prv"&&c.pos==="upstream")return;
-      if(c.action==="repair")addS(sec,p+"_repair",c.size,1);
-      if(c.action==="replace"){if(k==="prv"){const n=c.newAsm||{};const desc=[brandName(n.brand,n.brandOther),n.model].filter(Boolean).join(" ");addS(sec,"prv_replace",n.size||c.size,1,"",`Replace pressure reducing valve (PRV)${desc?" with "+desc:""}`)}else addS(sec,p+"_replace",c.size,1)}});
+      if(c.action==="repair")addS(sec,p+"_repair",c.size,1,"","",bn(c));
+      if(c.action==="replace"){if(k==="prv"){const n=c.newAsm||{};const desc=[brandName(n.brand,n.brandOther),n.model].filter(Boolean).join(" ");addS(sec,"prv_replace",n.size||c.size,1,"",`Replace pressure reducing valve (PRV)${desc?" with "+desc:""}`,bn(n)||bn(c))}else addS(sec,p+"_replace",c.size,1,"","",bn(c))}});
     (m.custom||[]).forEach(x=>addC(sec,x.desc,x.qty||1,x.price));
   });
   (j.controllers||[]).forEach(c=>{
@@ -850,8 +855,8 @@ function buildEstimate(j){
       const k=headPriceKey(t,s,a);const d=PRICE_DEFAULTS[k];if(d&&(a==="raise"||a==="lower"))add(sec,k,q,`${s}" ${t==="mp"?"MP":t}`);else add(sec,k,q)}}
     for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))for(const [k] of OTHER_ACTS[t])add(sec,k,z.acts[k]);
     const v=z.valve||{};
-    if(v.action==="replace")addS(sec,"zv_replace",v.size,1);
-    if(v.action==="rebuild")addS(sec,"zv_rebuild",v.size,1);if(v.action==="scrub")addS(sec,"zv_scrub",v.size,1);if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
+    if(v.action==="replace")addS(sec,"zv_replace",v.size,1,"","",bn(v));
+    if(v.action==="rebuild")addS(sec,"zv_rebuild",v.size,1,"","",bn(v));if(v.action==="scrub")addS(sec,"zv_scrub",v.size,1,"","",bn(v));if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
     (z.laterals||[]).forEach(b=>{add(sec,"lat_repair",1,b.size);const ft=num(b.ft)-3;if(ft>0)add(sec,"lat_ft",ft);if(b.tree==="yes")add(sec,"lat_tree",1)});
     (z.adds||[]).forEach(h=>{add(sec,"add_head",1,`${h.size}" ${h.type==="mp"?"MP":h.type}`);add(sec,"add_ft",h.ft)});
     (z.custom||[]).forEach(c=>addC(sec,c.desc,c.qty,c.price));
@@ -1122,7 +1127,11 @@ function priceRows(list){const out=[];const seen=new Set();
   list.forEach(([k,d])=>{if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam))return;seen.add(d.fam);
     const F=SIZED_FAMS[d.fam];const ks=F.codes.map(c=>`${d.fam}_${c}`);const ps=ks.map(basePrice);const lo=Math.min(...ps),hi=Math.max(...ps);
     out.push(`<details class="pfam" data-pfam="${d.fam}" ${(S.famOpen||{})[d.fam]?"open":""}><summary><span class="al">${esc(F.base)}<span class="ap">per ${esc(F.u)} · ${F.codes.length} sizes · ${lo===hi?money(lo):money(lo)+"–"+money(hi)}</span></span></summary>
-      <div class="pfsizes">${ks.map((k2,i)=>priceRow(k2,PRICE_DEFAULTS[k2],sizeLabel(F.codes[i]))).join("")}</div></details>`)});
+      <div class="pfsizes"><div class="small muted" style="padding:6px 0 0"><b>Standard price</b> (any brand without its own price)</div>${ks.map((k2,i)=>priceRow(k2,PRICE_DEFAULTS[k2],sizeLabel(F.codes[i]))).join("")}
+      ${(BRANDS[famBrandCat(d.fam)]||[]).map(br=>{const set=ks.filter(k2=>{const v=S.pricing[k2+"@"+br];return v!=null&&v!==""}).length;
+        return `<details class="pfam pbrand" data-pfam="${esc(d.fam+"@"+br)}" ${(S.famOpen||{})[d.fam+"@"+br]?"open":""}><summary><span class="al">${esc(br)}<span class="ap">${set?set+" of "+ks.length+" sizes priced":"uses the standard price"}</span></span></summary>
+        <div class="pfsizes">${ks.map((k2,i)=>{const v=S.pricing[k2+"@"+br];return `<div class="act"><div class="al">${esc(sizeLabel(F.codes[i]))}<div class="ap">${v!=null&&v!==""?"commercial "+money(num(v)*(1+commPct()/100)):"standard "+money(basePrice(k2))}</div></div>
+          <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" data-price="${esc(k2+"@"+br)}" ${isAdmin()?"":"disabled"} value="${v!=null&&v!==""?esc(v):""}" placeholder="${esc(String(basePrice(k2)))}" aria-label="${esc(br+" "+F.base+" "+sizeLabel(F.codes[i]))} price"></label></div>`}).join("")}</div></details>`}).join("")}</div></details>`)});
   return out.join("")}
 function pricesView(){
   if(!canSettings())return `<div class="card"><p class="muted">Admin settings are only available to admins.</p></div>`;
