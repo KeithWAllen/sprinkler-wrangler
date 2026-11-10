@@ -1582,9 +1582,9 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   ${isPrv&&up?`<div class="note warn small"><b>Plumbing side of the backflow:</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",isPrv?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
-  ${isPrv&&!up&&c.action==="replace"?(()=>{const nb=base+".newAsm";const ml=getP(job(),base.replace(/\.prv$/,""))||{};const l=buildEstimate(job()).lines.find(x=>/^prv_replace_/.test(x.key||"")&&x.sec===(ml.name||"Mainline"));
+  ${isPrv&&!up&&c.action==="replace"?(()=>{const nb=base+".newAsm";const ml=getP(job(),base.replace(/\.prv$/,""))||{};
     return `<div class="combo"><h4>New PRV</h4><div class="grid3">${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","prv")}${fld("Model",nb+".model")}</div>
-    ${l?`<div class="note small" style="margin:0"><b>Recommendation:</b> ${esc(l.label)} · ${money(l.total)}</div>`:""}</div>`})():""}
+</div>`})():""}
 `:""}</div>`;
 }
 function mainlineTab(){const j=job();
@@ -1618,7 +1618,6 @@ function mainlineTab(){const j=job();
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${m.bf.action==="replace"?newBfFields(b,m):""}
-    ${m.bf.action==="repair"?(()=>{const l=buildEstimate(j).lines.find(x=>x.sec===(m.name||"Mainline")&&/^bf_repair_/.test(x.key||""));return l?`<div class="note small" style="margin:0"><b>Recommendation:</b> ${esc(l.label)} · ${money(l.total)}</div>`:""})():""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
     <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
