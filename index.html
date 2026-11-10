@@ -2192,7 +2192,10 @@ function estFp(j){const cur=currentRev(j);return hashStr(JSON.stringify([shareIt
 /* The estimate link carries the audit report on top (Keith: one output, report first, estimate below).
    Audited jobs need a current report revision before the estimate can be sent. */
 /* The report's own price table is left out when the estimate follows it (no duplicate prices). */
-function reportNoEst(html){return String(html||"").replace(/<section class="repest">[\s\S]*?<\/section>/g,"")}
+function reportNoEst(html){return auditWords(String(html||"").replace(/<section class="repest">[\s\S]*?<\/section>/g,""))}
+/* Reports saved before the switch to "audit" wording (Bradley isn't a licensed inspector) show the new words too. */
+function auditWords(html){return String(html||"").replace(/Irrigation Inspection Report/g,"Irrigation Audit Report").replace(/IRRIGATION INSPECTION REPORT/g,"IRRIGATION AUDIT REPORT")
+  .replace(/Inspection date/g,"Audit date").replace(/We inspected /g,"We audited ").replace(/Inspection details will appear here/g,"Audit details will appear here")}
 function estNeedsRev(j){return (j.revs||[]).length>0&&!currentRev(j)}
 function shareMeta(j){const b=bizInfo();return {biz:b.name||"",phone:b.phone||"",email:b.email||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),fee:r2(diagAmt(j)),rate:jobTax(j)/100}}
 function docLink(j,kind){return kind==="estimate"?(j.estDoc||{}).link:(j.inv||{}).link}
@@ -2364,7 +2367,7 @@ function reportTab(){const j=job();loadBg(j.id);
     ${status}${issueBox}
     ${cur?`<div class="row">${CAN_PRINT?`<button class="btn" data-print="report">Print Rev ${revNo(cur.n)}</button>`:""}<button class="btn ${CAN_PRINT?"ghost":""}" data-copy="1">Copy Rev ${revNo(cur.n)} as text</button>${downloads?`<button class="btn ghost" data-save="1">Save Rev ${revNo(cur.n)} file</button>`:""}
     <span class="spacer"></span></div>`:""}</div>
-  ${viewing?`<div class="card sunk"><div class="row"><h3 class="spacer">Viewing Rev ${revNo(viewing.n)} (locked copy)</h3><button class="btn quiet sm" data-viewrev="-1">Close</button></div><article class="sheet">${viewing.html||'<p class="muted">Loading…</p>'}</article></div>`:""}
+  ${viewing?`<div class="card sunk"><div class="row"><h3 class="spacer">Viewing Rev ${revNo(viewing.n)} (locked copy)</h3><button class="btn quiet sm" data-viewrev="-1">Close</button></div><article class="sheet">${viewing.html?auditWords(viewing.html):'<p class="muted">Loading…</p>'}</article></div>`:""}
   ${mapChoiceCard(j)}
   <article class="sheet" id="sheet">${reportHtml(j,cur||{n:nextN,draft:true})}</article>
   ${hist}`;
@@ -2451,8 +2454,8 @@ async function putRevHtml(j,n,html){
 }
 async function getRevHtml(j,rv){
   const key=j.id+"_"+revNo(rv.n);
-  if(S.mode==="local")return await IDB.get(KP()+"rev."+key);
-  if(S.mode==="db"){try{const d=await db.doc("revisions/"+key).get();return d.exists?d.data().html:null}catch(e){return null}}
+  if(S.mode==="local"){const h=await IDB.get(KP()+"rev."+key);return h?auditWords(h):h}
+  if(S.mode==="db"){try{const d=await db.doc("revisions/"+key).get();return d.exists?auditWords(d.data().html):null}catch(e){return null}}
   return null;
 }
 async function viewRev(j,n){
@@ -3352,7 +3355,7 @@ function makeSupaDb(){
         if(col==="customers"){const {data,error}=await sb.from("customers").select("data").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data&&data.data)}
         if(col==="jobmedia"){const img=await down("bg/"+id+".jpg");return snap(id,img?{img}:null)}
         if(col==="photos"){const img=await down("ph/"+id+".jpg");return snap(id,img?{img}:null)}
-        if(col==="revisions"){const {data,error}=await sb.from("reports").select("html").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data?{html:data.html}:null)}
+        if(col==="revisions"){const {data,error}=await sb.from("reports").select("html").eq("id",id).maybeSingle();if(error)throw sbErr(error);return snap(id,data?{html:auditWords(data.html)}:null)}
         return snap(id,null);
       },
       async set(d){
@@ -3729,7 +3732,7 @@ function portalCustCard(){const c=S.portal.cust||{};const g=(S.portal.list||[])[
 async function openPortalDoc(kind,id){
   S.portal.view={kind,id,html:null};render();window.scrollTo(0,0);
   const q=kind==="report"?sb.from("reports").select("html").eq("id",id).maybeSingle():sb.from("invoices").select("html").eq("job_id",id).maybeSingle();
-  const {data}=await q;S.portal.view.html=data?data.html:'<p class="muted">This document isn\'t available.</p>';render();
+  const {data}=await q;S.portal.view.html=data?auditWords(data.html):'<p class="muted">This document isn\'t available.</p>';render();
 }
 function portalPayable(inv){return !!(inv&&inv.kind==="invoice"&&inv.pay_online&&["sent","partial","pastdue"].includes(inv.status)&&+(inv.balance!=null?inv.balance:inv.total)>=0.5)}
 async function payNow(jobId){if(!sb)return;S.paying=jobId;toast("Opening secure payment…");
@@ -3953,7 +3956,7 @@ app.addEventListener("click",ev=>{
   if(d.satopen){satOpen();return}
   if(d.mkreport){render();window.scrollTo(0,0);return}
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
-  if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h||reportHtml(j,rv)))}else if(d.print==="estimate")printDoc(estDocHtml(j));else printDoc(invoiceHtml(j));return}
+  if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h?auditWords(h):reportHtml(j,rv)))}else if(d.print==="estimate")printDoc(estDocHtml(j));else printDoc(invoiceHtml(j));return}
   if(d.ohmband){const [cid,z,v]=d.ohmband.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmBand=Object.assign({},c.ohmBand||{},{[z]:v});scheduleSave(S.cur);rr()}return}
   if(d.ohmfix){const [cid,z,k]=d.ohmfix.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmFix=Object.assign({},c.ohmFix||{},{[z]:k});scheduleSave(S.cur);rr()}return}
   if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
