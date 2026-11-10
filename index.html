@@ -2186,6 +2186,8 @@ function shareItems(j){const c=Object.assign({},j);syncCompletion(c);const bf=bf
 function estFp(j){const cur=currentRev(j);return hashStr(JSON.stringify([shareItems(j).map(i=>[i.k,i.c,i.total,i.held]),diagAmt(j),jobTax(j),cur?cur.n:null]))}
 /* The estimate link carries the audit report on top (Keith: one output, report first, estimate below).
    Audited jobs need a current report revision before the estimate can be sent. */
+/* The report's own price table is left out when the estimate follows it (no duplicate prices). */
+function reportNoEst(html){return String(html||"").replace(/<section class="repest">[\s\S]*?<\/section>/g,"")}
 function estNeedsRev(j){return (j.revs||[]).length>0&&!currentRev(j)}
 function shareMeta(j){const b=bizInfo();return {biz:b.name||"",phone:b.phone||"",email:b.email||"",customer:j.info.customer||"",address:[j.info.address,j.info.city].filter(Boolean).join(", "),fee:r2(diagAmt(j)),rate:jobTax(j)/100}}
 function docLink(j,kind){return kind==="estimate"?(j.estDoc||{}).link:(j.inv||{}).link}
@@ -2197,7 +2199,7 @@ async function makeLink(j,kind,id){if(!sb||S.training||S.mode!=="db"){toast(S.tr
   const est=kind==="estimate";const token=newToken();
   if(est&&estNeedsRev(j)){toast("Issue a new report revision first. The report goes out with the estimate.");return null}
   const meta=shareMeta(j);const cur=est?currentRev(j):null;
-  if(cur){try{meta.report=await inlinePhotos(reportHtml(j,cur));meta.reportRev=revNo(cur.n)}catch(e){toast("Couldn't add the report photos: "+((e&&e.message)||e));return null}}
+  if(cur){try{meta.report=reportNoEst(await inlinePhotos(reportHtml(j,cur)));meta.reportRev=revNo(cur.n)}catch(e){toast("Couldn't add the report photos: "+((e&&e.message)||e));return null}}
   const row={token,status:"open",job_id:id,kind,doc_no:est?j.estDoc.no:j.inv.no,html:est?estDocHtml(j):invoiceHtml(j),items:est?shareItems(j):[],meta,fp:est?estFp(j):null,expires_at:new Date(Date.now()+(est?EST_LINK_DAYS:INV_LINK_DAYS)*864e5).toISOString()};
   try{await sb.from("share_links").update({status:"replaced"}).eq("job_id",id).eq("kind",kind).eq("status","open");
     const {error}=await sb.from("share_links").insert(row);if(error)throw error}
@@ -2259,7 +2261,7 @@ function shareView(){const sh=S.sh||{};const d=sh.d;const m=(d&&d.meta)||{};
   if(d.status==="replaced")return msg(`This ${what} was updated`,`${esc(m.biz||"We")} made changes after this link was sent. Please use the newest link, or ask for a new one.${contact}`);
   return wrap(d.kind==="invoice"?shareInvoice(d):shareEstimate(d,contact))}
 function shareEstimate(d,contact){const m=d.meta||{};const its=d.items||[];const p=S.sh.picks||{};const t=shTotals(d);
-  const rpt=m.report?`<div class="card"><div class="eyebrow">Audit report${m.reportRev?" · Rev "+esc(m.reportRev):""}</div><h2 style="margin:0 0 8px">What we found</h2><article class="sheet">${m.report}</article></div>
+  const rpt=m.report?`<div class="card"><div class="eyebrow">Audit report${m.reportRev?" · Rev "+esc(m.reportRev):""}</div><h2 style="margin:0 0 8px">What we found</h2><article class="sheet">${reportNoEst(m.report)}</article></div>
     <div class="cvdiv"><span>Your estimate</span></div>`:"";
   const docx=`<details class="card shdoc"><summary><b>Full estimate ${esc(d.doc_no||"")}</b> (printable)</summary><div class="row" style="margin:8px 0"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div><article class="sheet">${d.html||""}</article></details>`;
   const head=`<div class="eyebrow">Estimate ${esc(d.doc_no||"")}</div><h2 style="margin:0">Your estimate</h2><div class="small muted">${esc(m.customer||"")}${m.address?" · "+esc(m.address):""}</div>`;
@@ -2293,7 +2295,7 @@ function shareInvoice(d){const inv=d.invoice||{};const html=inv.html||d.html||""
     <div class="row"><button class="btn ghost sm" data-shprint="1">Print / Save PDF</button></div></div>
     <article class="sheet card">${html}</article>`}
 async function shareClick(d){const sh=S.sh;const x=sh.d;if(!x)return;
-  if(d.shprint){printDoc(x.kind==="invoice"?((x.invoice||{}).html||x.html||""):(((x.meta||{}).report?x.meta.report+'<div style="page-break-before:always"></div>':"")+(x.html||"")));return}
+  if(d.shprint){printDoc(x.kind==="invoice"?((x.invoice||{}).html||x.html||""):(((x.meta||{}).report?reportNoEst(x.meta.report)+'<div style="page-break-before:always"></div>':"")+(x.html||"")));return}
   if(d.cvclear){const cv=document.getElementById("cv-sig");if(cv)cv.getContext("2d").clearRect(0,0,cv.width,cv.height);S.cvSig=null;return}
   if(d.shpick){const [ix,v]=d.shpick.split("|");sh.picks[ix]=sh.picks[ix]===v?"":v;rr();return}
   if(d.shall){(x.items||[]).forEach((i,ix)=>{if(i.c===d.shall)sh.picks[ix]="accept"});rr();return}
