@@ -820,7 +820,7 @@ function buildEstimate(j){
     const sec=m.name||"Mainline";
     if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
     if(bfTestDue(m))add(sec,"bf_test",1);
-    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);if(m.bf.insulate==="yes"||a==="insulate"||(a==="replace"&&m.bf.insulated==="no"&&m.bf.insulate!=="no"))add(sec,"bf_insulate",1);if(m.bf.insPipe==="yes")add(sec,"bf_ins_pipe",1)}
+    if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);const notIns=m.bf.insulated==="no";if((m.bf.insulated!=="yes"&&m.bf.insulate==="yes")||a==="insulate"||(a==="replace"&&notIns&&m.bf.insulate!=="no"))add(sec,"bf_insulate",1);if(notIns&&m.bf.insPipe==="yes")add(sec,"bf_ins_pipe",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
       if(c.present==="no"){if(compInstall(k,c))addS(sec,p+"_install",c.newSize,1);return}
       if(c.present!=="yes")return;
@@ -1610,9 +1610,9 @@ function mainlineTab(){const j=job();
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
-    ${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
+    ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
-    ${m.bf.insulate==="yes"||m.bf.insPipe==="yes"?`<p class="small muted" style="margin:0">${m.bf.insulated==="no"?"Not insulated, so both are recommended. ":""}Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
+    <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
