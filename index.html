@@ -1609,7 +1609,8 @@ function mainlineTab(){const j=job();
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
-    ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}`}</div>
+    ${seg("Add insulation cover?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
+    ${m.bf.insulated==="no"&&m.bf.insulate==="yes"?`<p class="small muted" style="margin:0">Not insulated, so an insulation cover is added to the estimate as Recommended.</p>`:""}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -3962,6 +3963,11 @@ app.addEventListener("click",ev=>{
 
   if(d.set!=null&&/^mainline\.\d+\.bf\.present$/.test(d.set)&&d.v==="no"&&getP(j,d.set)!=="no"){S.bfConfirm=d.set;render();return}
   if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
+    /* Backflow not insulated → recommend an insulation cover automatically (Bradley). The tech can still tap No. */
+    {const mm=/^mainline\.(\d+)\.bf\.insulated$/.exec(d.set);if(mm){const bf=j.mainline[+mm[1]].bf;
+      if(bf.insulated==="no"&&bf.insulate!=="yes"&&bf.insulate!=="no"){bf.insulate="yes";bf.insulateAuto=true}
+      else if(bf.insulated!=="no"&&bf.insulateAuto){bf.insulate="";bf.insulateAuto=false}}}
+    if(/^mainline\.\d+\.bf\.insulate$/.test(d.set)){const bf=getP(j,d.set.replace(/\.insulate$/,""));if(bf)bf.insulateAuto=false}
     if(d.set==="inv.kind"&&d.v==="invoice"&&j.inv.no&&!j.inv.issued){j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`)}
     scheduleSave(S.cur);rr();return}
   if(d.tog){const arr=getP(j,d.tog)||[];const i=arr.indexOf(d.v);i<0?arr.push(d.v):arr.splice(i,1);setP(j,d.tog,arr);scheduleSave(S.cur);rr();return}
