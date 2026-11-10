@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
 
     const f = new URLSearchParams();
     f.set("mode", "payment");
-    // No payment_method_types: Stripe offers whatever methods are already turned on in the
-    // account's own payment settings (card, ACH, wallets...). Nothing in Stripe needs changing.
+    // Card and US bank transfer (ACH) only (Bradley): no Cash App, Affirm, Klarna, Amazon Pay or other
+    // wallets, whatever is switched on in the Stripe account. If ACH isn't turned on there, it falls back to card only.
     f.set("line_items[0][quantity]", "1");
     f.set("line_items[0][price_data][currency]", "usd");
     f.set("line_items[0][price_data][unit_amount]", String(cents));
@@ -67,15 +67,24 @@ Deno.serve(async (req) => {
       f.set("cancel_url", `${SITE}/`);
     }
 
-    const s = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${Deno.env.get("STRIPE_SECRET_KEY")}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: f,
-    });
-    const sess = await s.json();
+    const create = (types: string[]) => {
+      const g = new URLSearchParams(f);
+      types.forEach((t, i) => g.set(`payment_method_types[${i}]`, t));
+      return fetch("https://api.stripe.com/v1/checkout/sessions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("STRIPE_SECRET_KEY")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: g,
+      });
+    };
+    let s = await create(["card", "us_bank_account"]);
+    let sess = await s.json();
+    if (!s.ok && /us_bank_account|payment method type/i.test(sess?.error?.message ?? "")) {
+      s = await create(["card"]);
+      sess = await s.json();
+    }
     if (!s.ok) return json({ error: sess?.error?.message ?? "Stripe error" }, 502);
     return json({ url: sess.url });
   } catch (e) {

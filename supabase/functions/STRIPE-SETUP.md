@@ -36,8 +36,8 @@ In Supabase, open **Edge Functions → Deploy a new function → Via editor**.
 4. Save. Then copy the endpoint's **Signing secret** (starts with `whsec_`).
 5. In Supabase **Edge Functions → Secrets**, add `STRIPE_WEBHOOK_SECRET` = that signing secret.
 
-## 5. Payment methods: nothing to change
-Checkout offers whatever payment methods are already turned on in your Stripe account's own settings (card, and ACH if you use it). No changes are needed.
+## 5. Payment methods
+Checkout offers **card and US bank transfer (ACH) only**, whatever else is turned on in Stripe. If ACH isn't turned on in Stripe, it offers card only.
 
 ## 6. Switch it on in the app
 In **Admin settings → Invoices & payments**, set **Online payments through Stripe** to **On**.
