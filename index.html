@@ -1610,7 +1610,7 @@ function mainlineTab(){const j=job();
     ${bfTestDue(m)?`<div class="note bad small"><b>Backflow test due.</b> ${m.bf.testRec==="unknown"?"No test record or tag found.":"The last test was more than 12 months ago."} Cities and water providers commonly require a yearly test. A test is added to the estimate as Urgent.</div>`:""}
     ${seg("Insulated?",b+".bf.insulated",YN)}
     ${seg("Recommend",b+".bf.action",[["none","No work"],["repair","Repair"],["replace","Replace"]])}
-    ${m.bf.action==="replace"?`<p class="small muted" style="margin:0">For the BPAT test report, record this one's model and serial number above. The new backflow's details are entered on the Status tab when it's installed.</p>`:""}
+    ${m.bf.action==="replace"?newBfFields(b,m):""}
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
@@ -2941,14 +2941,19 @@ const BF_ASM_KEYS=k=>/^bf_replace_/.test(k)||k==="bf_install";
 function bfOfItem(j,i){const ix=Math.max(0,(j.mainline||[]).findIndex(m=>m.name===i.sec));return {mi:ix,m:(j.mainline||[])[ix]}}
 function asmText(o){if(!o)return "";const br=brandName(o.brand,o.brandOther);return [o.type,o.size,br,realLine(o.line)||o.model,o.serial?"serial "+o.serial:""].filter(Boolean).join(" · ")}
 function newAsmMissing(o){o=o||{};const m=[];if(!o.type)m.push("type");if(!o.size)m.push("size");if(!brandName(o.brand,o.brandOther))m.push("brand");if(!(realLine(o.line)||o.model))m.push("model");if(!String(o.serial||"").trim())m.push("serial number");return m}
+/* Same fields as the existing backflow, for the one going in (Bradley: needed for his BPAT test report). */
+function newBfFields(b,m){const nb=b+".bf.newAsm";const o=m.bf.newAsm||{};
+  return `<div class="combo"><h4>New backflow preventer</h4>
+    <p class="small muted" style="margin:0">The assembly being installed. Fill in what you know now and finish it when it's in; it's needed for your BPAT test report.</p>
+    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div></div>`}
 function newAsmBlock(j,i){const {mi,m}=bfOfItem(j,i);if(!m)return "";const nb=`mainline.${mi}.bf.newAsm`;const o=m.bf.newAsm||{};const rep=/^bf_replace_/.test(keyOf(i.k));const miss=newAsmMissing(o);
   const oldTxt=asmText(m.bf);const oldNoSer=rep&&!String(m.bf.serial||"").trim();
   return `<div class="combo"><h4>${rep?"Backflow replacement record":"New backflow record"}</h4>
     <p class="small muted" style="margin:0">Needed for your BPAT test report (TCEQ-20700)${rep?": the new assembly, plus the old model and serial number":""}.</p>
     ${rep?`<div class="small"><b>Removed:</b> ${oldTxt?esc(oldTxt):"<span class=\"muted\">not recorded</span>"} <button class="linkbtn" data-tab="mainline">Edit on Mainline</button></div>${oldNoSer?`<div class="note warn small" style="margin:0">The old serial number isn't recorded. Add it on the Mainline tab, or write "unreadable".</div>`:""}`:""}
-    <div><b class="small">Installed:</b></div>
-    <div class="grid3">${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div>
-    ${miss.length?`<p class="note warn small" style="margin:0">To mark this Done, add the new backflow's ${esc(miss.join(", "))}.</p>`:""}</div>`}
+    <div class="small"><b>Installed:</b> ${asmText(o)?esc(asmText(o))+(o.date?" · "+esc(fmtD(o.date)):""):"<span class=\"muted\">not entered yet</span>"} <button class="linkbtn" data-tab="mainline">${rep?"Edit on Mainline":"Edit"}</button></div>
+    ${!rep?`<div class="grid3">${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}${fld("Date installed",nb+".date","date")}</div>`:""}
+    ${miss.length?`<p class="note warn small" style="margin:0">To mark this Done, add the new backflow's ${esc(miss.join(", "))}${rep?" on the Mainline tab, under New backflow preventer":""}.</p>`:""}</div>`}
 function bfRecordSection(j){const rows=[];(j.mainline||[]).forEach(m=>{const o=m.bf&&m.bf.newAsm;if(!o||!asmText(o))return;
     const done=((j.completion||{}).items||[]).filter(i=>BF_ASM_KEYS(keyOf(i.k))&&i.status==="done"&&(bfOfItem(j,i).m===m));if(!done.length)return;
     const rep=done.some(i=>/^bf_replace_/.test(keyOf(i.k)));
