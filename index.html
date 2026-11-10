@@ -1614,8 +1614,7 @@ function mainlineTab(){const j=job();
     ${m.bf.action==="repair"||m.bf.action==="replace"?sizeHint(bfFam(m.bf.action,m.bf.type),m.bf.size)+(BF_TYPES.some(x=>x[1]===String(m.bf.type||"").toUpperCase())?"":`<p class="note small" style="margin:0">${m.bf.type?esc(m.bf.type)+" is priced":"Pick the type: until then it's priced"} as a PVB.</p>`):""}
     ${m.bf.insulated==="no"?`${seg("Recommend bag insulation?",b+".bf.insulate",[["yes","Yes"],["no","No"]])}
     ${seg("Recommend pipe insulation?",b+".bf.insPipe",[["yes","Yes"],["no","No"]])}
-    <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}
-    <div class="row" style="justify-content:flex-end">${delBtn("bfclear:"+mi,"Clear backflow details")}</div>`}</div>
+    <p class="small muted" style="margin:0">Each one is its own Recommended line, so the customer picks which they want.</p>`:""}`}</div>
   ${compBlock(b+".prv",m.prv,"Pressure reducing valve (PRV)",true)}
   ${compBlock(b+".iso",m.iso,"Isolation valve",true)}
   ${compBlock(b+".mv",m.mv,"Master valve",true)}
@@ -2946,8 +2945,7 @@ function newAsmMissing(o){o=o||{};const m=[];if(!o.type)m.push("type");if(!o.siz
 function newBfFields(b,m){const nb=b+".bf.newAsm";const o=m.bf.newAsm||{};const mi=+b.split(".")[1];
   return `<div class="combo"><h4>New backflow preventer</h4>
     <p class="small muted" style="margin:0">The assembly being installed. Needed for your BPAT test report.</p>
-    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div>
-    <div class="row" style="justify-content:flex-end">${delBtn("newbfclear:"+mi,"Clear new backflow")}</div></div>`}
+    <div class="grid3">${sizeSel("Size",nb+".size")}${sel("Type",nb+".type",["","PVB","RPZ","DCVA","SVB","Atmospheric"])}${brandSel("Brand",nb+".brand","backflow")}${lineSel("Product line",nb+".line","backflow",brandName(o.brand,o.brandOther))}${realLine(o.line)?"":fld("Model",nb+".model")}${fld("Serial number",nb+".serial")}</div></div>`}
 function newAsmBlock(j,i){const {mi,m}=bfOfItem(j,i);if(!m)return "";const nb=`mainline.${mi}.bf.newAsm`;const o=m.bf.newAsm||{};const rep=/^bf_replace_/.test(keyOf(i.k));const miss=newAsmMissing(o);
   const oldTxt=asmText(m.bf);const oldNoSer=rep&&!String(m.bf.serial||"").trim();
   return `<div class="combo"><h4>${rep?"Backflow replacement record":"New backflow record"}</h4>
