@@ -1590,7 +1590,7 @@ function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv
   ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be on the irrigation side of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Plumbing side of the backflow:</b> work here needs a licensed plumber.</div>`:""}
   <div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":isIso?"iso":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>
-  ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",isPrv?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
+  ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",(isPrv||isIso)?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
   ${isPrv&&!up&&c.action==="replace"?(()=>{const nb=base+".newAsm";const ml=getP(job(),base.replace(/\.prv$/,""))||{};
     return `<div class="combo"><h4>New PRV</h4><div class="grid3">${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","prv")}${fld("Model",nb+".model")}</div>
 </div>`})():""}
