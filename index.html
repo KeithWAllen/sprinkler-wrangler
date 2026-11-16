@@ -471,12 +471,17 @@ const PRICE_DEFAULTS=(()=>{
   fam("zv_scrub","Valves","Replace with scrubber valve","each",[195,245,295],1,"",["1","15","2"]);
   add("valve_sol","Valves","Replace solenoid","each",75,1);
   add("valve_locate","Valves","Locate buried valve","each",95);
-  add("lat_repair","Pipe","Lateral line break repair","each",125,1);
-  add("lat_ft","Pipe","Additional lateral pipe","ft",8,1);
+  add("lat_repair","Pipe","Lateral line break repair (first 3 ft)","each",125,1);
+  add("lat_ft","Pipe","Additional lateral pipe, beyond 3 ft","ft",8,1);
   add("lat_tree","Pipe","Tree root work surcharge","each",45);
   add("add_head","Pipe","Add head","each",65,1);
-  add("add_ft","Pipe","Trench & pipe to new head","ft",8,1);
+  /* Add head priced by type and size; the price covers the first 20 ft of pipe (Bradley). Old single price carries over until set. */
+  {const ah={spray:[65,72,85],mp:[78,85,98],rotor:[75,85,100]};for(const t of SIZED)SIZES.forEach((sz,i)=>{add(`addh_${t}_${sz}`,"Pipe",`Add ${sz}" ${tn[t]} head (first 20 ft of pipe)`,"each",ah[t][i],1);P[`addh_${t}_${sz}`].legacy="add_head"})}
+  add("add_ft","Pipe","Additional pipe to new head, beyond 20 ft","ft",8,1);
   add("main_repair","Mainline","Mainline leak repair","each",325,1);
+  /* Mainline repair by pipe size: the price covers the first 3 ft; each foot past that is added to the same line (Bradley). */
+  fam("main_rep","Mainline","Mainline leak repair (first 3 ft)","each",[300,310,325,350,375,425],1,"main_repair");
+  fam("main_ft","Mainline","Additional mainline pipe, beyond 3 ft","ft",[8,9,10,12,14,16],1);
   BF_TYPES.forEach(([t,T],i)=>{fam(`bf_repair_${t}`,"Mainline",`Repair ${T} backflow preventer`,"each",[190,230,275][i],1,"bf_repair");
     fam(`bf_replace_${t}`,"Mainline",`Replace ${T} backflow preventer`,"each",[395,495,650][i],1,"bf_replace")});
   add("bf_insulate","Mainline","Backflow bag insulation","each",45,1);
@@ -497,14 +502,17 @@ const PRICE_DEFAULTS=(()=>{
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
   add("ctl_program","Controller","Reprogram controller schedule","each",45,0);
-  add("rain_add","Controller","Add rain/freeze sensor","each",125,1);
+  add("rain_add","Controller","Add wired rain/freeze sensor","each",125,1);
+  add("rain_add_wl","Controller","Add wireless rain/freeze sensor","each",195,1);
   add("rain_replace","Controller","Replace rain/freeze sensor","each",125,1);
   add("wire_trouble","Controller","Wire troubleshooting & repair","zone",75);
   add("wire_splice","Controller","Locate & splice zone wire","zone",95);
   add("wire_run","Controller","Run new zone wire","zone",175,1);
+  add("wire_ft","Controller","Zone wire, per ft (added to Run new zone wire)","ft",2,1);
   add("zone_splitter","Controller","Install zone splitter module","each",145,1);
   add("wire_nut","Controller","Re-wire solenoid / repair common connection","zone",75);
   add("decoder","Controller","Replace 2-wire decoder","each",120,1);
+  add("tw_module","Controller","2-wire interface / decoder output module (with a new 2-wire controller)","each",295,1);
   add("module","Controller","Replace controller module","each",95,1);
   return P;
 })();
@@ -607,14 +615,14 @@ function newJob(){
     info:{customer:"",phone:"",email:"",address:"",city:"",date:today(),window:"",tech:(S.me&&S.me.name)||"",truck:"",priority:"Normal",status:"Scheduled",workType:"Audit & repair",gate:"",notes:""},
     map:{items:[],lines:[]},mainline:[newMainline(1)],controllers:[],zones:[],est:{trip:true,laborHours:0,tax:taxRate(),discount:0,extra:[],terms:"Estimate valid for 30 days."}};
 }
-/* Default layout for a new job: one controller, zones 1–4 spray (4" & 6"), zone 5 drip */
-const DEFAULT_ZONES=[{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["spray"],sizes:["4","6"]},{types:["drip"],sizes:[]}];
+/* Head types and sizes start blank (Bradley): the tech picks what is really there. */
+const DEFAULT_ZONES=[{types:[],sizes:[]},{types:[],sizes:[]},{types:[],sizes:[]},{types:[],sizes:[]},{types:[],sizes:[]}];
 function withDefaults(j){const c=newController(1);c.zones=DEFAULT_ZONES.length;j.controllers.push(c);
   DEFAULT_ZONES.forEach((d,i)=>{const z=newZone(j);z.ctl=c.id;z.num=String(i+1);z.types=d.types.slice();z.sizes=d.sizes.slice();z.valve.size='1"';j.zones.push(z)});return j}
 function nextFree(j,src){const used=j.zones.filter(x=>x.ctl===src.ctl).map(x=>+x.num);let n=+src.num+1;while(used.includes(n))n++;return n}
-function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.id=uid("z");
+function copyZone(j,src,withRepairs){const z=JSON.parse(JSON.stringify(src));z.id=uid("z");delete z.vno;delete z.loc;
   const used=j.zones.filter(x=>x.ctl===src.ctl).map(x=>+x.num);let n=+src.num+1;while(used.includes(n))n++;z.num=String(n);
-  if(!withRepairs){z.acts={};z.laterals=[];z.adds=[];z.custom=[];z.notes="";z.valve=Object.assign({},z.valve,{condition:"",action:"none"})}
+  if(!withRepairs){z.acts={};z.laterals=[];z.adds=[];z.custom=[];z.notes="";z.valve=Object.assign({},z.valve,{condition:"",action:"none",locate:""})}
   const c=j.controllers.find(x=>x.id===src.ctl);if(c&&n>num(c.zones))c.zones=n;
   j.zones.push(z);return z}
 function comp(){return {present:"",pos:"",size:"",type:"",condition:"",action:"none"}}
@@ -627,7 +635,7 @@ function newZone(j){const c=j.controllers[0];const used=j.zones.filter(z=>z.ctl=
 /* Water source for each meter (Bradley): city water meter is the usual one. */
 const WATER_SRC=[["city","City water meter"],["well","Pump / well"],["reclaimed","Reclaimed water"]];
 function srcName(w){return {city:"City water meter",well:"Pump / well",reclaimed:"Reclaimed water meter"}[(w&&w.src)||"city"]}
-const TPL={meter:()=>({src:"city",num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
+const TPL={meter:()=>({src:"city",num:"",reading:"",flow:"",side:""}),module:()=>({size:"",status:"OK"}),lateral:()=>({size:"3/4\"",ft:"",tree:"no"}),add:()=>({type:"spray",size:"4",ft:""}),custom:()=>({desc:"",qty:1,price:""}),mainrep:()=>({size:"",ft:""}),leg:()=>({oc:"",from:"",decoders:[]}),decoder:()=>({addr:"",zones:"",st:""})};
 
 /* ---------------- storage ---------------- */
 const IDB=(()=>{let dbp=null;
@@ -778,10 +786,10 @@ function normalizeJob(j){if(!j||typeof j!=="object")return j;
   j.est=Object.assign({trip:true,laborHours:0,tax:8.25,discount:0,extra:[],terms:""},j.est||{});
   if(j.info&&j.info.workType==="Inspection & repair")j.info.workType="Audit & repair";
   (j.mainline||[]).forEach(m=>{if(m.bf)m.bf.newAsm=m.bf.newAsm||{}});
-  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{};m.custom=m.custom||[]});
+  j.mainline.forEach(m=>{m.meters=m.meters||[];m.bf=m.bf||{};if(m.bf.lastTest&&!m.bf.testRec)m.bf.testRec="tag";if(m.bf.action==="insulate"){m.bf.action="none";m.bf.insulate="yes"}if(!m.bf.present&&(m.bf.size||m.bf.type||m.bf.brand||m.bf.condition||m.bf.model))m.bf.present="yes";m.prv=m.prv||{};m.iso=m.iso||{};m.mv=m.mv||{};m.leak=m.leak||{};if(!(m.leak.list||[]).length)m.leak.list=Array.from({length:Math.max(1,num(m.leak.repairs)||1)},()=>({size:"",ft:""}));m.custom=m.custom||[]});
   if(j.controllers.length)j.setupDone=true;
-  j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[]});
-  j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};{const c=sizeCode(z.valve.size);if(c)z.valve.size=sizeLabel(c)}z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
+  j.controllers.forEach(c=>{c.programs=c.programs||[];c.ohms=c.ohms||{};c.act=c.act||{};c.custom=c.custom||[];c.modules=c.modules||[];if(!c.ctype)c.ctype=ctlType(c)});
+  j.zones.forEach(z=>{z.types=z.types||[];z.sizes=z.sizes||[];z.acts=z.acts||{};z.valve=z.valve||{action:"none"};if(z.valve.action==="scrub"){z.valve.action="replace";z.valve.kind="scrubber"}if(z.valve.action==="locate"){z.valve.action="none";z.valve.locate="yes"}{const c=sizeCode(z.valve.size);if(c)z.valve.size=sizeLabel(c)}z.laterals=z.laterals||[];z.adds=z.adds||[];z.custom=z.custom||[]});
   return j}
 function ctlName(j,id){const c=j.controllers.find(c=>c.id===id);return c?c.name:"No controller"}
 /* No PRV / isolation / master valve found: isolation and master default to "Install one"; a PRV is only added when the tech picks it. */
@@ -790,21 +798,22 @@ function hasLeak(m){return (m.meters||[]).some(x=>x.flow==="yes"&&x.side==="irri
 /* Ohm bands (Bradley): under 24 short · 24–60 normal · 61–90 high → valve rebuild · over 90 floating common · OL/infinite open.
    Team can correct the cut-offs; stored with the price sheet settings. */
 function ohmCuts(){const p=S.pricing;const g=(k,d)=>{const v=p[k];return v==null||v===""?d:num(v)};return {short:g("_ohm_short",24),high:g("_ohm_high",60),float:g("_ohm_float",90)}}
-const OHM_TXT={short:"Short",high:"High · rebuild valve",float:"Floating common",open:"Open circuit",ok:"OK"};
-const OHM_LONG={short:"short circuit",high:"high resistance, valve needs a rebuild",float:"floating common, likely a bad wire-nut connection",open:"open circuit, wire repair needed"};
+const OHM_TXT={short:"Short",high:"High",float:"Floating common",open:"Open circuit",ok:"OK"};
+const OHM_LONG={short:"short circuit",high:"high resistance",float:"floating common, likely a bad wire-nut connection",open:"open circuit, wire repair needed"};
 function ohmState(v){if(v===""||v==null)return "";const t=String(v).trim();if(/^(ol|o\.l\.?|open|inf|∞)/i.test(t))return "open";const n=parseFloat(t);if(isNaN(n))return "";const c=ohmCuts();
   if(n<c.short)return "short";if(n>c.float)return "float";if(n>c.high)return "high";return "ok"}
 /* Each zone's wire reading is picked as a range; an exact reading is optional */
 /* Bradley: controller readings only prompt WIRE fixes. Valve work (solenoid, rebuild) and finding/locating the valve
    are handled on the Zones page, so they are not offered here. High resistance colors the zone orange and points to the zone. */
-const OHM_FIX={short:[["wire_trouble","Wire repair"]],float:[["wire_nut","Re-wire solenoid / common"]],open:[["wire_nut","Re-wire solenoid"],["wire_run","Run new wire"],["zone_splitter","Zone splitter module"]]};
+/* High (61–90): wire repair (nicked wire / ground fault) or defer to the Zones page (bad solenoid). Defer adds nothing here. */
+const OHM_FIX={short:[["wire_trouble","Wire repair"]],high:[["defer","Defer to Zones page (bad solenoid)"],["wire_trouble","Wire repair (nicked wire / ground fault)"]],float:[["wire_nut","Re-wire solenoid / common"]],open:[["wire_nut","Re-wire solenoid"],["wire_run","Run new wire"],["zone_splitter","Zone splitter module"]]};
 const OHM_ZONE_NOTE={short:"Short circuit at the controller",high:"High resistance at the controller: corroding solenoid or a low-quality valve. Pick the valve fix below.",float:"Floating common at the controller",open:"Open circuit at the controller"};
 function zoneBand(c,z){const b=(c.ohmBand||{})[z];return b||ohmState((c.ohms||{})[z])}
 function zoneFix(c,z){const st=zoneBand(c,z);const f=OHM_FIX[st];if(!f)return null;const pick=(c.ohmFix||{})[z];return f.some(x=>x[0]===pick)?pick:f[0][0]}
 function ctlFlags(c){
   const f={ohm:[],decoders:[],sols:[],breaks:[],legOc:[],failedMods:0,unread:0};
   if(c.wiring==="conventional"){for(let z=1;z<=num(c.zones);z++){const st=zoneBand(c,z);if(!st)f.unread++;else if(st!=="ok")f.ohm.push({z,st,v:(c.ohms||{})[z]||"",fix:zoneFix(c,z)})}}
-  f.wire=f.ohm.filter(x=>x.st!=="high");f.rebuild=f.ohm.filter(x=>x.st==="high");
+  f.wire=f.ohm.filter(x=>x.fix!=="defer");f.rebuild=f.ohm.filter(x=>x.fix==="defer");
   if(c.wiring==="2wire"){const tw=twoWire(c);f.decoders=tw.bad;f.sols=tw.sols;f.breaks=tw.breaks;f.legOc=tw.legOc}
   if(c.modular==="yes")f.failedMods=(c.modules||[]).filter(m=>m.status==="Failed").length;
   return f;
@@ -823,11 +832,14 @@ function buildEstimate(j){
     if(a==="repair"){const desc=[brandName(bf.brand,bf.brandOther),realLine(bf.line)||bf.model].filter(Boolean).join(" ");const showT=t&&!desc.toUpperCase().includes(t.toUpperCase());
       addS(sec,f,bf.size,1,"",`Repair ${desc?desc+" ":""}${showT?t+" ":""}backflow preventer`,bn(bf));return}
     addS(sec,f,bf.size,1,"",known?"":`Replace ${t?t+" ":""}backflow preventer`,bn(bf.newAsm)||bn(bf))};
+  /* one line = base price + extra feet (Bradley wants a single line on the estimate and invoice) */
+  const addX=(sec,key,xkey,xq,lbl,brand)=>{const d=PRICE_DEFAULTS[key];if(!d)return;xq=Math.max(0,num(xq));const p=price(key,j,brand)+(xq&&xkey?xq*price(xkey,j):0);push({sec,key,label:lbl||d.l,qty:1,unit:d.u,price:p,total:p,m:d.m})};
   const addC=(sec,label,qty,p)=>{qty=num(qty);p=num(p);if(qty<=0||!label)return;push({sec,key:null,label,qty,unit:"each",price:p,total:p*qty,m:true})};
   if(j.est.trip!==false)add("Service","trip",1);
   (j.mainline||[]).forEach(m=>{
     const sec=m.name||"Mainline";
-    if(hasLeak(m)&&m.leak.atZoneValve!=="yes")add(sec,"main_repair",m.leak.repairs||1,m.leak.location||"");
+    if(hasLeak(m)&&m.leak.atZoneValve!=="yes")((m.leak.list||[]).length?m.leak.list:[{}]).forEach(r=>{const sk=sizedKey("main_rep",r.size);const fk=sizedKey("main_ft",r.size).k;const ft=num(r.ft);
+      addX(sec,sk.k,fk,ft-3,`Mainline leak repair${sk.given?", "+sizeLabel(sk.code)+" pipe":""}${ft?`, ${ft} ft`:""}${m.leak.location?" — "+m.leak.location:""}`)});
     if(bfTestDue(m))add(sec,"bf_test",1);
     if(m.bf.present==="no"){if(m.bf.noneAction!=="note"){add(sec,"bf_install",1,m.bf.newType||"");add(sec,"bf_test",1,"installation test");if(m.bf.permit==="required")add(sec,"bf_permit",1)}}else{const a=m.bf.action;if(a==="repair"||a==="replace")addBf(sec,a,m.bf);const notIns=m.bf.insulated==="no";if((m.bf.insulated!=="yes"&&m.bf.insulate==="yes")||a==="insulate"||(a==="replace"&&notIns&&m.bf.insulate!=="no"))add(sec,"bf_insulate",1);if(notIns&&m.bf.insPipe==="yes")add(sec,"bf_ins_pipe",1)}
     [["prv","prv"],["iso","iso"],["mv","mv"]].forEach(([k,p])=>{const c=m[k]||{};
@@ -843,22 +855,27 @@ function buildEstimate(j){
     const sec=c.name||"Controller";const a=c.act||{};const f=ctlFlags(c);
     {const on=ctlRecs(c).filter(r=>r.pk&&recOn(c,r));const rep=on.some(r=>r.k==="replace");let prog=false;
       on.forEach(r=>{if(r.k==="transformer"&&rep)return;if(r.k==="decoder"||r.k==="module")return;if(r.pk==="ctl_program"){if(prog)return;prog=true}add(sec,r.pk,r.qty,r.detail)})}
-    {const g={};f.ohm.forEach(x=>{if(x.fix)(g[x.fix]=g[x.fix]||[]).push(x.z)});Object.entries(g).forEach(([k,zs])=>add(sec,k,zs.length,"zone"+(zs.length>1?"s ":" ")+zs.join(", ")))}
+    {const g={};const oq=z=>(c.ohmQty||{})["z"+z]||{};f.ohm.forEach(x=>{if(!x.fix||x.fix==="defer")return;
+      if(x.fix==="wire_run"){const ft=num(oq(x.z).ft);addX(sec,"wire_run","wire_ft",ft,`Run new zone wire, zone ${x.z}${ft?`, ${ft} ft`:""}`);return}
+      if(x.fix==="zone_splitter"){add(sec,"zone_splitter",num(oq(x.z).n)||1,"zone "+x.z);return}
+      (g[x.fix]=g[x.fix]||[]).push(x.z)});Object.entries(g).forEach(([k,zs])=>add(sec,k,zs.length,"zone"+(zs.length>1?"s ":" ")+zs.join(", ")))}
     (c.custom||[]).forEach(x=>addC(sec,x.desc,x.qty||1,x.price));
+    if(c.wiring==="2wire"&&ctlRecs(c).some(r=>r.k==="replace"&&recOn(c,r)))add(sec,"tw_module",1,c.twModule&&!/not sure/i.test(c.twModule)?c.twModule:"");
     if(c.wiring==="2wire"&&f.decoders.length&&a.decoder!==false)add(sec,"decoder",f.decoders.length,f.decoders.join(", "));
     if(f.failedMods&&a.module!==false)add(sec,"module",f.failedMods);
   });
-  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));
+  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num)||num(a.vno)-num(b.vno));
   zs.forEach(z=>{
-    const sec="Zone "+(z.num||"?")+(j.controllers.length>1?" · "+ctlName(j,z.ctl):"");
+    const sec=zoneSecName(j,Object.assign({},z,{num:z.num||"?"}));
     for(const t of SIZED)if(z.types.includes(t))for(const s of z.sizes)for(const a of headActs(t,s)){const q=z.acts[`${t}_${s}_${a}`];if(q){
       const k=headPriceKey(t,s,a);const d=PRICE_DEFAULTS[k];if(d&&(a==="raise"||a==="lower"))add(sec,k,q,`${s}" ${t==="mp"?"MP":t}`);else add(sec,k,q)}}
     for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))for(const [k] of OTHER_ACTS[t])add(sec,k,z.acts[k]);
     const v=z.valve||{};
-    if(v.action==="replace")addS(sec,"zv_replace",v.size,1,"","",bn(v));
-    if(v.action==="rebuild")addS(sec,"zv_rebuild",v.size,1,"","",bn(v));if(v.action==="scrub")addS(sec,"zv_scrub",v.size,1,"","",bn(v));if(v.action==="sol")add(sec,"valve_sol",1);if(v.action==="locate")add(sec,"valve_locate",1);
-    (z.laterals||[]).forEach(b=>{add(sec,"lat_repair",1,b.size);const ft=num(b.ft)-3;if(ft>0)add(sec,"lat_ft",ft);if(b.tree==="yes")add(sec,"lat_tree",1)});
-    (z.adds||[]).forEach(h=>{add(sec,"add_head",1,`${h.size}" ${h.type==="mp"?"MP":h.type}`);add(sec,"add_ft",h.ft)});
+    if(v.locate==="yes")add(sec,"valve_locate",1);
+    if(v.action==="replace")addS(sec,v.kind==="scrubber"?"zv_scrub":"zv_replace",v.size,1,"","",bn(v));
+    if(v.action==="rebuild")addS(sec,"zv_rebuild",v.size,1,"","",bn(v));if(v.action==="sol")add(sec,"valve_sol",1);
+    (z.laterals||[]).forEach(b=>{const ft=num(b.ft);addX(sec,"lat_repair","lat_ft",ft-3,`Lateral line break repair${b.size?", "+b.size+" pipe":""}${ft?`, ${ft} ft`:""}`);if(b.tree==="yes")add(sec,"lat_tree",1)});
+    (z.adds||[]).forEach(h=>{const k=PRICE_DEFAULTS[`addh_${h.type}_${h.size}`]?`addh_${h.type}_${h.size}`:"add_head";const ft=num(h.ft);addX(sec,k,"add_ft",ft-20,`Add ${h.size}" ${h.type==="mp"?"MP rotator":h.type} head${ft?`, ${ft} ft of pipe`:""}`)});
     (z.custom||[]).forEach(c=>addC(sec,c.desc,c.qty,c.price));
   });
   if(num(j.est.laborHours)>0)add("Service","labor_hour",j.est.laborHours);
@@ -1125,8 +1142,10 @@ function priceRow(k,d,lbl){const eff=basePrice(k);const changed=eff!==d.p;
     <label class="f" style="width:110px"><input type="number" inputmode="decimal" step="0.01" id="p-${k}" data-price="${k}" ${isAdmin()?"":"disabled"} value="${esc(S.pricing[k]!=null&&S.pricing[k]!==""?S.pricing[k]:eff)}" aria-label="${esc(d.l)} price"></label></div>`}
 /* Repair was removed for the PRV and isolation valve, so their old repair prices are hidden from the price sheet. */
 const PRICE_HIDDEN_FAMS=new Set(["iso_repair","prv_repair"]);
+/* Old single prices now set per size/type; still used as the fallback until each one is set. */
+const PRICE_HIDDEN_KEYS=new Set(["main_repair","add_head"]);
 function priceRows(list){const out=[];const seen=new Set();
-  list.forEach(([k,d])=>{if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam)||PRICE_HIDDEN_FAMS.has(d.fam))return;seen.add(d.fam);
+  list.forEach(([k,d])=>{if(PRICE_HIDDEN_KEYS.has(k))return;if(!d.fam){out.push(priceRow(k,d));return}if(seen.has(d.fam)||PRICE_HIDDEN_FAMS.has(d.fam))return;seen.add(d.fam);
     const F=SIZED_FAMS[d.fam];const ks=F.codes.map(c=>`${d.fam}_${c}`);const ps=ks.map(basePrice);const lo=Math.min(...ps),hi=Math.max(...ps);
     out.push(`<details class="pfam" data-pfam="${d.fam}" ${(S.famOpen||{})[d.fam]?"open":""}><summary><span class="al">${esc(F.base)}<span class="ap">per ${esc(F.u)} · ${F.codes.length} sizes · ${lo===hi?money(lo):money(lo)+"–"+money(hi)}</span></span></summary>
       <div class="pfsizes"><div class="small muted" style="padding:6px 0 0"><b>Standard price</b> (any brand without its own price)</div>${ks.map((k2,i)=>priceRow(k2,PRICE_DEFAULTS[k2],sizeLabel(F.codes[i]))).join("")}
@@ -1613,8 +1632,9 @@ function mainlineTab(){const j=job();
     <div><button class="btn ghost sm" data-add="${b}.meters" data-tpl="meter">+ Add meter</button></div></div>
   ${leak?`<div class="combo" style="border-color:var(--bad)"><h4>Mainline leak</h4>
     ${seg("Leak visible?",b+".leak.visible",YN)}
-    ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; adjust repair count if more than one.</p>`}
-    ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve instead.</p>`:`<div class="acts">${stepRow("Mainline repairs",b+".leak.repairs","main_repair")}</div>`}</div>`:""}
+    ${m.leak.visible==="yes"?`${fld("Leak location",b+".leak.location","text",'placeholder="e.g. 6 ft left of backflow, under walk"')}${seg("Is it at a zone valve?",b+".leak.atZoneValve",YN)}`:`<p class="small muted">Not visible yet. Plan to locate the leak; add a repair below for each one.</p>`}
+    ${m.leak.atZoneValve==="yes"?`<p class="note small">Leak is at a zone valve. Record it under that zone's valve instead.</p>`:`<div class="q"><span class="ql">Mainline repairs</span>${(m.leak.list||[]).map((r,ri)=>`<div class="grid3" style="align-items:end">${sizeSel("Pipe size *",`${b}.leak.list.${ri}.size`)}${fld("Feet of pipe *",`${b}.leak.list.${ri}.ft`,"number",'data-rr="1"')}<div>${(m.leak.list||[]).length>1?delBtn("mlr:"+mi+":"+ri,"Remove"):""}</div></div>${!r.size||!num(r.ft)?`<p class="small" style="margin:0;color:var(--bad)">Pick the pipe size and feet for this repair.</p>`:""}`).join("")}
+      <p class="small muted" style="margin:0">A repair covers the first 3 ft; longer runs add pipe by the foot, on the same line.</p><div><button class="btn ghost sm" data-add="${b}.leak.list" data-tpl="mainrep">+ Add mainline repair</button></div></div>`}</div>`:""}
   <div class="combo ${m.bf.present==="no"?"bad":""}"><h4>Backflow preventer</h4>
     ${seg("Backflow preventer present?",b+".bf.present",[["yes","Yes"],["no","Not present"]])}
     ${m.bf.present==="no"?`${(()=>{const blocked=buildEstimate(j).lines.filter(l=>bfMajorKey(l.key));return `<div class="note bad small bfrule"><b>⛔ No backflow preventer: mainline and valve work is on hold.</b> ${BF_RULE} requires an approved backflow preventer to be installed <b>before</b> any major maintenance, alteration, repair or service on a system connected to drinking water. Major work means anything that opens the mainline before the zone valves: mainline leaks, replacing or rebuilding zone valves, solenoids, master valve or PRV work.
@@ -1651,11 +1671,12 @@ function controllersTab(){const j=job();
   <div class="grid3">${fld("Number of zones",b+".zones","number",'data-rr="1" min="1" max="200"')}</div>
   ${seg("Power to controller?",b+".power",YN,{no:"bad"})}
   ${c.power==="no"?seg("Cause",b+".powerIssue",[["outlet","Outlet"],["transformer","Transformer"],["controller","Controller itself"]]):""}
-  ${seg("Wiring",b+".wiring",[["conventional","Conventional"],["2wire","2-wire"]])}
-  ${rainBlock(c,b)}
-  ${seg("Modular?",b+".modular",YN)}
-  ${c.modular==="yes"?`<div class="combo"><h4>Modules</h4>${(c.modules||[]).map((mo,mi)=>`<div class="row"><span class="mono small">#${mi+1}</span><div style="flex:1;min-width:110px">${fld("Stations",`${b}.modules.${mi}.size`,"text",'placeholder="4"')}</div><div style="flex:1;min-width:120px">${sel("Status",`${b}.modules.${mi}.status`,["OK","Failed","Missing","Unknown"])}</div>${delBtn("mod:"+ci+":"+mi,"✕")}</div>`).join("")}
+  ${seg("Controller type",b+".ctype",CTL_TYPES)}
+  ${c.ctype==="fixed"?`<div class="grid3">${sel("Station count",b+".stations",[["","Choose…"]].concat(FIXED_STATIONS.map(n=>[String(n),n+" stations"])).concat([["unsure","Not sure"]]))}</div>`:""}
+  ${c.ctype==="2wire"?`<div class="grid2">${sel("2-wire interface module",b+".twModule",twOpts(ctlBrand(c)))}</div>`:""}
+  ${c.modular==="yes"?`<div class="combo"><h4>Modules</h4>${(c.modules||[]).map((mo,mi)=>`<div class="row"><span class="mono small">#${mi+1}</span>${(CTL_MODULES[ctlBrand(c)]||[]).length?`<div style="flex:1;min-width:140px">${sel("Module",`${b}.modules.${mi}.model`,modOpts(ctlBrand(c),mo.model))}</div>`:""}<div style="flex:1;min-width:90px">${fld("Stations",`${b}.modules.${mi}.size`,"text",'placeholder="4"')}</div><div style="flex:1;min-width:120px">${sel("Status",`${b}.modules.${mi}.status`,["OK","Failed","Missing","Unknown"])}</div>${delBtn("mod:"+ci+":"+mi,"✕")}</div>`).join("")}
     <div><button class="btn ghost sm" data-add="${b}.modules" data-tpl="module">+ Add module</button></div></div>`:""}
+  ${rainBlock(c,b)}
   ${c.wiring==="conventional"?ohmBlock(c,b,zn):`<div class="combo"><h4>2-wire path</h4>${seg("Overcurrent on the path?",b+".overcurrent",YN,{yes:"bad"})}
     ${c.overcurrent==="yes"?fld("Zones affected",b+".ocZones","number"):""}
     ${twEditor(c,b,ci)}
@@ -1853,7 +1874,7 @@ function ctlRecs(c){const R=[];const f=ctlFlags(c);const add=(k,label,why,pk,def
     add("trouble2w","Troubleshoot the 2-wire path",(c.overcurrent==="yes"?"Overcurrent on the path. ":"")+(loc.length?"Likely fault: "+loc.join("; ")+".":"Find the fault (wire, splice or decoder) before replacing parts."),"wire_trouble",true,1,loc.join("; "))}
   if(c.power==="no"&&c.powerIssue==="transformer")add("transformer","Replace transformer","No power and the transformer failed.","transformer",true);
   if(c.power==="no"&&c.powerIssue==="outlet")add("outlet","Customer to have an electrician restore power to the outlet","The outlet has no power. Check the GFCI and breaker first.",null,true);
-  if(c.rain==="no")add("rainAdd","Add rain/freeze sensor","No rain/freeze sensor installed. Stops watering in rain and freezing weather.","rain_add",true);
+  if(c.rain==="no")add("rainAdd",`Add ${c.rainKind==="wireless"?"wireless ":c.rainKind==="wired"?"wired ":""}rain/freeze sensor`,"No rain/freeze sensor installed. Stops watering in rain and freezing weather.",c.rainKind==="wireless"?"rain_add_wl":"rain_add",true);
   if(c.rain==="yes"&&(c.rainStatus==="notworking"||c.rainStatus==="bypassed"))add("rainFix","Replace rain/freeze sensor",`The sensor is ${c.rainStatus==="bypassed"?"bypassed":"not working"}.`,"rain_replace",true);
   if(c.wiring==="2wire"&&f.decoders.length)add("decoder",`Replace ${f.decoders.length} decoder${f.decoders.length>1?"s":""}`,"Shorted, or not communicating while decoders further down the line are: "+f.decoders.join(", "),"decoder",true,f.decoders.length,f.decoders.join(", "));
   if(c.wiring==="2wire"&&f.sols.length)add("sol2w",`Replace ${f.sols.length} solenoid${f.sols.length>1?"s":""}`,"Shorted solenoid on: "+f.sols.join(", "),"valve_sol",true,f.sols.length,f.sols.join(", "));
@@ -1877,8 +1898,9 @@ function ohmBlock(c,b,zn){const cut=ohmCuts();const f=ctlFlags(c);
   return `<div class="combo"><h4>Zone wire readings</h4><p class="small muted" style="margin:0">Pick each zone's range on your meter. ${f.unread?`<b>${f.unread} zone${f.unread===1?"":"s"} still to read.</b>`:"All zones read."}</p>
   <div class="ohmrows">${Array.from({length:zn},(_,i)=>{const z=i+1;const st=zoneBand(c,z);const fx=OHM_FIX[st];
     return `<div class="ohmrow ${st||"none"}"><div class="row"><b class="ozn">Zone ${z}</b><div class="chips">${bands.map(([v,l,r])=>`<button type="button" class="chip ohmchip ${v}" data-ohmband="${c.id}|${z}|${v}" aria-pressed="${st===v}">${l}<span class="small"> ${r}</span></button>`).join("")}</div></div>
-      ${st==="high"?`<div class="row ohmfix"><span class="small">High resistance. The valve fix is picked on the Zones page.</span></div>`:""}
+      ${st==="short"?`<div class="row ohmfix"><button type="button" class="chip" data-multiv="${c.id}|${z}" aria-pressed="${!!(c.multiV||{})[z]}">Multiple valves tied to zone</button>${(c.multiV||{})[z]?`<span class="small muted">Zone ${z} shows twice on the Zones page, one for each valve.</span>`:""}</div>`:""}
       ${fx?`<div class="row ohmfix"><span class="small">${esc(OHM_LONG[st].replace(/^./,m=>m.toUpperCase()))}. Fix:</span><div class="chips">${fx.map(([k,l])=>`<button type="button" class="chip" data-ohmfix="${c.id}|${z}|${k}" aria-pressed="${zoneFix(c,z)===k}">${l}</button>`).join("")}</div></div>`:""}
+      ${fx&&["wire_run","zone_splitter"].includes(zoneFix(c,z))?`<p class="small muted" style="margin:0">Enter the ${zoneFix(c,z)==="wire_run"?"feet of wire":"number of splitter modules"} on Zone ${z}'s page.</p>`:""}
       ${st?`<div class="row"><label class="f" style="max-width:170px"><span>Exact reading (optional)</span><input type="text" inputmode="decimal" id="f-${b}.ohms.${z}" data-f="${b}.ohms.${z}" value="${esc((c.ohms||{})[z])}" placeholder="Ω"></label></div>`:""}</div>`}).join("")}</div></div>`;
 }
 function ohmRangesCard(){const adm=isAdmin();const cut=ohmCuts();
@@ -1891,10 +1913,10 @@ function chk(path,label,pk,defOn){const v=getP(job(),path);const on=defOn?v!==fa
 function zoneOhm(j,z){const c=j.controllers.find(x=>x.id===z.ctl)||(j.controllers.length===1?j.controllers[0]:null);if(!c||c.wiring==="2wire")return "";const st=zoneBand(c,+z.num);return st&&st!=="ok"?st:""}
 function zonesTab(){const j=job();
   if(!j.controllers.length)return `<div class="card empty"><h2>Add a controller first</h2><p class="muted">Each zone belongs to a controller.</p><button class="btn" data-tab="controllers">Go to controllers</button></div>`;
-  const zs=j.zones.map((z,i)=>[z,i]).sort((a,b)=>ctlName(j,a[0].ctl).localeCompare(ctlName(j,b[0].ctl))||num(a[0].num)-num(b[0].num));
+  const zs=j.zones.map((z,i)=>[z,i]).sort((a,b)=>ctlName(j,a[0].ctl).localeCompare(ctlName(j,b[0].ctl))||num(a[0].num)-num(b[0].num)||num(a[0].vno)-num(b[0].vno));
   if(S.zoneOpen&&!j.zones.find(z=>z.id===S.zoneOpen))S.zoneOpen=null;
   const list=`<div class="card"><div class="cardhead"><h2>Zones</h2><button class="btn sm" data-addzone="1">+ Add zone</button></div>
-   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action!=="none"?1:0);const ob=zoneOhm(j,z);return `<button class="chip zc-${z.works||"none"} ${ob?"zo-"+ob:""}" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${z.works==="yes"?"✓ ":z.works==="no"?"✕ ":""}${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
+   ${zs.length?`<div class="chips">${zs.map(([z])=>{const n=Object.values(z.acts).reduce((s,v)=>s+num(v),0)+(z.laterals||[]).length+(z.adds||[]).length+(z.valve&&z.valve.action&&z.valve.action!=="none"?1:0)+(z.valve&&z.valve.locate==="yes"?1:0);const ob=zoneOhm(j,z);return `<button class="chip zc-${z.works||"none"} ${ob?"zo-"+ob:""}" data-zone="${z.id}" aria-pressed="${S.zoneOpen===z.id}">${z.works==="yes"?"✓ ":z.works==="no"?"✕ ":""}${j.controllers.length>1?esc(ctlName(j,z.ctl).replace("Controller ",""))+"·":""}Z${esc(z.num)}${z.vno?"v"+esc(z.vno):""}${n?` <span class="mono">(${n})</span>`:""}</button>`}).join("")}</div>`:`<p class="muted">No zones yet. Add each zone as you run it.</p>`}</div>`;
   const zo=j.zones.findIndex(z=>z.id===S.zoneOpen);
   if(zo<0)return list;
   const z=j.zones[zo],b=`zones.${zo}`;
@@ -1904,10 +1926,15 @@ function zonesTab(){const j=job();
     combos+=`<div class="combo"><h4>${s}" ${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${acts.map(a=>stepRow(ACT_L[a],`${b}.acts.${t}_${s}_${a}`,headPriceKey(t,s,a))).join("")}</div></div>`}
   for(const t of Object.keys(OTHER_ACTS))if(z.types.includes(t))combos+=`<div class="combo"><h4>${HEAD_TYPES.find(h=>h[0]===t)[1]}</h4><div class="acts">${OTHER_ACTS[t].map(([k,l])=>stepRow(l,`${b}.acts.${k}`,k,PRICE_DEFAULTS[k].u)).join("")}</div></div>`;
   const v=z.valve||{};
-  return list+`<div class="card"><div class="cardhead"><h2>Zone ${esc(z.num)}</h2><span class="muted small">${esc(ctlName(j,z.ctl))}${z.mapValve?" · on map":""}</span></div>
+  return list+`<div class="card"><div class="cardhead"><h2>Zone ${esc(z.num)}${z.vno?` · valve ${esc(z.vno)}`:""}</h2><span class="muted small">${esc(ctlName(j,z.ctl))}${z.mapValve?" · on map":""}</span></div>
   ${zoneCheck(j,z,zo)}
+  ${(()=>{const zc=zoneCtl(j,z);if(!zc||zc.wiring!=="conventional"||z.vno)return "";const fx=zoneFix(zc,+z.num);const ci=j.controllers.indexOf(zc);const qb=`controllers.${ci}.ohmQty.z${z.num}`;
+    if(fx==="wire_run")return `<div class="combo"><h4>Wire repair (from the Controllers tab)</h4><p class="small muted" style="margin:0">Run new wire was picked for this zone.</p><div class="grid3">${fld("Feet of wire needed",qb+".ft","number")}</div></div>`;
+    if(fx==="zone_splitter")return `<div class="combo"><h4>Wire repair (from the Controllers tab)</h4><p class="small muted" style="margin:0">A zone splitter module was picked for this zone.</p><div class="grid3">${fld("Splitter modules",qb+".n","number",'placeholder="1"')}</div></div>`;
+    return ""})()}
   ${mapHeadSummary(j,z)?`<p class="small muted" style="margin:0">On the map: ${esc(mapHeadSummary(j,z))}</p>`:""}
   <div class="grid2">${sel("Controller",b+".ctl",j.controllers.map(c=>[c.id,c.name]))}${fld("Zone number",b+".num","number",'data-rr="1"')}</div>
+  ${fld("Zone location",b+".loc","text",'placeholder="e.g. Front left side of house"')}
   ${seg("Soil type",b+".soil",["Clay","Loam","Sandy","Rocky","Mixed"])}
   ${seg("Sun exposure",b+".sun",[["partial","Partial"],["half","Half"],["full","Full"],["mixed","Mixed"]])}
   <div class="grid2">${brandSel("Head brand (most of the heads)",b+".headBrand","heads")}${lineSel("Head product line",b+".headLine","heads",brandName(z.headBrand,z.headBrandOther))}</div>
@@ -1915,9 +1942,10 @@ function zonesTab(){const j=job();
   ${sized.length?multi("Head sizes",b+".sizes",SIZES.map(s=>[s,s+'"'])):""}
   ${sized.length&&!z.sizes.length?`<p class="small muted">Pick the head sizes to see repair options.</p>`:""}
   ${combos}
-  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size")}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
-    ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace","Replace valve"],["scrub","Scrubber valve"],["locate","Locate valve"]])}
-    ${v.condition==="Unknown"&&v.action!=="locate"?`<p class="note small">Valve not found. Choose Locate valve to add it to the estimate.</p>`:""}</div>
+  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size")}${sel("Valve type",b+".valve.kind",[["standard","Standard"],["scrubber","Scrubber (dirty water)"]])}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
+    ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace",v.kind==="scrubber"?"Replace (scrubber)":"Replace valve"]])}
+    ${seg("Valve buried? Add with the repair",b+".valve.locate",[["yes","Locate valve"]])}
+    ${v.condition==="Unknown"&&v.locate!=="yes"?`<p class="note small">Valve not found. Tap Locate valve so finding it is on the estimate.</p>`:""}</div>
   <div class="combo"><h4>Lateral line breaks</h4>${(z.laterals||[]).map((l,li)=>`<div class="grid3" style="align-items:end">${sel("Pipe size",`${b}.laterals.${li}.size`,["1/2\"","3/4\"","1\"","1.25\"","1.5\"","2\""])}${fld("Linear ft to repair",`${b}.laterals.${li}.ft`,"number")}${sel("Tree present?",`${b}.laterals.${li}.tree`,[["no","No"],["yes","Yes"]])}<div>${delBtn("lat:"+zo+":"+li,"Remove")}</div></div>${photoStrip(`${b}.laterals.${li}.brk`)}`).join("")}
     <p class="small muted">A repair covers the first 3 ft; longer runs add pipe by the foot.</p><div><button class="btn ghost sm" data-add="${b}.laterals" data-tpl="lateral">+ Add line break</button></div></div>
   <div class="combo"><h4>Add heads</h4>${(z.adds||[]).map((h,hi)=>`<div class="grid3" style="align-items:end">${sel("Type",`${b}.adds.${hi}.type`,[["spray","Spray"],["mp","MP rotator"],["rotor","Rotor"]])}${sel("Size",`${b}.adds.${hi}.size`,SIZES.map(s=>[s,s+'"']))}${fld("Distance (ft)",`${b}.adds.${hi}.ft`,"number")}<div>${delBtn("add:"+zo+":"+hi,"Remove")}</div></div>`).join("")}
@@ -1986,15 +2014,15 @@ function findings(j,tech){
     if(c.notes)it.push(esc(c.notes));
     out.push([c.name||"Controller",it]);
   });
-  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num));
-  zs.forEach(z=>{const it=[];if(z.works==="yes")it.push(`<b>Working properly.</b>`);if(z.works==="no")it.push(`<span class="flag">Not working${(z.symptoms||[]).length?": "+(z.symptoms||[]).map(k=>(SYMPTOMS.find(x=>x[0]===k)||["",k])[1].toLowerCase()).join(", "):""}.</span>`);
+  const zs=[...(j.zones||[])].sort((a,b)=>ctlName(j,a.ctl).localeCompare(ctlName(j,b.ctl))||num(a.num)-num(b.num)||num(a.vno)-num(b.vno));
+  zs.forEach(z=>{const it=[];if(z.loc)it.push("Location: "+esc(z.loc));if(z.works==="yes")it.push(`<b>Working properly.</b>`);if(z.works==="no")it.push(`<span class="flag">Not working${(z.symptoms||[]).length?": "+(z.symptoms||[]).map(k=>(SYMPTOMS.find(x=>x[0]===k)||["",k])[1].toLowerCase()).join(", "):""}.</span>`);
     const mh=mapHeadSummary(j,z);if(mh)it.push("Mapped: "+esc(mh));const types=z.types.map(t=>HEAD_TYPES.find(h=>h[0]===t)[1].toLowerCase());
     const desc=[types.length?types.join(", ")+" heads":"",z.sizes.length&&z.types.some(t=>SIZED.includes(t))?z.sizes.map(s=>s+'"').join("/"):"",z.soil?z.soil.toLowerCase()+" soil":"",z.sun?z.sun+" sun":""].filter(Boolean).join(" · ");
     if(desc)it.push(desc);
     const v=z.valve||{};if(v.condition&&v.condition!=="Good")it.push(`Zone valve condition: ${esc(v.condition.toLowerCase())}`);
     (z.laterals||[]).forEach(l=>it.push(`<span class="flag">Broken ${esc(l.size)} lateral line</span>${num(l.ft)?`, about ${num(l.ft)} ft to repair`:""}${l.tree==="yes"?", tree roots present":""}`));
     if(z.notes)it.push(esc(z.notes));
-    out.push([`Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`,it]);
+    out.push([zoneSecName(j,z),it]);
   });
   const tl=troubleList(j);
   return out.map(([h,it])=>[h,it,tl.filter(t=>t.sec===h)]);
@@ -2445,7 +2473,7 @@ const HOLD_TABS=new Set(["controllers","zones","map","score"]);
 function bfHold(j){return !!(j.bfHold&&!j.bfHold.cleared&&(j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note"))}
 function bfMissing(j){return (j.mainline||[]).some(m=>(m.bf||{}).present==="no"&&(m.bf||{}).noneAction!=="note")}
 function keyOf(k){return String(k||"").split("|").slice(1).join("|")}
-const BF_MAJOR_FAMS=new Set(["zv_replace","zv_rebuild","zv_scrub","prv_repair","prv_replace","prv_install","mv_repair","mv_replace","mv_relocate","mv_install"]);
+const BF_MAJOR_FAMS=new Set(["main_rep","zv_replace","zv_rebuild","zv_scrub","prv_repair","prv_replace","prv_install","mv_repair","mv_replace","mv_relocate","mv_install"]);
 function bfMajorKey(k){return BF_MAJOR.has(k)||BF_MAJOR_FAMS.has(famOf(k))}
 function bfInstallDone(j){const c=j.completion;return !!(c&&(c.items||[]).some(i=>keyOf(i.k)==="bf_install"&&i.status==="done"))}
 function bfBlocked(j,key){return bfMissing(j)&&bfMajorKey(key)&&!bfInstallDone(j)}
@@ -2866,7 +2894,7 @@ function startJobFrom(c,pid){let rec=c.rec;if(!rec){rec=custFromJob(c.jobs[0]);s
    Green = checked and good. Colors come from what the tech recorded; the tech can override any line. */
 const TL={r:["Urgent","Broken, leaking or not working. Causes damage or wastes water if left."],y:["Recommended","Works, but worn, out of adjustment or below standard. Plan to fix soon."],g:["Good","Checked and working."]};
 const RED_KEYS=new Set(["bf_permit","mv_relocate","bf_test","bf_install","wire_splice","wire_run","zone_splitter","wire_nut","main_repair","lat_repair","lat_ft","lat_tree","wire_trouble","transformer","decoder","module","valve_sol","valve_rebuild","valve_1","valve_15","valve_2","drip_repair","bf_repair","bf_replace","ctl_replace"]);
-const RED_FAMS=/^(zv_replace|zv_rebuild|zv_scrub|mv_relocate|bf_repair_|bf_replace_)/;
+const RED_FAMS=/^(main_rep_|zv_replace|zv_rebuild|zv_scrub|mv_relocate|bf_repair_|bf_replace_)/;
 function lineKey(l){return l.sec+"|"+(l.key||l.label)}
 function lineColor(j,l){if(l.sec==="Service"||l.sec==="Add-ons")return "";const ov=((j.est||{}).tl||{})[lineKey(l)];if(ov)return ov;
   if(l.key&&(RED_KEYS.has(l.key)||RED_FAMS.test(famOf(l.key))||l.key.startsWith("rhead_")))return "r";return "y"}
@@ -3210,46 +3238,62 @@ function brandsCard(){const adm=isAdmin();const tiers=S.pricing._brandTiers||{};
 /* ---------------- Controller-first setup ----------------
    A job starts with a few controller questions; the app then builds exactly that many zones. */
 const CTL_BRANDS=["Hunter","Rain Bird","Toro","Weathermatic","Irritrol","Orbit","Rachio","Other"];
+/* Controller type (Bradley): Fixed asks the station count, Modular asks for that brand's station modules,
+   2-wire asks for the 2-wire interface module. Type sets wiring and modular for the rest of the app. */
+const CTL_TYPES=[["fixed","Fixed"],["modular","Modular"],["2wire","2-wire"]];
+const FIXED_STATIONS=[4,6,8,9,12,14,16,24];
+const CTL_MODULES={"Hunter":[["PCM-300",3],["PCM-900",9],["PCM-1600",16],["ICM-400",4],["ICM-600",6],["ICM-800",8],["ICM-2200",22],["A2M-600",6]],"Rain Bird":[["ESPSM3",3],["ESPSM6",6],["ESPLXMSM8",8],["ESPLXMSM12",12]],"Toro":[["TSM-4",4],["TSM-8",8]],"Weathermatic":[["SLM4",4],["SLM12",12]]};
+const TW_MODULES={"Hunter":["PC-DM (Pro-C / HPC)","EZ-DM (ICC2 / HCC)","DUAL48M (I-Core)","A2C-D75 (ACC2)"],"Rain Bird":["Built in (ESP-2WIRE)","ESPLXD-SM75 (ESP-LXD)","LXIVM-2W (ESP-LXIVM)"],"Toro":["Built in (TDC)"],"Weathermatic":["SLM96TW (SL9600TW)"]};
+function ctlType(c){return c.ctype||(c.wiring==="2wire"?"2wire":c.modular==="yes"?"modular":"fixed")}
+function applyCtype(c){const t=c.ctype;if(t==="2wire"){c.wiring="2wire";c.modular="no"}else{c.wiring="conventional";c.modular=t==="modular"?"yes":"no";if(t==="modular"&&!(c.modules||[]).length)c.modules=[{size:"",status:"OK"}]}}
+function modOpts(brand,cur){const l=CTL_MODULES[brand]||[];const o=[["","Choose…"]].concat(l.map(([m,n])=>[m,`${m} (${n} stations)`]));if(cur&&!l.some(x=>x[0]===cur))o.push([cur,cur]);return o}
+function twOpts(brand){return [["","Choose…"]].concat((TW_MODULES[brand]||[]).map(x=>[x,x])).concat([["Other / not sure","Other / not sure"]])}
 function ctlBrand(c){return c.brandPick==="Other"?(c.brandOther||""):(c.brandPick||c.brand||"")}
-function newDraft(){return {brand:"",brandOther:"",model:"",line:"",wiring:"conventional",zones:6,drip:[],modular:"",modules:[]}}
+function newDraft(){return {brand:"",brandOther:"",model:"",line:"",wiring:"conventional",zones:6,drip:[],modular:"",modules:[],ctype:"",stations:"",twModule:""}}
 function ctlSetupForm(title,isFirst){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
-  const ready=!!d.brand&&!!d.modular;
+  const ready=!!d.brand&&!!d.ctype&&(d.ctype!=="fixed"||!!d.stations)&&(d.ctype!=="2wire"||!!d.twModule);
+  const csSel=(lab,key,opts)=>`<label class="f"><span>${lab}</span><select id="cs-${key}" data-cs="${key}" data-csrr="1">${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(d[key])===String(v)?"selected":""}>${esc(l)}</option>`).join("")}</select></label>`;
   return `<div class="card"><div class="eyebrow">${isFirst?"Step 2":"New controller"}</div><h2>${esc(title)}</h2>
     <p class="muted small" style="margin:0">Look at the customer's controller. The app builds the zones from these answers.</p>
     <div class="q"><span class="ql">Brand *</span><div class="chips">${CTL_BRANDS.map(x=>`<button type="button" class="chip" data-csbrand="${esc(x)}" aria-pressed="${d.brand===x}">${esc(x)}</button>`).join("")}</div></div>
     ${d.brand==="Other"?`<label class="f"><span>Brand name</span><input id="cs-brandOther" data-cs="brandOther" type="text" value="${esc(d.brandOther)}"></label>`:""}
     ${((PRODUCT_LINES.controller||{})[d.brand]||[]).length?`<label class="f"><span>Product line</span><select id="cs-line" data-cs="line" data-csrr="1"><option value="">Choose…</option>${PRODUCT_LINES.controller[d.brand].map(x=>`<option ${d.line===x[0]?"selected":""}>${esc(x[0])}</option>`).join("")}<option ${d.line==="Other / not listed"?"selected":""}>Other / not listed</option><option ${d.line==="Not sure"?"selected":""}>Not sure</option></select></label>`:""}
     ${d.brand&&!realLine(d.line)?`<label class="f"><span>Model (optional)</span><input id="cs-model" data-cs="model" type="text" value="${esc(d.model)}" placeholder="e.g. Pro-C, ESP-TM2"></label>`:""}
-    <div class="q"><span class="ql">Modular? *</span><div class="chips">${[["yes","Yes"],["no","No"]].map(([v,l])=>`<button type="button" class="chip" data-csmod="${v}" aria-pressed="${d.modular===v}">${l}</button>`).join("")}</div></div>
-    ${d.modular==="yes"?`<div class="combo"><h4>Modules</h4><p class="small muted" style="margin:0">Add each station module installed in the controller.</p>
-      ${d.modules.map((mo,mi)=>`<div class="row" style="flex-wrap:nowrap"><span class="small" style="width:70px">Module ${mi+1}</span><label class="f" style="flex:1"><span>Stations</span><select data-csmods="${mi}">${["","1","2","3","4","6","8","12","22"].map(v=>`<option value="${v}" ${String(mo.size)===v?"selected":""}>${v||"Choose…"}</option>`).join("")}</select></label><label class="f" style="flex:1"><span>Status</span><select data-csmodst="${mi}">${["OK","Failed","Empty slot"].map(v=>`<option ${mo.status===v?"selected":""}>${v}</option>`).join("")}</select></label><button type="button" class="btn quiet sm" data-csmodrm="${mi}" aria-label="Remove module">✕</button></div>`).join("")}
+    <div class="q"><span class="ql">Controller type *</span><div class="chips">${CTL_TYPES.map(([v,l])=>`<button type="button" class="chip" data-csctype="${v}" aria-pressed="${d.ctype===v}">${l}</button>`).join("")}</div></div>
+    ${d.ctype==="fixed"?csSel("Station count *","stations",[["","Choose…"]].concat(FIXED_STATIONS.map(n=>[String(n),n+" stations"])).concat([["unsure","Not sure"]])):""}
+    ${d.ctype==="2wire"?csSel("2-wire interface module *","twModule",twOpts(d.brand)):""}
+    ${d.ctype==="modular"?`<div class="combo"><h4>Modules</h4><p class="small muted" style="margin:0">Add each station module installed in the controller.</p>
+      ${d.modules.map((mo,mi)=>`<div class="row" style="flex-wrap:nowrap"><span class="small" style="width:70px">Module ${mi+1}</span>${(CTL_MODULES[d.brand]||[]).length?`<label class="f" style="flex:1"><span>Module</span><select data-csmodm="${mi}">${modOpts(d.brand,mo.model).map(([v,l])=>`<option value="${esc(v)}" ${(mo.model||"")===v?"selected":""}>${esc(l)}</option>`).join("")}</select></label>`:`<label class="f" style="flex:1"><span>Stations</span><select data-csmods="${mi}">${["","1","2","3","4","6","8","12","22"].map(v=>`<option value="${v}" ${String(mo.size)===v?"selected":""}>${v||"Choose…"}</option>`).join("")}</select></label>`}<label class="f" style="flex:1"><span>Status</span><select data-csmodst="${mi}">${["OK","Failed","Empty slot"].map(v=>`<option ${mo.status===v?"selected":""}>${v}</option>`).join("")}</select></label><button type="button" class="btn quiet sm" data-csmodrm="${mi}" aria-label="Remove module">✕</button></div>`).join("")}
       <div><button type="button" class="btn ghost sm" data-csmodadd="1">+ Add module</button></div></div>`:""}
-    <div class="q"><span class="ql">Wiring</span><div class="chips">${[["conventional","Conventional"],["2wire","2-wire"]].map(([v,l])=>`<button type="button" class="chip" data-cswire="${v}" aria-pressed="${d.wiring===v}">${l}</button>`).join("")}</div></div>
     <div class="q"><span class="ql">Number of zones *</span><div class="row"><div class="step"><button type="button" data-cszn="-1" aria-label="Fewer zones">−</button><input id="cs-zones" data-cs="zones" type="number" inputmode="numeric" value="${n}" aria-label="Number of zones"><button type="button" data-cszn="1" aria-label="More zones">+</button></div></div></div>
     <div class="row"><button class="btn" data-csbuild="1" ${ready?"":"disabled"} style="min-height:48px">Build ${n} zone${n===1?"":"s"}</button>${isFirst?"":`<button class="btn quiet" data-cscancel="1">Cancel</button>`}</div>
-    ${ready?"":`<p class="small muted" style="margin:0">${!d.brand?"Pick the brand":"Answer “Modular?”"} to continue.</p>`}</div>`}
+    ${ready?"":`<p class="small muted" style="margin:0">${!d.brand?"Pick the brand":!d.ctype?"Pick the controller type":d.ctype==="fixed"?"Pick the station count":"Pick the 2-wire interface module"} to continue.</p>`}</div>`}
 function buildController(j){const d=S.ctlDraft;const n=Math.max(1,Math.min(99,num(d.zones)||1));
-  const c=newController(j.controllers.length+1);Object.assign(c,{brandPick:d.brand,brandOther:d.brandOther.trim(),brand:"",model:realLine(d.line)?"":d.model.trim(),line:d.line||"",wiring:d.wiring,zones:n,rain:"",power:"yes",modular:d.modular||"no",modules:d.modular==="yes"?d.modules.filter(mo=>mo.size||mo.status!=="OK").map(mo=>({size:mo.size,status:mo.status||"OK"})):[]});
+  const c=newController(j.controllers.length+1);Object.assign(c,{brandPick:d.brand,brandOther:d.brandOther.trim(),brand:"",model:realLine(d.line)?"":d.model.trim(),line:d.line||"",wiring:d.ctype==="2wire"?"2wire":"conventional",zones:n,rain:"",power:"yes",ctype:d.ctype,stations:d.ctype==="fixed"?d.stations:"",twModule:d.ctype==="2wire"?d.twModule:"",modular:d.ctype==="modular"?"yes":"no",modules:d.ctype==="modular"?d.modules.filter(mo=>mo.size||mo.model||mo.status!=="OK").map(mo=>({size:mo.size,model:mo.model||"",status:mo.status||"OK"})):[]});
   j.controllers.push(c);
   for(let i=1;i<=n;i++){const z=newZone(j);z.ctl=c.id;z.num=String(i);
-    if(d.drip.includes(i)){z.types=["drip"];z.sizes=[]}else{z.types=["spray"];z.sizes=["4","6"]}
+    if(d.drip.includes(i)){z.types=["drip"];z.sizes=[]}else{z.types=[];z.sizes=[]}
     z.valve=Object.assign(z.valve||{},{size:'1"'});j.zones.push(z)}
   j.setupDone=true;S.ctlDraft=null;S.addingCtl=false;return {c,n}}
-function zoneUntouched(z){return !z.works&&!(z.symptoms||[]).length&&!Object.values(z.acts||{}).some(v=>num(v))&&!(z.laterals||[]).length&&!(z.adds||[]).length&&!(z.custom||[]).length&&!z.notes&&!z.mapValve&&(!z.valve||!z.valve.action||z.valve.action==="none")}
+function zoneUntouched(z){return !z.works&&!(z.symptoms||[]).length&&!Object.values(z.acts||{}).some(v=>num(v))&&!(z.laterals||[]).length&&!(z.adds||[]).length&&!(z.custom||[]).length&&!z.notes&&!z.mapValve&&(!z.valve||((!z.valve.action||z.valve.action==="none")&&z.valve.locate!=="yes"))}
 /* Zone count changed on the controller: add missing zones, remove only untouched extra ones */
 function syncZones(j,ci){const c=j.controllers[ci];if(!c)return;const n=Math.max(1,Math.min(200,num(c.zones)||1));c.zones=n;
   const mine=j.zones.filter(z=>z.ctl===c.id);let added=0;const kept=[];
-  for(let i=1;i<=n;i++)if(!mine.some(z=>num(z.num)===i)){const z=newZone(j);z.ctl=c.id;z.num=String(i);z.types=["spray"];z.sizes=["4","6"];j.zones.push(z);added++}
+  for(let i=1;i<=n;i++)if(!mine.some(z=>num(z.num)===i)){const z=newZone(j);z.ctl=c.id;z.num=String(i);j.zones.push(z);added++}
   const extra=mine.filter(z=>num(z.num)>n);
   extra.forEach(z=>{if(zoneUntouched(z))j.zones.splice(j.zones.indexOf(z),1);else kept.push(z.num)});
   if(kept.length)toast(`Zone${kept.length>1?"s":""} ${kept.join(", ")} kept because work is recorded on ${kept.length>1?"them":"it"}.`);
   else if(added)toast(`Added ${added} zone${added===1?"":"s"}`);
   else if(extra.length)toast(`Removed ${extra.length} empty zone${extra.length===1?"":"s"}`)}
-function rainBlock(c,b){const done=c.rain==="no"||(c.rain==="yes"&&c.rainStatus);
+function rainIns(c){return (c.act||{}).rainAdd!==false}
+function rainDone(c){return (c.rain==="no"&&(!rainIns(c)||!!c.rainKind))||(c.rain==="yes"&&!!c.rainStatus)}
+function rainBlock(c,b){const done=rainDone(c);const ci=b.split(".")[1];const ins=rainIns(c);
   return `<div class="zcheck ${done?"":"need"}"><div class="eyebrow">Required</div>
     ${seg("Rain / freeze sensor present?",b+".rain",YN)}
+    ${c.rain==="no"?`<div class="act ${ins?"on":""}"><div class="al">Install one (recommended)</div><div class="chips"><button type="button" class="chip" data-rainins="${ci}|1" aria-pressed="${ins}">On</button><button type="button" class="chip" data-rainins="${ci}|0" aria-pressed="${!ins}">Off</button></div></div>
+      ${ins?seg("Sensor type *",b+".rainKind",[["wired","Wired"],["wireless","Wireless"]]):""}`:""}
     ${c.rain==="yes"?seg("Is it working?",b+".rainStatus",[["working","Working"],["notworking","Not working"],["bypassed","Bypassed / disconnected"]],{notworking:"bad",bypassed:"bad"}):""}
-    ${done?"":`<p class="small" style="margin:0">Check for a rain or freeze sensor. This must be answered before the controller is done.</p>`}</div>`}
+    ${done?"":c.rain==="no"?`<p class="small" style="margin:0">Pick Wired or Wireless for the new sensor, or turn the install Off.</p>`:`<p class="small" style="margin:0">Check for a rain or freeze sensor. This must be answered before the controller is done.</p>`}</div>`}
 
 /* ---------------- Guided workflow ----------------
    Map valves become zones, every zone gets a "fully working?" check, and a Next-step strip leads the job. */
@@ -3262,7 +3306,7 @@ const SYMPTOM_HINT={
   leak:["Find the source: lateral break, head seal or the valve.",["lat","Add: lateral line break"]],
   mist:["Pressure is too high. Consider MP rotator nozzles here or a PRV on the mainline.",null],
   other:["Describe it in the zone notes at the bottom.",null]};
-function zoneSecName(j,z){return `Zone ${z.num}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`}
+function zoneSecName(j,z){return `Zone ${z.num}${z.vno?" · valve "+z.vno:""}${j.controllers.length>1?" · "+ctlName(j,z.ctl):""}`}
 function mapHeadsFor(j,z){if(!z.mapValve)return [];return j.map.items.filter(i=>i.t==="head"&&i.zone===z.mapValve)}
 function mapHeadSummary(j,z){const hs=mapHeadsFor(j,z);if(!hs.length)return "";const c={};hs.forEach(h=>{const n=(HEAD_TYPES.find(t=>t[0]===h.sub)||["","head"])[1].toLowerCase();c[n]=(c[n]||0)+1});
   return Object.entries(c).map(([n,k])=>`${k} ${n}`).join(" · ")}
@@ -3273,21 +3317,24 @@ function linkMapZones(j){
   const ctl=j.controllers[0];const touched=[];
   j.zones.forEach(z=>{if(z.mapValve&&!vs.some(v=>v.id===z.mapValve))delete z.mapValve});
   vs.forEach(v=>{const n=v.label.slice(1);
-    let z=j.zones.find(z=>z.mapValve===v.id)||j.zones.find(z=>z.ctl===ctl.id&&String(z.num)===n&&!z.mapValve);
+    let z=j.zones.find(z=>z.mapValve===v.id)||j.zones.find(z=>z.ctl===ctl.id&&String(z.num)===n&&!z.mapValve&&!z.vno);
     if(!z){z=newZone(j);z.ctl=ctl.id;z.num=n;z.types=[];z.sizes=[];j.zones.push(z)}
     z.mapValve=v.id;
     mapHeadsFor(j,z).forEach(h=>{if(HEAD_TYPES.some(t=>t[0]===h.sub)&&!z.types.includes(h.sub))z.types.push(h.sub)});
-    if(z.types.some(t=>SIZED.includes(t))&&!z.sizes.length)z.sizes=["4","6"];
     if(num(ctl.zones)<num(n))ctl.zones=num(n);
     touched.push(n)});
   return touched;
 }
+function zoneCtl(j,z){return j.controllers.find(x=>x.id===z.ctl)||(j.controllers.length===1?j.controllers[0]:null)}
 function zoneCheck(j,z,zo){const b=`zones.${zo}`;const syms=z.symptoms||[];
-  const ob=zoneOhm(j,z);
-  return `${ob?`<div class="note ${ob==="high"?"warn":"bad"} small"><b>${esc(OHM_ZONE_NOTE[ob].split(":")[0])}.</b>${ob==="high"?" Corroding solenoid or a low-quality valve.":""} Find the valve and pick its fix below (Locate valve if it's buried).</div>`:""}<div class="zcheck ${z.works?"":"need"}"><div class="eyebrow">Zone check</div>
+  const ob=zoneOhm(j,z);const zc=zoneCtl(j,z);
+  /* Conventional wiring with a Normal reading means the solenoid tested good, so don't offer a solenoid (Bradley). */
+  const solOk=!!zc&&zc.wiring==="conventional"&&zoneBand(zc,+z.num)==="ok";
+  const wireHigh=ob==="high"&&zc&&zoneFix(zc,+z.num)!=="defer";
+  return `${ob?`<div class="note ${ob==="high"?"warn":"bad"} small"><b>${esc(OHM_ZONE_NOTE[ob].split(":")[0])}.</b>${wireHigh?" Wire repair was picked on the Controllers tab.":ob==="high"?" Corroding solenoid or a low-quality valve. Find the valve and pick its fix below (Locate valve if it's buried).":" Wire repair is picked on the Controllers tab."}</div>`:""}<div class="zcheck ${z.works?"":"need"}"><div class="eyebrow">Zone check</div>
     ${seg(`Is Zone ${esc(z.num)} fully working?`,b+".works",[["yes","Yes, working"],["no","No"]],{no:"bad"})}
     ${z.works==="no"?`${multi("What's wrong? (pick all that apply)",b+".symptoms",SYMPTOMS)}
-      ${syms.length?`<div class="hints">${syms.map(k=>{const h=SYMPTOM_HINT[k];if(!h)return "";return `<div class="hint"><span>${esc(h[0])}</span>${h[1]?`<button class="btn ghost sm" data-zfix="${zo}|${h[1][0]}">${esc(h[1][1])}</button>`:""}</div>`}).join("")}</div>`:""}`
+      ${syms.length?`<div class="hints">${syms.map(k=>{let h=SYMPTOM_HINT[k];if(!h)return "";if(k==="noon"&&solOk)h=["The ohm reading is normal, so the solenoid tested good. Check the valve for debris, a closed flow control or the bleed screw.",null];return `<div class="hint"><span>${esc(h[0])}</span>${h[1]?`<button class="btn ghost sm" data-zfix="${zo}|${h[1][0]}">${esc(h[1][1])}</button>`:""}</div>`}).join("")}</div>`:""}`
     :z.works==="yes"?`<p class="small muted" style="margin:0">Marked working. You can still note upkeep below.</p>`:`<p class="small" style="margin:0">Run the zone and answer before moving on.</p>`}</div>`}
 function mapZoneCard(j){const vs=j.map.items.filter(i=>i.t==="zv"&&/^Z\d+$/.test(i.label||""));if(!vs.length)return "";
   return `<div class="card"><div class="cardhead"><h2>Zone check</h2><span class="muted small">${j.zones.filter(z=>z.mapValve&&z.works).length} of ${vs.length} answered</span></div>
@@ -3301,7 +3348,7 @@ function jobSteps(j){
   const zAns=j.zones.filter(z=>z.works).length,zTot=j.zones.length;
   return [
     {k:"mainline",label:"Mainline",done:ml,todo:j.mainline.every(m=>(m.meters||[]).length&&(m.meters||[]).every(w=>w.flow))?(j.mainline.some(m=>!(m.bf||{}).present)?"Mainline: is a backflow preventer present?":"Mainline: is there a backflow test tag or record?"):"Check the water meter with the system off: is it moving?"},
-    {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>(c.rain==="no"||(c.rain==="yes"&&c.rainStatus))&&!ctlFlags(c).unread),todo:!j.controllers.length?"Set up the controller.":j.controllers.some(c=>ctlFlags(c).unread)?`Controller: pick the wire reading for ${j.controllers.reduce((a,c)=>a+ctlFlags(c).unread,0)} zone(s).`:"Controller: answer the rain/freeze sensor question."},
+    {k:"controllers",label:"Controller",done:j.controllers.length>0&&j.controllers.every(c=>rainDone(c)&&!ctlFlags(c).unread),todo:!j.controllers.length?"Set up the controller.":j.controllers.some(c=>ctlFlags(c).unread)?`Controller: pick the wire reading for ${j.controllers.reduce((a,c)=>a+ctlFlags(c).unread,0)} zone(s).`:j.controllers.some(c=>c.rain==="no"&&rainIns(c)&&!c.rainKind)?"Controller: pick Wired or Wireless for the new rain/freeze sensor.":"Controller: answer the rain/freeze sensor question."},
     {k:"zones",label:"Zones",done:zTot>0&&zAns===zTot,todo:`Zone check: ${zAns} of ${zTot} zones answered.`},
     {k:"report",label:"Report",done:!!currentRev(j),todo:(j.revs||[]).length?"The job changed. Issue a new report revision.":"Issue the audit report."},
     {k:"completion",label:"Outcome",done:j.outcome==="declined"||(j.outcome==="approved"&&!!(j.completion&&j.completion.issuedAt&&j.completion.fp===compPrint(j))),
@@ -3874,6 +3921,7 @@ app.addEventListener("input",ev=>{
 app.addEventListener("change",ev=>{
   if(ev.target.dataset&&ev.target.dataset.setrole){if(isChief())setRole(ev.target.dataset.setrole,ev.target.value);return}
   const t=ev.target;
+  if(t.dataset.csmodm!=null&&S.ctlDraft){const mo=S.ctlDraft.modules[+t.dataset.csmodm];mo.model=t.value;const x=(CTL_MODULES[S.ctlDraft.brand]||[]).find(y=>y[0]===t.value);mo.size=x?String(x[1]):"";return}
   if(t.dataset.csmods!=null&&S.ctlDraft){S.ctlDraft.modules[+t.dataset.csmods].size=t.value;return}
   if(t.dataset.csmodst!=null&&S.ctlDraft){S.ctlDraft.modules[+t.dataset.csmodst].status=t.value;return}
   if(t.dataset.cs&&S.ctlDraft){S.ctlDraft[t.dataset.cs]=t.value;if(t.dataset.csrr){rr();return}if(t.dataset.cs==="zones"){const n=Math.max(1,Math.min(99,num(t.value)||1));S.ctlDraft.drip=S.ctlDraft.drip.filter(z=>z<=n);S.ctlDraft.zones=n;rr()}return}
@@ -3888,7 +3936,9 @@ app.addEventListener("change",ev=>{
   if(t.dataset.bgfile&&t.files&&t.files[0]){readBg(t.files[0]);return}
   if(t.dataset.photofor&&t.files&&t.files[0]){addPhoto(t.dataset.photofor,t.files[0]);t.value="";return}
   const p=t.dataset.f;if(!p||!job())return;
-  if(t.tagName==="SELECT"){setP(job(),p,t.value);scheduleSave(S.cur);rr();return}
+  if(t.tagName==="SELECT"){setP(job(),p,t.value);
+    {const mm=/^(controllers\.\d+)\.modules\.(\d+)\.model$/.exec(p);if(mm){const c=getP(job(),mm[1]);const x=(CTL_MODULES[ctlBrand(c)]||[]).find(y=>y[0]===t.value);if(x)c.modules[+mm[2]].size=String(x[1])}}
+    scheduleSave(S.cur);rr();return}
   if(/^controllers\.\d+\.zones$/.test(p)){syncZones(job(),+p.split(".")[1]);scheduleSave(S.cur)}
   if(t.dataset.rr||t.dataset.num)rr();
 });
@@ -4010,7 +4060,8 @@ app.addEventListener("click",ev=>{
   if(d.set!=null&&/^mainline\.\d+\.bf\.present$/.test(d.set)&&d.v==="no"&&getP(j,d.set)!=="no"){S.bfConfirm=d.set;render();return}
   /* Tapping Yes again on "Backflow preventer present?" resets the backflow section (Keith). */
   {const mm=d.set!=null&&/^mainline\.(\d+)\.bf\.present$/.exec(d.set);if(mm&&d.v==="yes"&&getP(j,d.set)==="yes"){j.mainline[+mm[1]].bf={present:"",size:"",type:"",insulated:"",condition:"",action:"none",newAsm:{}};scheduleSave(S.cur);rr();toast("Backflow details cleared");return}}
-  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works/.test(d.set)?"":d.v);
+  if(d.set!=null){const cur=getP(j,d.set);setP(j,d.set,String(cur)===d.v&&!/status|propType|wiring|power$|action|^map|kind|works|ctype/.test(d.set)?"":d.v);
+    if(/^controllers\.\d+\.ctype$/.test(d.set)){applyCtype(getP(j,d.set.replace(/\.ctype$/,"")))}
     /* Backflow not insulated → recommend an insulation cover automatically (Bradley). The tech can still tap No. */
     {const mm=/^mainline\.(\d+)\.bf\.insulated$/.exec(d.set);if(mm){const bf=j.mainline[+mm[1]].bf;
       if(bf.insulated==="no"){if(bf.insulate!=="yes"&&bf.insulate!=="no"){bf.insulate="yes";bf.insulateAuto=true}if(bf.insPipe!=="yes"&&bf.insPipe!=="no"){bf.insPipe="yes";bf.insPipeAuto=true}}
@@ -4054,13 +4105,18 @@ app.addEventListener("click",ev=>{
   if(d.tech){j.est.showTech=!j.est.showTech;scheduleSave(S.cur);rr();return}
   if(d.print){if(d.print==="report"){const rv=currentRev(j);if(!rv)return;getRevHtml(j,rv).then(h=>printDoc(h?auditWords(h):reportHtml(j,rv)))}else if(d.print==="estimate")printDoc(estDocHtml(j));else printDoc(invoiceHtml(j));return}
   if(d.ohmband){const [cid,z,v]=d.ohmband.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmBand=Object.assign({},c.ohmBand||{},{[z]:v});scheduleSave(S.cur);rr()}return}
+  if(d.rainins){const [ci,v]=d.rainins.split("|");const c=j.controllers[+ci];if(c){c.act=Object.assign({},c.act||{},{rainAdd:v==="1"});scheduleSave(S.cur);rr()}return}
+  if(d.multiv){const [cid,zn]=d.multiv.split("|");const c=j.controllers.find(x=>x.id===cid);if(!c)return;c.multiV=Object.assign({},c.multiV||{});
+    if(!c.multiV[zn]){c.multiV[zn]=true;if(!j.zones.some(z=>z.ctl===cid&&String(z.num)===zn&&z.vno)){const z=newZone(j);z.ctl=cid;z.num=zn;z.vno=2;j.zones.push(z)}toast(`Zone ${zn} valve 2 added on the Zones page`)}
+    else{const dup=j.zones.filter(z=>z.ctl===cid&&String(z.num)===zn&&z.vno);if(dup.some(z=>!zoneUntouched(z))){toast("Valve 2 has work recorded. Remove it on the Zones page first.");return}dup.forEach(z=>j.zones.splice(j.zones.indexOf(z),1));delete c.multiV[zn]}
+    scheduleSave(S.cur);rr();return}
   if(d.ohmfix){const [cid,z,k]=d.ohmfix.split("|");const c=j.controllers.find(x=>x.id===cid);if(c){c.ohmFix=Object.assign({},c.ohmFix||{},{[z]:k});scheduleSave(S.cur);rr()}return}
   if(d.ohmans){if(d.ohmans==="edit"){S.ohmEdit=true;S.pricing._ohm_ok="no";savePricing();rr();return}
     if(d.ohmans==="no"){S.pricing._ohm_ok="no";S.ohmEdit=true;savePricing();rr();return}
     S.pricing._ohm_ok="yes";S.ohmEdit=false;savePricing();rr();toast("Ohm ranges saved for the team");return}
   if(d.ol){setP(j,d.ol,"OL");scheduleSave(S.cur);rr();return}
   if(d.csbrand){S.ctlDraft.brand=d.csbrand;S.ctlDraft.line="";rr();return}
-  if(d.csmod){S.ctlDraft.modular=d.csmod;if(d.csmod==="yes"&&!S.ctlDraft.modules.length)S.ctlDraft.modules=[{size:"",status:"OK"}];rr();return}
+  if(d.csctype){S.ctlDraft.ctype=d.csctype;if(d.csctype==="modular"&&!S.ctlDraft.modules.length)S.ctlDraft.modules=[{size:"",status:"OK"}];rr();return}
   if(d.csmodadd){S.ctlDraft.modules.push({size:"",status:"OK"});rr();return}
   if(d.csmodrm!=null){S.ctlDraft.modules.splice(+d.csmodrm,1);rr();return}
   if(d.cswire){S.ctlDraft.wiring=d.cswire;rr();return}
@@ -4204,7 +4260,7 @@ function doRemove(key){
   const m={meter:()=>j.mainline[a].meters.splice(b,1),main:()=>j.mainline.splice(a,1),mod:()=>j.controllers[a].modules.splice(b,1),ccus:()=>j.controllers[a].custom.splice(b,1),mcus:()=>j.mainline[a].custom.splice(b,1),
     bfclear:()=>{j.mainline[a].bf={present:"",size:"",type:"",insulated:"",condition:"",action:"none",newAsm:{}}},newbfclear:()=>{j.mainline[a].bf.newAsm={}},prog:()=>j.controllers[a].programs.splice(b,1),
     ctl:()=>{const id=j.controllers[a].id;j.controllers.splice(a,1);j.zones.forEach(z=>{if(z.ctl===id)z.ctl=j.controllers[0]?j.controllers[0].id:""})},
-    zone:()=>{j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
+    zone:()=>{const zz=j.zones[a];if(zz&&zz.vno){const c=j.controllers.find(x=>x.id===zz.ctl);if(c&&c.multiV)delete c.multiV[zz.num]}j.zones.splice(a,1);S.zoneOpen=null},lat:()=>j.zones[a].laterals.splice(b,1),mlr:()=>j.mainline[a].leak.list.splice(b,1),add:()=>j.zones[a].adds.splice(b,1),cus:()=>j.zones[a].custom.splice(b,1),ext:()=>j.est.extra.splice(a,1),up:()=>j.upsells.splice(a,1),
     mapclear:()=>{j.map.items=[];j.map.lines=[];toast("Map cleared")},
     mapitem:()=>{j.map.items=j.map.items.filter(i=>i.id!==a);S.mapSel=null},mapline:()=>{j.map.lines=j.map.lines.filter(i=>i.id!==a);S.mapSel=null}}[k];
   if(m){m();scheduleSave(S.cur)}
