@@ -466,8 +466,10 @@ const PRICE_DEFAULTS=(()=>{
   add("drip_ind","Drip","Drip indicator","each",20,1);
   add("drip_flush","Drip","Drip flush valve","each",35,1);
   add("drip_retro","Drip","Drip retrofit kit (per zone)","zone",295,1);
-  fam("zv_replace","Valves","Replace zone valve","each",[145,155,165,190,210,260],1,c=>c==="2"?"valve_2":c==="125"||c==="15"?"valve_15":"valve_1");
-  fam("zv_rebuild","Valves","Rebuild zone valve (diaphragm)","each",95,1,"valve_rebuild");
+  /* Zone and master valves are always 3/4" and up (Bradley, for quality). */
+  const V34=["075","1","125","15","2"];
+  fam("zv_replace","Valves","Replace zone valve","each",[155,165,190,210,260],1,c=>c==="2"?"valve_2":c==="125"||c==="15"?"valve_15":"valve_1",V34);
+  fam("zv_rebuild","Valves","Rebuild zone valve (diaphragm)","each",95,1,"valve_rebuild",V34);
   fam("zv_scrub","Valves","Replace with scrubber valve","each",[195,245,295],1,"",["1","15","2"]);
   add("valve_sol","Valves","Replace solenoid","each",75,1);
   add("valve_locate","Valves","Locate buried valve","each",95);
@@ -495,10 +497,10 @@ const PRICE_DEFAULTS=(()=>{
   fam("iso_repair","Mainline","Repair isolation valve","each",75,1,"iso_repair");
   fam("iso_replace","Mainline","Replace isolation valve","each",165,1,"iso_replace");
   fam("iso_install","Mainline","Install isolation valve","each",185,1,"iso_install");
-  fam("mv_repair","Mainline","Repair master valve","each",95,1,"mv_repair");
-  fam("mv_replace","Mainline","Replace master valve","each",245,1,"mv_replace");
-  fam("mv_relocate","Mainline","Relocate master valve to the irrigation side of the backflow (code)","each",225,1,"mv_relocate");
-  fam("mv_install","Mainline","Install master valve","each",295,1,"mv_install");
+  fam("mv_repair","Mainline","Repair master valve","each",95,1,"mv_repair",V34);
+  fam("mv_replace","Mainline","Replace master valve","each",245,1,"mv_replace",V34);
+  fam("mv_relocate","Mainline","Relocate master valve to the irrigation side of the backflow (code)","each",225,1,"mv_relocate",V34);
+  fam("mv_install","Mainline","Install master valve","each",295,1,"mv_install",V34);
   add("ctl_replace","Controller","Replace controller (installed)","each",275,1);
   add("transformer","Controller","Replace controller transformer","each",65,1);
   add("ctl_program","Controller","Reprogram controller schedule","each",45,0);
@@ -1600,17 +1602,17 @@ const PIPE_SIZES=VSIZES.map(v=>v[1]);
 function sizeHint(f,size,what){const F=SIZED_FAMS[f];const r=sizedKey(f,size);
   if(!r.given)return `<p class="note warn small" style="margin:0">Pick the ${what||"size"}: it sets the price. Priced as ${sizeLabel(r.code)} until you do.</p>`;
   if(!r.exact){const L=F.codes.map(sizeLabel);return `<p class="note small" style="margin:0">${sizeLabel(r.given)} isn't on the price sheet for this. It comes in ${L.slice(0,-1).join(", ")} and ${L[L.length-1]}; priced as ${sizeLabel(r.code)}.</p>`};return ""}
-function sizeSel(label,path){const v=getP(job(),path)||"";const opts=[["","Choose…"]].concat(PIPE_SIZES);if(v&&!PIPE_SIZES.includes(v))opts.push([v,v+" (as entered)"]);return sel(label,path,opts)}
+function sizeSel(label,path,min34){const v=getP(job(),path)||"";const L=min34?PIPE_SIZES.filter(x=>x!=='1/2"'):PIPE_SIZES;const opts=[["","Choose…"]].concat(L);if(v&&!L.includes(v))opts.push([v,v+" (as entered)"]);return sel(label,path,opts)}
 function compBlock(base,c,label,hasPos){const k=base.split(".").pop();const isMv=k==="mv",isPrv=k==="prv",isIso=k==="iso";
   const up=c.present==="yes"&&c.pos==="upstream";
   const brandV=brandName(c.brand,c.brandOther);
   return `<div class="combo ${isMv&&up?"bad":""}"><h4>${label}</h4>${seg("Present?",base+".present",YN)}
   ${c.present==="no"?`${seg("Recommend",base+".noneAction",[["install",`Install one (recommended)`],["none","Not needed"]])}<p class="small muted" style="margin:0">${isIso?"An isolation valve lets the irrigation be shut off without shutting off the house water.":isPrv?"A pressure reducing valve keeps water pressure in a safe range, which stops misting, blowouts and broken heads and fittings.":"A master valve stops water to the system when no zone is running, which limits leak damage."}</p>
-  ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize")}</div>`:""}`:""}
+  ${compInstall(k,c)?`<div class="grid3">${sizeSel("Size to install",base+".newSize",k==="mv")}</div>`:""}`:""}
   ${c.present==="yes"?`${hasPos?seg("Position",base+".pos",(isIso?[["upstream","Upstream of backflow"],["downstream","Downstream of backflow"]]:[["upstream","Plumbing side"],["downstream","Irrigation side"]])):""}
   ${isMv&&up?`<div class="note bad small"><b>Code violation:</b> the master valve must be on the irrigation side of the backflow preventer. A relocation line is added to the estimate as Urgent.</div>`:""}
   ${isPrv&&up?`<div class="note warn small"><b>Plumbing side of the backflow:</b> work here needs a licensed plumber.</div>`:""}
-  ${isIso?`<div class="grid3">${sizeSel("Size",base+".size")}${sel("Type",base+".type",["","Ball valve","Gate valve","Other"])}</div>`:`<div class="grid3">${sizeSel("Size",base+".size")}${brandSel("Brand",base+".brand",isPrv?"prv":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>`}
+  ${isIso?`<div class="grid3">${sizeSel("Size",base+".size")}${sel("Type",base+".type",["","Ball valve","Gate valve","Other"])}</div>`:`<div class="grid3">${sizeSel("Size",base+".size",k==="mv")}${brandSel("Brand",base+".brand",isPrv?"prv":"valve")}${isMv?lineSel("Product line",base+".line","valve",brandV):""}${isMv&&realLine(c.line)?"":fld("Model",base+".model")}${sel("Condition",base+".condition",["","Good","Fair","Poor","Failed"])}</div>`}
   ${isPrv&&up?seg("Recommend",base+".action",[["none","No work"],["plumber","Refer to a plumber"]]):seg("Recommend",base+".action",(isPrv||isIso)?[["none","No work"],["replace","Replace"]].concat(c.action==="repair"?[["repair","Repair (older job)"]]:[]):[["none","No work"],["repair","Repair"],["replace","Replace"]])}
   ${isPrv&&!up&&c.action==="replace"?(()=>{const nb=base+".newAsm";const ml=getP(job(),base.replace(/\.prv$/,""))||{};
     return `<div class="combo"><h4>New PRV</h4><div class="grid3">${sizeSel("Size",nb+".size")}${brandSel("Brand",nb+".brand","prv")}${fld("Model",nb+".model")}</div>
@@ -1942,7 +1944,7 @@ function zonesTab(){const j=job();
   ${sized.length?multi("Head sizes",b+".sizes",SIZES.map(s=>[s,s+'"'])):""}
   ${sized.length&&!z.sizes.length?`<p class="small muted">Pick the head sizes to see repair options.</p>`:""}
   ${combos}
-  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size")}${sel("Valve type",b+".valve.kind",[["standard","Standard"],["scrubber","Scrubber (dirty water)"]])}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
+  <div class="combo"><h4>Zone valve</h4><div class="grid3">${sizeSel("Size",b+".valve.size",true)}${sel("Valve type",b+".valve.kind",[["standard","Standard"],["scrubber","Scrubber (dirty water)"]])}${brandSel("Brand",b+".valve.brand","valve")}${lineSel("Product line",b+".valve.line","valve",brandName((z.valve||{}).brand,(z.valve||{}).brandOther))}${sel("Condition",b+".valve.condition",["","Good","Fair","Poor","Failed","Unknown"])}</div>
     ${seg("Recommend",b+".valve.action",[["none","No work"],["sol","Solenoid"],["rebuild","Rebuild"],["replace",v.kind==="scrubber"?"Replace (scrubber)":"Replace valve"]])}
     ${seg("Valve buried? Add with the repair",b+".valve.locate",[["yes","Locate valve"]])}
     ${v.condition==="Unknown"&&v.locate!=="yes"?`<p class="note small">Valve not found. Tap Locate valve so finding it is on the estimate.</p>`:""}</div>
