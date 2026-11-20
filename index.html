@@ -544,7 +544,7 @@ const PAY_METHODS=["Card","Check","Cash","Bank (ACH)","Zelle","Other"];
 const INV_ST={draft:["Draft","neutral"],sent:["Awaiting payment","warn"],partial:["Partly paid","warn"],pastdue:["Past due","bad"],paid:["Paid","ok"],void:["Void","neutral"],baddebt:["Bad debt","bad"],closed:["Closed, no payment","neutral"]};
 function defTerms(){return (S.pricing||{})._invTerms||"completion"}
 function r2(x){return Math.round(num(x)*100)/100}
-function invLive(j){return r2(invoiceEstimate(j).total)}
+function invLive(j){return r2(invoiceEstimateLive(j).total)}
 function invTotal(j){const inv=j.inv||{};return inv.sentAt&&inv.amount!=null?r2(inv.amount):invLive(j)}
 function invPays(j){return (j.inv||{}).payments||[]}
 function invPaid(j){return r2(invPays(j).reduce((a,x)=>a+num(x.amount),0))}
@@ -2301,7 +2301,7 @@ function linkMsg(j,kind,url){const b=bizInfo();const bt=billOn(j.info.billTo)?j.
   const bal=invBalance(j);const pay=(S.pricing||{})._payOnline;const due=(j.inv.terms||defTerms())==="completion"?"due upon completion":"due by "+fmtD(invDue(j));
   return {subj:`${b.name||"Invoice"}: invoice ${j.inv.no}`,body:`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, ${due}.\n\nView${pay?" and pay":""} it here:\n${url}${sig}`,
     sms:`Hi ${first}, this is ${b.name||"your irrigation company"}. Your invoice ${j.inv.no} (${money(bal)}) is ready${pay?" to view and pay":""}: ${url}`}}
-function markSent(j,kind,t,id){if(kind==="estimate"){if(!j.estDoc.sentAt)j.estDoc.sentAt=Date.now();estLog(j,t)}else{if(!j.inv.sentAt){j.inv.sentAt=Date.now();j.inv.amount=invLive(j)}invLog(j,t)}scheduleSave(id)}
+function markSent(j,kind,t,id){if(kind==="estimate"){if(!j.estDoc.sentAt)j.estDoc.sentAt=Date.now();estLog(j,t)}else{if(!j.inv.sentAt){j.inv.sentAt=Date.now();setInvAmt(j)}invLog(j,t)}scheduleSave(id)}
 function copyText(txt,msg){try{navigator.clipboard.writeText(txt).then(()=>toast(msg||"Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}}
 function sendBox(j,kind){const l=docLink(j,kind);const prob=linkProblem(j,kind);const inf=l?(S.shareInfo||{})[l.token]:null;if(l)loadShareInfo(l.token);
   const ph=(j.info.phone||"").replace(/[^\d+]/g,"");const est=kind==="estimate";const pay=(S.pricing||{})._payOnline;
@@ -3127,7 +3127,11 @@ function completionText(j){const c=j.completion;const n=compCounts(c.items);cons
   `Before: ${n.r} urgent, ${n.y} recommended`,`Now: ${n.fixed} fixed, ${n.rLeft} urgent, ${n.yLeft} recommended`,""];
   c.items.forEach(i=>L.push(`- ${i.label} (${i.sec}): was ${TL[i.c][0]}, now ${i.status==="done"?"FIXED":i.status==="declined"?"declined by customer":"not done yet"}${i.note?" · "+i.note:""}`));return L.join("\n")}
 /* Invoice (work done) bills only completed audit items, plus service and anything added after the audit */
-function invoiceEstimate(j){const r=invoiceEstimate0(j);
+/* A sent invoice keeps the lines it was sent with (saved in inv.snap), so its printout, link and accounting rows
+   always match its locked total. The live job total is only used for the "job changed" warning and Update. */
+function invoiceEstimate(j){const inv=j.inv||{};if(inv.kind==="invoice"&&inv.sentAt&&inv.snap&&Math.abs(r2(inv.snap.total)-r2(inv.amount))<0.005)return inv.snap;return invoiceEstimateLive(j)}
+function setInvAmt(j){const e=invoiceEstimateLive(j);j.inv.amount=r2(e.total);j.inv.snap=JSON.parse(JSON.stringify({lines:e.lines,sub:e.sub,disc:e.disc,tax:e.tax,total:e.total}))}
+function invoiceEstimateLive(j){const r=invoiceEstimate0(j);
   if((j.inv||{}).kind==="invoice"&&j.outcome==="approved"&&diagCredits(j)&&r.lines.some(l=>l.key==="trip")&&r.lines.some(l=>l.key!=="trip"&&l.total>0)){const a=diagAmt(j);
     const lines=r.lines.concat([{sec:"Service",key:"trip_credit",label:"Diagnostic fee credited (work approved)",qty:1,unit:"each",price:-a,total:-a,m:false}]);
     const sub=lines.reduce((x,l)=>x+l.total,0);const disc=Math.min(num(j.est.discount),sub);const tax=(sub-disc)*jobTax(j)/100;return {lines,sub,disc,tax,total:sub-disc+tax}}
@@ -4050,7 +4054,7 @@ app.addEventListener("click",ev=>{
   if(d.compclose){S.compose=null;render();return}
   if(d.cmpcopy&&S.compose){const m=S.compose;const txt=`To: ${m.to}\nSubject: ${m.subj}\n\n${m.body}`;(navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Message copied")).catch(()=>toast("Couldn't copy. Select the text and copy it."));return}
   if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.est){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.est];if(jj&&jj.estDoc){jj.estDoc.sentAt=Date.now();estLog(jj,`Emailed to ${jj.info.email||"customer"}`);scheduleSave(o.est)}render();toast("Marked as sent");return}
-  if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.inv){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.inv];if(jj){if(o.kind==="send"){jj.inv.sentAt=Date.now();jj.inv.amount=invLive(jj);invLog(jj,`Emailed to ${jj.info.email||"customer"} (${money(jj.inv.amount)})`)}else{jj.inv.reminded=Date.now();invLog(jj,"Payment reminder emailed")}scheduleSave(o.inv)}render();toast("Marked as sent");return}
+  if(d.cmpdone&&S.compose&&S.compose.onSent&&S.compose.onSent.inv){const o=S.compose.onSent;S.compose=null;const jj=S.jobs[o.inv];if(jj){if(o.kind==="send"){jj.inv.sentAt=Date.now();setInvAmt(jj);invLog(jj,`Emailed to ${jj.info.email||"customer"} (${money(jj.inv.amount)})`)}else{jj.inv.reminded=Date.now();invLog(jj,"Payment reminder emailed")}scheduleSave(o.inv)}render();toast("Marked as sent");return}
   if(d.cmpdone&&S.compose){const o=S.compose.onSent;S.compose=null;if(o){const c=customers().find(x=>x.key===o.ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[o.rid]:Date.now()});scheduleSave(lj.id)}}render();toast("Marked as sent");return}
   if(d.remdone||d.remsent){const [ck,rid]=(d.remdone||d.remsent).split("|");const c=customers().find(x=>x.key===ck);if(c){const lj=c.jobs[0];lj.reminders=Object.assign({},lj.reminders||{},{[rid]:Date.now()});scheduleSave(lj.id);if(d.remdone){rr();toast("Marked handled")}else setTimeout(rr,400)}if(d.remdone)return}
   if(d.ltier!=null){if(!isAdmin())return;const i=d.ltier.lastIndexOf("|");const key=d.ltier.slice(0,i),t=d.ltier.slice(i+1);S.pricing._lineTiers=Object.assign({},S.pricing._lineTiers||{});S.pricing._lineTiers[key]=t||"none";savePricing();rr();return}
@@ -4145,7 +4149,7 @@ app.addEventListener("click",ev=>{
   if(d.mkinv){if(S.mkinvBusy||(j.inv&&j.inv.kind==="invoice"&&j.inv.no))return;S.mkinvBusy=true;const id=S.cur;
     (async()=>{let no;try{no=await invNo(j)}catch(e){S.mkinvBusy=false;toast("Couldn't number the invoice: "+((e&&e.message)||e));return}
       S.mkinvBusy=false;j.inv=Object.assign({},j.inv||{},{kind:"invoice"});j.inv.no=no;j.inv.at=Date.now();j.inv.issued=today();j.inv.terms=j.inv.terms||defTerms();j.inv.payments=j.inv.payments||[];invLog(j,`Invoice ${j.inv.no} created (${money(invLive(j))})`);scheduleSave(id);rr()})();return}
-  if(d.invmarksent){j.inv.sentAt=Date.now();j.inv.amount=invLive(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
+  if(d.invmarksent){j.inv.sentAt=Date.now();setInvAmt(j);invLog(j,`Marked as sent (${money(j.inv.amount)})`);scheduleSave(S.cur);rr();return}
   if(d.invsend||d.invremind){const b=bizInfo();const st=invState(j);const due=invDue(j);const first=(j.info.customer||"").split(" ")[0]||"there";const bal=d.invsend?invLive(j):invBalance(j);
     const lk=j.inv.link&&!linkProblem(j,"invoice")?shareUrl(j.inv.link.token):"";const online=lk?`\n\nView${(S.pricing||{})._payOnline?" and pay":""} it here: ${lk}`:(S.pricing||{})._payOnline?`\n\nYou can pay online: sign in at ${payLink()} with this email address and tap Pay now on the invoice.`:"";
     const body=d.invsend?`Hi ${first},\n\nThank you for choosing ${b.name||"us"}. Your invoice ${j.inv.no} for the work at ${j.info.address} is ${money(bal)}, due ${(j.inv.terms||defTerms())==="completion"?"upon completion":"by "+fmtD(due)}.${online}\n\nThank you,\n${b.name||""}\n${b.phone||""}`
@@ -4205,12 +4209,12 @@ app.addEventListener("click",ev=>{
   if(d.estcopy){const txt=invoiceText(estJob(j));try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
   if(d.estsend){const b=bizInfo();const first=(j.info.customer||"").split(" ")[0]||"there";const e=buildEstimate(j);
     S.compose={title:"Email estimate",to:billEmail(j),subj:`${b.name||"Estimate"}: estimate ${j.estDoc.no}`,body:`Hi ${first},\n\nThank you for the opportunity. Your estimate ${j.estDoc.no} for the work at ${j.info.address} comes to ${money(e.total)}.\n\nYou can also view it by signing in at ${payLink()} with this email address.\n\nReply to this email or call ${b.phone||"us"} to approve it or with any questions.\n\nThank you,\n${b.name||""}\n${b.phone||""}`,onSent:{est:S.cur},sentNote:"Sent it? This marks the estimate as sent."};render();return}
-  if(d.invupd){j.inv.amount=invLive(j);invLog(j,`Invoice updated to ${money(j.inv.amount)}`);scheduleSave(S.cur);rr();return}
+  if(d.invupd){setInvAmt(j);invLog(j,`Invoice updated to ${money(j.inv.amount)}`);scheduleSave(S.cur);rr();return}
   if(d.invreopen){invLog(j,`Reopened (was ${INV_ST[invState(j)][0]})`);j.inv.status="";scheduleSave(S.cur);rr();return}
   if(d.payadd){const amt=r2(String(document.getElementById("pay-amt").value).replace(/[$,]/g,""));if(!(amt>0)){toast("Enter the amount paid");return}
     const x={id:uid("pay"),amount:amt,method:document.getElementById("pay-method").value,date:document.getElementById("pay-date").value||today(),ref:document.getElementById("pay-ref").value.trim(),source:"manual"};
     const dep=document.getElementById("pay-dep");if(dep&&dep.checked)x.deposit=true;
-    j.inv.payments=j.inv.payments||[];j.inv.payments.push(x);if(!j.inv.sentAt){j.inv.sentAt=Date.now();j.inv.amount=invLive(j)}invLog(j,`Payment recorded: ${money(amt)} by ${x.method}${x.ref?" #"+x.ref:""}`);
+    j.inv.payments=j.inv.payments||[];j.inv.payments.push(x);if(!j.inv.sentAt){j.inv.sentAt=Date.now();setInvAmt(j)}invLog(j,`Payment recorded: ${money(amt)} by ${x.method}${x.ref?" #"+x.ref:""}`);
     S.payForm=null;scheduleSave(S.cur);rr();toast(invState(j)==="paid"?"Paid in full":"Payment recorded. Balance "+money(invBalance(j)));return}
   if(d.invcopy){const txt=invoiceText(j);try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>fallbackCopy(txt))}catch(e){fallbackCopy(txt)}return}
   if(d.invsave){if(!downloads)return;const nm=((j.inv||{}).kind==="invoice"?"invoice-":"estimate-")+((j.inv||{}).no||"draft")+".html";
